@@ -719,6 +719,8 @@ let loadingInterval = null;
 let permissionCheckTimeout = null;
 /** 启动前：GLB 文件已预取到浏览器缓存 */
 let arModelPrefetchReady = false;
+/** 启动前：背景音乐已预取到浏览器缓存 */
+let arAudioPrefetchReady = false;
 /** 模型已解析且可交互（避免未就绪时白屏、误播音乐、误触手势） */
 let arExperienceReady = false;
 /** 当前 marker 是否真的由 AR.js 识别到，而不是 object3D 的默认 visible 状态 */
@@ -766,12 +768,14 @@ function stopArBackgroundMusicForExit() {
 function refreshArStartButtonState() {
     const btn = document.getElementById('start-ar-button');
     if (!btn) return;
-    if (arModelPrefetchReady) {
+    if (arModelPrefetchReady && arAudioPrefetchReady) {
         btn.disabled = false;
         btn.textContent = '点我✨启动AR体验';
     } else {
         btn.disabled = true;
-        btn.textContent = '资源准备中…';
+        const modelText = arModelPrefetchReady ? '模型已就绪' : '模型加载中';
+        const audioText = arAudioPrefetchReady ? '音频已就绪' : '音频加载中';
+        btn.textContent = `资源准备中… ${modelText} / ${audioText}`;
     }
 }
 
@@ -798,6 +802,36 @@ function prefetchArModelForStart() {
             arModelPrefetchReady = false;
             refreshArStartButtonState();
             showNotification('模型资源预下载失败，请检查网络后刷新页面', true);
+        });
+}
+
+/** 页面加载时预取 BGM；不调用 play，避免启动摄像头时误播 */
+function prefetchArAudioForStart() {
+    const audio = getArBackgroundMusic();
+    const src = audio ? audio.getAttribute('src') : 'assets/audio/hologram-koi-hall.mp3';
+    if (!src) {
+        arAudioPrefetchReady = true;
+        refreshArStartButtonState();
+        return;
+    }
+    const url = new URL(src, window.location.href).href;
+    fetch(url, { mode: 'cors', cache: 'default' })
+        .then((r) => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.arrayBuffer();
+        })
+        .then(() => {
+            arAudioPrefetchReady = true;
+            if (audio) {
+                audio.load();
+            }
+            refreshArStartButtonState();
+        })
+        .catch((err) => {
+            console.warn('音频预取失败', err);
+            arAudioPrefetchReady = false;
+            refreshArStartButtonState();
+            showNotification('音频资源预下载失败，请检查网络后刷新页面', true);
         });
 }
 
@@ -1710,6 +1744,10 @@ async function startAR() {
         showNotification('模型资源尚未就绪，请稍候', true);
         return;
     }
+    if (!arAudioPrefetchReady) {
+        showNotification('音频资源尚未就绪，请稍候', true);
+        return;
+    }
     console.log('启动AR体验');
     
     // 检查权限状态
@@ -1870,6 +1908,7 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('页面加载完成，准备启动AR。');
     createStartOverlay();
     prefetchArModelForStart();
+    prefetchArAudioForStart();
     
     // 设置AR场景错误处理
     setupARSceneErrorHandling();
