@@ -1941,13 +1941,13 @@ document.addEventListener('DOMContentLoaded', function() {
     embedded
     vr-mode-ui="enabled: false"
     renderer="logarithmicDepthBuffer: true;"
-    arjs="sourceType: webcam; debugUIEnabled: false; patternRatio: 0.9; labelingMode: black_region;">
+    arjs="sourceType: webcam; debugUIEnabled: false; patternRatio: 0.5; labelingMode: black_region;">
 
    <a-assets timeout="30000">
      <a-asset-item id="ar-model-asset" src="assets/models/base_basic_shaded.glb"></a-asset-item>
    </a-assets>
 
-<!-- 自定义 pattern：.patt 须与训练工具生成的打印图一一对应；白边黑底标记若仍无反应，可把 labelingMode 改为 white_region -->
+<!-- 自定义 pattern：当前训练工具 Pattern Ratio 为 50%，所以 arjs patternRatio 必须是 0.5 -->
    <a-marker id="marker1" type="pattern" url="assets/patterns/pattern-aoyu1.patt" emitevents="true" size="1" instrument-handler>
         <a-entity class="aquarium-world" touch-handler visible="false">
             <!-- 仅保留基础光照 + 主鱼 -->
