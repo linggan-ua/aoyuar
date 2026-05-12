@@ -721,6 +721,8 @@ let permissionCheckTimeout = null;
 let arModelPrefetchReady = false;
 /** 模型已解析且可交互（避免未就绪时白屏、误播音乐、误触手势） */
 let arExperienceReady = false;
+/** 当前 marker 是否真的由 AR.js 识别到，而不是 object3D 的默认 visible 状态 */
+let arMarkerActuallyFound = false;
 
 // 单一 AR 模型（base_basic_shaded.glb）
 const instrumentConfig = {
@@ -733,25 +735,15 @@ function getArBackgroundMusic() {
     return document.getElementById(AR_BG_MUSIC_ID);
 }
 
-/** 在用户点击「启动 AR」后预解锁，减少标记出现后 play() 被拦截的概率 */
-function primeArBackgroundMusicUnlock() {
-    const a = getArBackgroundMusic();
-    if (!a) return;
-    if (typeof a.volume === 'number') a.volume = 0.72;
-    const p = a.play();
-    if (p && typeof p.then === 'function') {
-        p.then(() => {
-            a.pause();
-            a.currentTime = 0;
-        }).catch(() => {});
-    }
-}
-
 /** 模型已展示在画面上时调用：开始或继续播放 */
 function tryPlayArBackgroundMusic() {
     if (!arExperienceReady) return;
+    if (!arMarkerActuallyFound || currentMarkerId !== 'marker1') return;
+    const world = document.querySelector('#marker1 .aquarium-world');
+    if (!world || !world.object3D.visible) return;
     const a = getArBackgroundMusic();
     if (!a) return;
+    if (typeof a.volume === 'number') a.volume = 0.72;
     const p = a.play();
     if (p && typeof p.catch === 'function') {
         p.catch((err) => console.warn('AR 背景音乐无法播放（可能被浏览器策略拦截）：', err));
@@ -817,6 +809,7 @@ function revertArStartIfModelNotReady(reason) {
     }
     isARStarted = false;
     arExperienceReady = false;
+    arMarkerActuallyFound = false;
     const scene = document.getElementById('ar-scene');
     if (scene) scene.classList.remove('active');
     stopArBackgroundMusicForExit();
@@ -827,9 +820,11 @@ function revertArStartIfModelNotReady(reason) {
 }
 
 function syncMusicIfMarkerAlreadyVisible() {
-    const mk = document.getElementById('marker1');
-    if (!mk || !mk.object3D.visible) return;
-    const world = mk.querySelector('.aquarium-world');
+    if (!arMarkerActuallyFound || currentMarkerId !== 'marker1') return;
+    const world = document.querySelector('#marker1 .aquarium-world');
+    if (world && instrumentConfig.marker1 && instrumentConfig.marker1.isLoaded) {
+        world.setAttribute('visible', true);
+    }
     if (world && world.object3D.visible) {
         tryPlayArBackgroundMusic();
     }
@@ -1045,6 +1040,7 @@ AFRAME.registerComponent('instrument-handler', {
 
         this.worldEntity = this.marker.querySelector('.aquarium-world');
         this.modelEntity = this.marker.querySelector('[gltf-model]');
+        this.isMarkerFound = false;
         this.worldEntity.setAttribute('visible', false);
 
         // 模型由 HTML 的 gltf-model 直接加载；此处监听完成/失败与重试
@@ -1054,7 +1050,7 @@ AFRAME.registerComponent('instrument-handler', {
             console.log(`${this.config.name} model loaded.`);
             this.config.isLoaded = true;
             hideLoadingOverlay(true);
-            if (this.marker.object3D.visible) {
+            if (this.isMarkerFound && arExperienceReady) {
                 this.worldEntity.setAttribute('visible', true);
                 tryPlayArBackgroundMusic();
             }
@@ -1093,8 +1089,10 @@ AFRAME.registerComponent('instrument-handler', {
 
     onMarkerFound: function () {
         console.log(`Marker found: ${this.markerId} (${this.config.name})`);
+        this.isMarkerFound = true;
+        arMarkerActuallyFound = true;
         currentMarkerId = this.markerId;
-        if (this.config.isLoaded) {
+        if (this.config.isLoaded && arExperienceReady) {
             this.worldEntity.setAttribute('visible', true);
             tryPlayArBackgroundMusic();
         }
@@ -1102,6 +1100,8 @@ AFRAME.registerComponent('instrument-handler', {
 
     onMarkerLost: function () {
         console.log(`Marker lost: ${this.markerId}. State will be preserved.`);
+        this.isMarkerFound = false;
+        arMarkerActuallyFound = false;
         this.worldEntity.setAttribute('visible', false);
         pauseArBackgroundMusic();
         if (currentMarkerId === this.markerId) {
@@ -1747,7 +1747,6 @@ async function startAR() {
     syncMusicIfMarkerAlreadyVisible();
     const modeBtn = document.getElementById('mode-toggle-btn');
     if (modeBtn) modeBtn.classList.add('active');
-    primeArBackgroundMusicUnlock();
     
     // 设置超时检测，防止权限在启动过程中被拒绝
     permissionCheckTimeout = setTimeout(() => {
@@ -1863,6 +1862,7 @@ function backToStart() {
     if (modeBtn) modeBtn.classList.remove('active');
     isARStarted = false;
     arExperienceReady = false;
+    arMarkerActuallyFound = false;
     stopArBackgroundMusicForExit();
 }
 
