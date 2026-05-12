@@ -3,16 +3,12 @@
  <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"/>
-  <title>
-   中国传统音乐与乐器增强现实（AR）视听云平台
-  </title>
+  <title>AR 预览</title>
+  <link rel="preload" href="assets/models/base_basic_shaded.glb" as="fetch" crossorigin>
   
   <!-- 使用本地加载的ar库 -->
   <script src="aframe.min.js"></script>
   <script src="aframe-ar.js"></script>
-  
-  <!-- 使用本地加载marked.js以确保可用性 -->
-  <script src="marked.min.js"></script>
   
   <style>
         /* =============== 所有原始CSS样式都已完整保留 =============== */
@@ -89,6 +85,13 @@
         
         .start-button:hover::before {
             left: 100%;
+        }
+
+        .start-button:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+            transform: none;
+            pointer-events: none;
         }
         
         .start-title {
@@ -481,427 +484,6 @@
             transform: translateY(-2px);
         }
         
-        .dock-container {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 100;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.3s ease;
-        }
-        
-        .dock-container.active {
-            opacity: 1;
-            pointer-events: all;
-        }
-        
-        .dock-bar {
-            background: 
-                linear-gradient(135deg, 
-                    rgba(255, 255, 255, 0.3) 0%, 
-                    rgba(255, 255, 255, 0.18) 25%,
-                    rgba(255, 255, 255, 0.28) 50%,
-                    rgba(255, 255, 255, 0.15) 75%,
-                    rgba(255, 255, 255, 0.35) 100%),
-                linear-gradient(45deg, 
-                    rgba(255, 255, 255, 0.2),
-                    rgba(255, 255, 255, 0.15)),
-                rgba(255, 255, 255, 0.2);
-            border-radius: 56px;
-            padding: 18px 32px;
-            box-shadow: 
-                0 8px 40px rgba(0, 0, 0, 0.25),
-                0 2px 16px rgba(0, 0, 0, 0.1),
-                inset 0 1px 0 rgba(255, 255, 255, 0.45),
-                inset 0 -1px 0 rgba(255, 255, 255, 0.2);
-            border: 1.5px solid rgba(255, 255, 255, 0.35);
-            display: flex;
-            gap: 22px;
-            align-items: center;
-            transform: translateZ(0);
-            will-change: transform;
-        }
-        
-        .dock-button {
-            border: none;
-            border-radius: 50%;
-            width: 68px;
-            height: 68px;
-            color: white;
-            font-size: 24px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: linear-gradient(135deg, 
-                rgba(255, 255, 255, 0.3) 0%, 
-                rgba(255, 255, 255, 0.18) 50%, 
-                rgba(255, 255, 255, 0.35) 100%);
-            box-shadow: 
-                0 4px 20px rgba(0, 0, 0, 0.15),
-                inset 0 1px 0 rgba(255, 255, 255, 0.6),
-                inset 0 -1px 0 rgba(255, 255, 255, 0.2);
-            border: 1.5px solid rgba(255, 255, 255, 0.4);
-            transform: translateZ(0);
-            will-change: transform;
-        }
-        
-        .dock-button:hover {
-            transform: translateY(-4px) scale(1.05) translateZ(0);
-            background: linear-gradient(135deg, 
-                rgba(255, 255, 255, 0.4) 0%, 
-                rgba(255, 255, 255, 0.25) 50%, 
-                rgba(255, 255, 255, 0.45) 100%);
-            box-shadow: 
-                0 10px 35px rgba(0, 0, 0, 0.25),
-                inset 0 1px 0 rgba(255, 255, 255, 0.7),
-                inset 0 -1px 0 rgba(255, 255, 255, 0.3);
-            border-color: rgba(255, 255, 255, 0.6);
-        }
-        
-        .dock-button:active {
-            transform: translateY(-2px) scale(1.02);
-        }
-        
-        #play-btn {
-            background: linear-gradient(135deg, 
-                rgba(255, 193, 7, 0.9) 0%,
-                rgba(255, 193, 7, 0.7) 50%,
-                rgba(255, 193, 7, 0.95) 100%),
-                linear-gradient(45deg, 
-                rgba(255, 255, 255, 0.2),
-                rgba(255, 255, 255, 0.12));
-        }
-        
-        #play-btn:hover {
-            background: linear-gradient(135deg, 
-                rgba(255, 193, 7, 0.98) 0%,
-                rgba(255, 193, 7, 0.85) 50%,
-                rgba(255, 193, 7, 1.0) 100%),
-                linear-gradient(45deg, 
-                rgba(255, 255, 255, 0.3),
-                rgba(255, 255, 255, 0.2));
-            box-shadow: 
-                0 10px 35px rgba(255, 193, 7, 0.4),
-                inset 0 1px 0 rgba(255, 255, 255, 0.7),
-                inset 0 -1px 0 rgba(255, 255, 255, 0.3);
-        }
-        
-        #play-btn.playing {
-            background: linear-gradient(135deg, 
-                rgba(255, 152, 0, 0.95) 0%,
-                rgba(255, 152, 0, 0.75) 50%,
-                rgba(255, 152, 0, 1.0) 100%),
-                linear-gradient(45deg, 
-                rgba(255, 255, 255, 0.2),
-                rgba(255, 255, 255, 0.12));
-        }
-        
-        #play-btn.playing:hover {
-            background: linear-gradient(135deg, 
-                rgba(255, 152, 0, 1.0) 0%,
-                rgba(255, 152, 0, 0.9) 50%,
-                rgba(255, 152, 0, 1.0) 100%),
-                linear-gradient(45deg, 
-                rgba(255, 255, 255, 0.3),
-                rgba(255, 255, 255, 0.2));
-            box-shadow: 
-                0 10px 35px rgba(255, 152, 0, 0.4),
-                inset 0 1px 0 rgba(255, 255, 255, 0.7),
-                inset 0 -1px 0 rgba(255, 255, 255, 0.3);
-        }
-        
-        #info-btn {
-            background: linear-gradient(135deg, 
-                rgba(3, 169, 244, 0.9) 0%,
-                rgba(3, 169, 244, 0.7) 50%,
-                rgba(3, 169, 244, 0.95) 100%),
-                linear-gradient(45deg, 
-                rgba(255, 255, 255, 0.2),
-                rgba(255, 255, 255, 0.12));
-        }
-        
-        #info-btn:hover {
-            background: linear-gradient(135deg, 
-                rgba(3, 169, 244, 0.98) 0%,
-                rgba(3, 169, 244, 0.85) 50%,
-                rgba(3, 169, 244, 1.0) 100%),
-                linear-gradient(45deg, 
-                rgba(255, 255, 255, 0.3),
-                rgba(255, 255, 255, 0.2));
-            box-shadow: 
-                0 10px 35px rgba(3, 169, 244, 0.4),
-                inset 0 1px 0 rgba(255, 255, 255, 0.7),
-                inset 0 -1px 0 rgba(255, 255, 255, 0.3);
-        }
-        
-        #reset-btn {
-            background: linear-gradient(135deg, 
-                rgba(255, 111, 97, 0.9) 0%,
-                rgba(255, 111, 97, 0.7) 50%,
-                rgba(255, 111, 97, 0.95) 100%),
-                linear-gradient(45deg, 
-                rgba(255, 255, 255, 0.2),
-                rgba(255, 255, 255, 0.12));
-        }
-        
-        #reset-btn:hover {
-            background: linear-gradient(135deg, 
-                rgba(255, 111, 97, 0.98) 0%,
-                rgba(255, 111, 97, 0.85) 50%,
-                rgba(255, 111, 97, 1.0) 100%),
-                linear-gradient(45deg, 
-                rgba(255, 255, 255, 0.3),
-                rgba(255, 255, 255, 0.2));
-            box-shadow: 
-                0 10px 35px rgba(255, 111, 97, 0.4),
-                inset 0 1px 0 rgba(255, 255, 255, 0.7),
-                inset 0 -1px 0 rgba(255, 255, 255, 0.3);
-        }
-        
-        .dock-button.disabled {
-            background: linear-gradient(135deg, 
-                rgba(158, 158, 158, 0.8) 0%,
-                rgba(158, 158, 158, 0.6) 50%,
-                rgba(158, 158, 158, 0.85) 100%),
-                linear-gradient(45deg, 
-                rgba(255, 255, 255, 0.15),
-                rgba(255, 255, 255, 0.08));
-            cursor: not-allowed;
-            box-shadow: 
-                0 4px 15px rgba(158, 158, 158, 0.2),
-                inset 0 1px 0 rgba(255, 255, 255, 0.4),
-                inset 0 -1px 0 rgba(255, 255, 255, 0.2);
-        }
-        
-        .dock-button.disabled:hover {
-            background: linear-gradient(135deg, 
-                rgba(158, 158, 158, 0.8) 0%,
-                rgba(158, 158, 158, 0.6) 50%,
-                rgba(158, 158, 158, 0.85) 100%),
-                linear-gradient(45deg, 
-                rgba(255, 255, 255, 0.15),
-                rgba(255, 255, 255, 0.08));
-            transform: translateZ(0);
-            box-shadow: 
-                0 4px 15px rgba(158, 158, 158, 0.2),
-                inset 0 1px 0 rgba(255, 255, 255, 0.4),
-                inset 0 -1px 0 rgba(255, 255, 255, 0.2);
-        }
-        
-        .emoji {
-            font-size: 34px;
-        }
-        
-        .info-panel {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 80vh;
-            background: rgba(255, 255, 255, 0.95);
-            border-top-left-radius: 25px;
-            border-top-right-radius: 25px;
-            box-shadow: 
-                0 -8px 40px rgba(0, 0, 0, 0.3),
-                inset 0 1px 0 rgba(255, 255, 255, 0.8);
-            transform: translateY(100%);
-            transition: transform 0.4s cubic-bezier(0.4, 0.0, 0.2, 1);
-            z-index: 200;
-            overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-        }
-        
-        .info-panel.active {
-            transform: translateY(0);
-        }
-        
-        .info-panel-header {
-            background: rgba(102, 126, 234, 0.9);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            color: white;
-            padding: 15px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            position: relative;
-            box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
-        }
-        
-        .info-panel-header::before {
-            content: '';
-            position: absolute;
-            top: 8px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 40px;
-            height: 4px;
-            background: rgba(255, 255, 255, 0.5);
-            border-radius: 2px;
-        }
-        
-        .info-title {
-            font-size: 16px;
-            font-weight: 600;
-            margin: 0;
-        }
-        
-        .close-btn {
-            background: rgba(255, 255, 255, 0.15);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 20px;
-            width: 36px;
-            height: 36px;
-            color: white;
-            font-size: 18px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.3s ease;
-        }
-        
-        .close-btn:hover {
-            background: rgba(255, 255, 255, 0.25);
-            border-color: rgba(255, 255, 255, 0.5);
-            transform: scale(1.1);
-        }
-        
-        .info-content {
-            padding: 20px;
-            height: calc(100% - 70px);
-            overflow-y: auto;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            -webkit-overflow-scrolling: touch;
-            transform: translateZ(0);
-            will-change: scroll-position;
-            scroll-behavior: smooth;
-        }
-        
-        .markdown-content h1 {
-            color: #333;
-            font-size: 24px;
-            margin-bottom: 16px;
-            border-bottom: 2px solid #667eea;
-            padding-bottom: 8px;
-        }
-        
-        .markdown-content h2 {
-            color: #444;
-            font-size: 18px;
-            margin: 20px 0 12px 0;
-        }
-        
-        .markdown-content h3 {
-            color: #555;
-            font-size: 16px;
-            margin: 16px 0 8px 0;
-        }
-        
-        .markdown-content p {
-            line-height: 1.6;
-            margin-bottom: 12px;
-            color: #333;
-        }
-        
-        .markdown-content ul, .markdown-content ol {
-            margin: 12px 0;
-            padding-left: 20px;
-        }
-        
-        .markdown-content li {
-            margin: 6px 0;
-            line-height: 1.5;
-        }
-        
-        .markdown-content strong {
-            color: #667eea;
-            font-weight: 600;
-        }
-        
-        .markdown-content img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 8px;
-            margin: 12px 0;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        
-        .markdown-content hr {
-            border: none;
-            border-top: 1px solid #eee;
-            margin: 20px 0;
-        }
-        
-        .markdown-content blockquote {
-            border-left: 4px solid #667eea;
-            margin: 16px 0;
-            padding: 8px 16px;
-            background: #f8f9fa;
-            border-radius: 0 8px 8px 0;
-        }
-        
-        .info-display {
-            position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            max-width: calc(100% - 40px);
-            min-width: 280px;
-            background: 
-                linear-gradient(135deg, 
-                    rgba(0, 0, 0, 0.7) 0%, 
-                    rgba(0, 0, 0, 0.5) 25%,
-                    rgba(0, 0, 0, 0.65) 50%,
-                    rgba(0, 0, 0, 0.45) 75%,
-                    rgba(0, 0, 0, 0.75) 100%),
-                linear-gradient(45deg, 
-                    rgba(255, 255, 255, 0.12),
-                    rgba(255, 255, 255, 0.06)),
-                rgba(0, 0, 0, 0.6);
-            color: white;
-            padding: 12px 20px;
-            border-radius: 25px;
-            font-size: 14px;
-            font-weight: 500;
-            text-align: center;
-            z-index: 150;
-            border: 1px solid rgba(255, 255, 255, 0.25);
-            box-shadow: 
-                0 8px 32px rgba(0, 0, 0, 0.3),
-                inset 0 1px 0 rgba(255, 255, 255, 0.15);
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.3s ease;
-            line-height: 1.4;
-            transform: translateX(-50%) translateZ(0);
-            will-change: transform, opacity;
-        }
-        
-        .info-display.active {
-            opacity: 1;
-            pointer-events: all;
-        }
-        
-        .info-display .instrument-name {
-            font-weight: 600;
-            font-size: 16px;
-            margin-bottom: 4px;
-            color: #FFE082;
-        }
-        
-        .info-display .instrument-desc {
-            font-size: 14px;
-            opacity: 0.9;
-        }
-        
         /* =============== 新增：加载覆盖层样式 =============== */
         .loading-overlay {
             position: fixed;
@@ -1061,21 +643,56 @@
             background: rgba(244, 67, 54, 0.9);
             border-color: rgba(244, 67, 54, 0.8);
         }
+        /* =============== AR 形态切换按钮 =============== */
+        .mode-toggle-btn {
+            position: fixed;
+            bottom: 28px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(8, 36, 70, 0.45);
+            border: 1.5px solid rgba(110, 231, 255, 0.55);
+            color: #e6faff;
+            padding: 12px 22px;
+            border-radius: 999px;
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 0.4px;
+            cursor: pointer;
+            backdrop-filter: blur(20px) saturate(1.8);
+            -webkit-backdrop-filter: blur(20px) saturate(1.8);
+            box-shadow:
+                0 8px 28px rgba(0, 30, 80, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                0 0 24px rgba(110, 231, 255, 0.25);
+            z-index: 100;
+            transition: opacity 0.3s, transform 0.2s, background 0.2s;
+            opacity: 0;
+            pointer-events: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .mode-toggle-btn.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+        .mode-toggle-btn:hover {
+            background: rgba(20, 58, 100, 0.55);
+            transform: translateX(-50%) translateY(-2px);
+        }
+        .mode-toggle-btn .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #6ee7ff;
+            box-shadow: 0 0 8px #6ee7ff;
+        }
         /* =============== 结束：新增样式 =============== */
         
         @media (max-width: 480px) {
             .start-title { font-size: 2em; }
             .start-subtitle { font-size: 1em; }
             .permission-guide { padding: 15px; margin: 15px 0; max-width: 98%; }
-            .info-display { top: 15px; max-width: calc(100% - 30px); min-width: 250px; padding: 10px 16px; font-size: 13px; }
-            .info-display .instrument-name { font-size: 15px; }
-            .info-display .instrument-desc { font-size: 13px; }
-            .dock-bar { padding: 16px 26px; gap: 18px; border-radius: 48px; }
-            .dock-button { width: 60px; height: 60px; }
-            .emoji { font-size: 30px; }
-            .info-content { padding: 15px; }
-            .markdown-content h1 { font-size: 20px; }
-            .markdown-content h2 { font-size: 16px; }
         }
   </style>
   <script>
@@ -1083,44 +700,170 @@
 // =============== 全局变量和状态管理 ===============
 let isARStarted = false;
 let startOverlay;
-let currentAudioManager = null;
-const audioCache = {};
-const infoCache = {};
-const markdownCache = {};
-let loadingInterval = null; // 新增：用于管理加载动画的计时器
-let isAudioReloading = false; // 新增：防止重复触发音频重载
-let permissionCheckTimeout = null; // 新增：权限检测超时
+/** 当前对准的 marker id */
+let currentMarkerId = null;
+let loadingInterval = null;
+let permissionCheckTimeout = null;
+/** 启动前：GLB 文件已预取到浏览器缓存 */
+let arModelPrefetchReady = false;
+/** 模型已解析且可交互（避免未就绪时白屏、误播音乐、误触手势） */
+let arExperienceReady = false;
 
-// ====================================================================
-// 乐器配置中心 (全局)
-// ====================================================================
-// 补充说明：为简化测试，playSounds中预留了几个由纯代码(Web Audio API)生成合成音高时的占位标识(例如不同的频率/音名)。
-// 后续如有真实音频，可以将这里的数组元素替换为真实的相对路径，例如 'assets/audio/notes/pipa_c4.mp3'。
+// 单一 AR 模型（base_basic_shaded.glb）
 const instrumentConfig = {
-    'marker1':  { name: '琵琶',       model: 'assets/models/pipa.gltf',             audio: 'assets/audio/audio-pipa.mp3',             markdown: 'assets/markdown/pipa.md',             info: 'assets/info/pipa.txt',             isLoaded: false, playSounds: ['C4', 'D4', 'E4', 'F4', 'G4'] },
-    'marker2':  { name: '葫芦丝',     model: 'assets/models/hulusi.gltf',           audio: 'assets/audio/audio-hulusi.mp3',           markdown: 'assets/markdown/hulusi.md',           info: 'assets/info/hulusi.txt',           isLoaded: false, playSounds: ['C4', 'E4', 'G4'] },
-    'marker3':  { name: '东北大鼓',   model: 'assets/models/dongbei_dagu.gltf',     audio: 'assets/audio/audio-dongbei_dagu.mp3',     markdown: 'assets/markdown/dongbei_dagu.md',     info: 'assets/info/dongbei_dagu.txt',     isLoaded: false, playSounds: ['C3', 'G3'] },
-    'marker4':  { name: '冬不拉',     model: 'assets/models/dongbula.gltf',         audio: 'assets/audio/audio-dongbula.mp3',         markdown: 'assets/markdown/dongbula.md',         info: 'assets/info/dongbula.txt',         isLoaded: false, playSounds: ['A3', 'C4', 'E4', 'A4'] },
-    'marker5':  { name: '高胡',       model: 'assets/models/gaohu.gltf',            audio: 'assets/audio/audio-gaohu.mp3',            markdown: 'assets/markdown/gaohu.md',            info: 'assets/info/gaohu.txt',            isLoaded: false, playSounds: ['G4', 'D5', 'A5'] },
-    'marker6':  { name: '花鼓',       model: 'assets/models/huagu.gltf',            audio: 'assets/audio/audio-huagu.mp3',            markdown: 'assets/markdown/huagu.md',            info: 'assets/info/huagu.txt',            isLoaded: false, playSounds: ['D3', 'A3'] },
-    'marker7':  { name: '火不思',     model: 'assets/models/huobusi.gltf',          audio: 'assets/audio/audio-huobusi.mp3',          markdown: 'assets/markdown/huobusi.md',          info: 'assets/info/huobusi.txt',          isLoaded: false, playSounds: ['C4', 'D4', 'E4', 'G4'] },
-    'marker8':  { name: '马头琴',     model: 'assets/models/matouqin.gltf',         audio: 'assets/audio/audio-matouqin.mp3',         markdown: 'assets/markdown/matouqin.md',         info: 'assets/info/matouqin.txt',         isLoaded: false, playSounds: ['C3', 'G3', 'C4'] },
-    'marker9':  { name: '牛角琴',     model: 'assets/models/niujiaoqin.gltf',       audio: 'assets/audio/audio-niujiaoqin.mp3',       markdown: 'assets/markdown/niujiaoqin.md',       info: 'assets/info/niujiaoqin.txt',       isLoaded: false, playSounds: ['E3', 'A3', 'E4'] },
-    'marker10': { name: '唢呐',       model: 'assets/models/suona.gltf',            audio: 'assets/audio/audio-suona.mp3',            markdown: 'assets/markdown/suona.md',            info: 'assets/info/suona.txt',            isLoaded: false, playSounds: ['C5', 'D5', 'E5', 'G5'] },
-    'marker11': { name: '月琴',       model: 'assets/models/yueqin.gltf',           audio: 'assets/audio/audio-yueqin.mp3',           markdown: 'assets/markdown/yueqin.md',           info: 'assets/info/yueqin.txt',           isLoaded: false, playSounds: ['G3', 'C4', 'E4', 'G4'] },
-    'marker12': { name: '潮州唢呐',   model: 'assets/models/chaozhou_suona.gltf',   audio: 'assets/audio/audio-chaozhou_suona.mp3',   markdown: 'assets/markdown/chaozhou_suona.md',   info: 'assets/info/chaozhou_suona.txt',   isLoaded: false, playSounds: ['F5', 'G5', 'A5', 'C6'] },
-    'marker13': { name: '潮州筝',     model: 'assets/models/chaozhou_zheng.gltf',   audio: 'assets/audio/audio-chaozhou_zheng.mp3',   markdown: 'assets/markdown/chaozhou_zheng.md',   info: 'assets/info/chaozhou_zheng.txt',   isLoaded: false, playSounds: ['C4', 'D4', 'E4', 'G4', 'A4', 'C5'] },
-    'marker14': { name: '洞箫',       model: 'assets/models/dongxiao.gltf',         audio: 'assets/audio/audio-dongxiao.mp3',         markdown: 'assets/markdown/dongxiao.md',         info: 'assets/info/dongxiao.txt',         isLoaded: false, playSounds: ['D4', 'E4', 'G4', 'A4'] },
-    'marker15': { name: '喉管',       model: 'assets/models/houguan.gltf',          audio: 'assets/audio/audio-houguan.mp3',          markdown: 'assets/markdown/houguan.md',          info: 'assets/info/houguan.txt',          isLoaded: false, playSounds: ['A3', 'C4', 'D4'] },
-    'marker16': { name: '木鱼',       model: 'assets/models/muyu.gltf',             audio: 'assets/audio/audio-muyu.mp3',             markdown: 'assets/markdown/muyu.md',             info: 'assets/info/muyu.txt',             isLoaded: false, playSounds: ['E4'] },
-    'marker17': { name: '牛角号',     model: 'assets/models/niujiaohao.gltf',       audio: 'assets/audio/audio-niujiaohao.mp3',       markdown: 'assets/markdown/niujiaohao.md',       info: 'assets/info/niujiaohao.txt',       isLoaded: false, playSounds: ['G3', 'C4'] },
-    'marker18': { name: '秦琴',       model: 'assets/models/qinqin.gltf',           audio: 'assets/audio/audio-qinqin.mp3',           markdown: 'assets/markdown/qinqin.md',           info: 'assets/info/qinqin.txt',           isLoaded: false, playSounds: ['C4', 'E4', 'G4', 'C5'] },
-    'marker19': { name: '椰胡',       model: 'assets/models/yehu.gltf',             audio: 'assets/audio/audio-yehu.mp3',             markdown: 'assets/markdown/yehu.md',             info: 'assets/info/yehu.txt',             isLoaded: false, playSounds: ['D4', 'A4'] },
-    'marker20': { name: '渔鼓',       model: 'assets/models/yugu.gltf',             audio: 'assets/audio/audio-yugu.mp3',             markdown: 'assets/markdown/yugu.md',             info: 'assets/info/yugu.txt',             isLoaded: false, playSounds: ['C3', 'F3'] },
-    'marker21': { name: '竹板',       model: 'assets/models/zhuban.gltf',           audio: 'assets/audio/audio-zhuban.mp3',           markdown: 'assets/markdown/zhuban.md',           info: 'assets/info/zhuban.txt',           isLoaded: false, playSounds: ['A4', 'C5'] },
-    'marker22': { name: '花鼓大筒',   model: 'assets/models/huagudatong.gltf',      audio: 'assets/audio/audio-huagudatong.mp3',      markdown: 'assets/markdown/huagudatong.md',      info: 'assets/info/huagudatong.txt',      isLoaded: false, playSounds: ['G3', 'D4'] },
-    'marker23': { name: '口鼻笛',       model: 'assets/models/koubidi.gltf',             audio: 'assets/audio/audio-koubidi.mp3',             markdown: 'assets/markdown/koubidi.md',             info: 'assets/info/koubidi.txt',             isLoaded: false, playSounds: ['C5', 'D5', 'E5'] },
+    'marker1': { name: 'AR 模型', model: 'assets/models/base_basic_shaded.glb', isLoaded: false }
 };
+
+const AR_BG_MUSIC_ID = 'ar-bg-music';
+
+function getArBackgroundMusic() {
+    return document.getElementById(AR_BG_MUSIC_ID);
+}
+
+/** 在用户点击「启动 AR」后预解锁，减少标记出现后 play() 被拦截的概率 */
+function primeArBackgroundMusicUnlock() {
+    const a = getArBackgroundMusic();
+    if (!a) return;
+    if (typeof a.volume === 'number') a.volume = 0.72;
+    const p = a.play();
+    if (p && typeof p.then === 'function') {
+        p.then(() => {
+            a.pause();
+            a.currentTime = 0;
+        }).catch(() => {});
+    }
+}
+
+/** 模型已展示在画面上时调用：开始或继续播放 */
+function tryPlayArBackgroundMusic() {
+    if (!arExperienceReady) return;
+    const a = getArBackgroundMusic();
+    if (!a) return;
+    const p = a.play();
+    if (p && typeof p.catch === 'function') {
+        p.catch((err) => console.warn('AR 背景音乐无法播放（可能被浏览器策略拦截）：', err));
+    }
+}
+
+function pauseArBackgroundMusic() {
+    const a = getArBackgroundMusic();
+    if (!a) return;
+    a.pause();
+}
+
+function stopArBackgroundMusicForExit() {
+    const a = getArBackgroundMusic();
+    if (!a) return;
+    a.pause();
+    a.currentTime = 0;
+}
+
+function refreshArStartButtonState() {
+    const btn = document.getElementById('start-ar-button');
+    if (!btn) return;
+    if (arModelPrefetchReady) {
+        btn.disabled = false;
+        btn.textContent = '点我✨启动AR体验';
+    } else {
+        btn.disabled = true;
+        btn.textContent = '资源准备中…';
+    }
+}
+
+/** 页面加载时预取 GLB，减少进入 AR 后白屏等待；未完成前禁止点「启动」 */
+function prefetchArModelForStart() {
+    const cfg = instrumentConfig.marker1;
+    if (!cfg || !cfg.model) {
+        arModelPrefetchReady = true;
+        refreshArStartButtonState();
+        return;
+    }
+    const url = new URL(cfg.model, window.location.href).href;
+    fetch(url, { mode: 'cors', cache: 'default' })
+        .then((r) => {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.arrayBuffer();
+        })
+        .then(() => {
+            arModelPrefetchReady = true;
+            refreshArStartButtonState();
+        })
+        .catch((err) => {
+            console.warn('模型预取失败', err);
+            arModelPrefetchReady = false;
+            refreshArStartButtonState();
+            showNotification('模型资源预下载失败，请检查网络后刷新页面', true);
+        });
+}
+
+function revertArStartIfModelNotReady(reason) {
+    console.warn('AR 启动回退（模型未就绪）:', reason);
+    if (permissionCheckTimeout) {
+        clearTimeout(permissionCheckTimeout);
+        permissionCheckTimeout = null;
+    }
+    isARStarted = false;
+    arExperienceReady = false;
+    const scene = document.getElementById('ar-scene');
+    if (scene) scene.classList.remove('active');
+    stopArBackgroundMusicForExit();
+    const modeBtn = document.getElementById('mode-toggle-btn');
+    if (modeBtn) modeBtn.classList.remove('active');
+    if (startOverlay) startOverlay.classList.remove('hidden');
+    showNotification('模型未就绪，无法进入 AR。请稍后重试或刷新页面', true);
+}
+
+function syncMusicIfMarkerAlreadyVisible() {
+    const mk = document.getElementById('marker1');
+    if (!mk || !mk.object3D.visible) return;
+    const world = mk.querySelector('.aquarium-world');
+    if (world && world.object3D.visible) {
+        tryPlayArBackgroundMusic();
+    }
+}
+
+/** 场景激活后等待 glTF 解析完成（避免白屏 + 误播音乐） */
+async function waitForArModelParsedInScene() {
+    const sceneEl = document.getElementById('ar-scene');
+    const modelEl = document.getElementById('model1');
+    if (!sceneEl || !modelEl) return;
+
+    if (!sceneEl.hasLoaded) {
+        await new Promise((resolve) => {
+            sceneEl.addEventListener('loaded', resolve, { once: true });
+        });
+    }
+
+    if (modelEl.getObject3D('mesh')) return;
+
+    const label = (instrumentConfig.marker1 && instrumentConfig.marker1.name) || '3D 模型';
+
+    await new Promise((resolve, reject) => {
+        showLoadingOverlay(label);
+        const tid = setTimeout(() => {
+            cleanup();
+            hideLoadingOverlay(false);
+            reject(new Error('model-load-timeout'));
+        }, 60000);
+        const onLoaded = () => {
+            cleanup();
+            hideLoadingOverlay(true);
+            resolve();
+        };
+        const onError = (e) => {
+            cleanup();
+            hideLoadingOverlay(false);
+            reject(e && e.detail ? e.detail : new Error('model-error'));
+        };
+        function cleanup() {
+            clearTimeout(tid);
+            modelEl.removeEventListener('model-loaded', onLoaded);
+            modelEl.removeEventListener('model-error', onError);
+        }
+        modelEl.addEventListener('model-loaded', onLoaded);
+        modelEl.addEventListener('model-error', onError);
+    });
+}
 
 // 工具函数
 function getDeviceInfo() {
@@ -1184,7 +927,7 @@ function showPermissionErrorOverlay() {
         <div class="permission-error-panel">
             <div class="permission-error-title">📷 摄像头权限被拒绝</div>
             <div class="permission-error-text">
-                AR功能需要使用摄像头来识别乐器码。<br>
+                AR功能需要使用摄像头来识别自定义 AR 图案标记。<br>
                 请按照以下步骤重新授权：<br>
                 1.手动点击右上角菜单点击“刷新”。<br>
                 2.如果看到权限请求弹窗出现，请点击“允许”或“Allow”按钮。
@@ -1253,190 +996,6 @@ function handleARError(error) {
     }
 }
 
-// ====================================================================
-// 新增：带重试机制的通用 Fetch 函数
-// ====================================================================
-async function fetchWithRetry(url, maxRetries = 3, retryDelay = 1000, resourceName = '资源') {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response; // 成功时返回 response 对象
-        } catch (error) {
-            console.warn(`${resourceName} fetch attempt ${attempt} failed:`, error.message);
-            if (attempt === maxRetries) {
-                console.error(`All ${maxRetries} fetch attempts for ${resourceName} failed.`);
-                throw error; // 重试次数用尽，抛出最终错误
-            }
-            // 每次重试前都短暂提示
-            showNotification(`${resourceName}加载失败，第 ${attempt} 次重试中...`, true);
-            // 等待一段时间再重试，可以采用递增延迟
-            await new Promise(resolve => setTimeout(resolve, retryDelay * attempt));
-        }
-    }
-}
-
-
-// ====================================================================
-// 简易电子音合成器 (用于无音频素材时的弹奏测试)
-// ====================================================================
-let audioCtx = null;
-let synthAudioUnlocked = false;
-const noteFreqs = {
-    'C3': 130.81, 'D3': 146.83, 'E3': 164.81, 'F3': 174.61, 'G3': 196.00, 'A3': 220.00, 'B3': 246.94,
-    'C4': 261.63, 'D4': 293.66, 'E4': 329.63, 'F4': 349.23, 'G4': 392.00, 'A4': 440.00, 'B4': 493.88,
-    'C5': 523.25, 'D5': 587.33, 'E5': 659.25, 'F5': 698.46, 'G5': 783.99, 'A5': 880.00, 'B5': 987.77,
-    'C6': 1046.50
-};
-
-function ensureAudioContext() {
-    if (!audioCtx) {
-        const Ctx = window.AudioContext || window.webkitAudioContext;
-        if (!Ctx) return null;
-        audioCtx = new Ctx();
-    }
-    return audioCtx;
-}
-
-async function unlockSynthAudio() {
-    const ctx = ensureAudioContext();
-    if (!ctx) return false;
-
-    try {
-        if (ctx.state !== 'running') {
-            await ctx.resume();
-        }
-
-        // 主动播放一段几乎无感知的超短静音包络，兼容部分移动端解锁策略
-        const oscillator = ctx.createOscillator();
-        const gainNode = ctx.createGain();
-        gainNode.gain.setValueAtTime(0.0001, ctx.currentTime);
-        oscillator.connect(gainNode);
-        gainNode.connect(ctx.destination);
-        oscillator.start(ctx.currentTime);
-        oscillator.stop(ctx.currentTime + 0.01);
-
-        synthAudioUnlocked = true;
-        return true;
-    } catch (err) {
-        console.warn('unlockSynthAudio failed:', err);
-        return false;
-    }
-}
-
-async function playSynthNote(noteName) {
-    const unlocked = await unlockSynthAudio();
-    if (!unlocked || !audioCtx) {
-        showNotification('⚠️ 音频未解锁，请再次点击模型或检查静音模式', true);
-        return;
-    }
-
-    const freq = noteFreqs[noteName] || 440;
-    const now = audioCtx.currentTime;
-    const oscillator = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-
-    oscillator.type = 'sine'; // 正弦波比较柔和
-    oscillator.frequency.setValueAtTime(freq, now);
-
-    // 包络控制 (Attack, Decay)
-    gainNode.gain.setValueAtTime(0.0001, now);
-    gainNode.gain.linearRampToValueAtTime(0.35, now + 0.02); // Attack
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.45); // Decay
-
-    oscillator.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-
-    oscillator.start(now);
-    oscillator.stop(now + 0.5);
-}
-
-// 乐器模拟弹奏组件 (instrument-player)
-AFRAME.registerComponent('instrument-player', {
-    init: function () {
-        this.markerId = this.el.parentElement.id;
-        this.config = instrumentConfig[this.markerId];
-        
-        // 绑定事件
-        this.onClick = this.onClick.bind(this);
-        this.onMouseDown = this.onMouseDown.bind(this);
-        this.onMouseUp = this.onMouseUp.bind(this);
-        
-        this.el.addEventListener('mousedown', this.onMouseDown);
-        this.el.addEventListener('mouseup', this.onMouseUp);
-        
-        this.mouseDownPos = { x: 0, y: 0 };
-    },
-    
-    onMouseDown: function (evt) {
-        if (!this.isThisMarkerActive() || !this.el.getAttribute('visible')) return;
-        if (evt.detail && evt.detail.mouseEvent) {
-            this.mouseDownPos = {
-                x: evt.detail.mouseEvent.clientX,
-                y: evt.detail.mouseEvent.clientY
-            };
-        }
-    },
-    
-    onMouseUp: function (evt) {
-        if (!this.isThisMarkerActive() || !this.el.getAttribute('visible')) return;
-        
-        let mouseUpPos = { x: 0, y: 0 };
-        if (evt.detail && evt.detail.mouseEvent) {
-            mouseUpPos = {
-                x: evt.detail.mouseEvent.clientX,
-                y: evt.detail.mouseEvent.clientY
-            };
-        }
-        
-        // 如果按下的位置和抬起的位置差别不大，视为“点击”而不是“拖拽”
-        const dx = mouseUpPos.x - this.mouseDownPos.x;
-        const dy = mouseUpPos.y - this.mouseDownPos.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        if (distance < 10) { // 阈值10像素
-            this.onClick(evt);
-        }
-    },
-    
-    onClick: async function (evt) {
-        // 防止事件冒泡或多重触发
-        if (!this.config || !this.config.playSounds || this.config.playSounds.length === 0) return;
-        
-        // 随机选择一个音符播放
-        const sounds = this.config.playSounds;
-        const randomIndex = Math.floor(Math.random() * sounds.length);
-        const soundItem = sounds[randomIndex];
-        
-        // 由于我们在配置里存的是 'C4', 'E4' 等音名，我们调用合成器播放
-        // 如果未来换成了 mp3 路径，可在这里写 new Audio(soundItem).play()
-        await playSynthNote(soundItem);
-        
-        // 可选：在界面上提示正在发声
-        console.log(`[仿真弹奏] 乐器: ${this.config.name}, 音符: ${soundItem}`);
-        
-        // 为了视觉反馈，给模型添加一个短暂的放大缩小效果
-        const currentScale = this.el.object3D.scale.clone();
-        this.el.object3D.scale.multiplyScalar(1.05);
-        setTimeout(() => {
-            if (this.el && this.el.object3D) {
-                this.el.object3D.scale.copy(currentScale);
-            }
-        }, 100);
-    },
-    
-    isThisMarkerActive: function() {
-        return currentAudioManager && currentAudioManager.markerId === this.markerId;
-    },
-    
-    remove: function () {
-        this.el.removeEventListener('mousedown', this.onMouseDown);
-        this.el.removeEventListener('mouseup', this.onMouseUp);
-    }
-});
-
 // =============== A-Frame 组件注册 ===============
 
 // 旋转组件 (o15)
@@ -1459,7 +1018,7 @@ AFRAME.registerComponent('o15', {
     }
 });
 
-// 按需加载与事件处理组件 (instrument-handler)
+// 识别 marker 后显示鱼缸世界；鱼模型已在 HTML 中挂载 gltf-model
 AFRAME.registerComponent('instrument-handler', {
     init: function () {
         this.marker = this.el;
@@ -1471,132 +1030,504 @@ AFRAME.registerComponent('instrument-handler', {
             return;
         }
 
-        this.modelEntity = this.marker.querySelector('[touch-handler]');
-        this.modelEntity.setAttribute('visible', false);
+        this.worldEntity = this.marker.querySelector('.aquarium-world');
+        this.modelEntity = this.marker.querySelector('[gltf-model]');
+        this.worldEntity.setAttribute('visible', false);
+
+        // 模型由 HTML 的 gltf-model 直接加载；此处监听完成/失败与重试
+        let modelRetryCount = 0;
+        const maxModelRetries = 3;
+        const modelLoadHandler = () => {
+            console.log(`${this.config.name} model loaded.`);
+            this.config.isLoaded = true;
+            hideLoadingOverlay(true);
+            if (this.marker.object3D.visible) {
+                this.worldEntity.setAttribute('visible', true);
+                tryPlayArBackgroundMusic();
+            }
+            this.modelEntity.removeEventListener('model-loaded', modelLoadHandler);
+            this.modelEntity.removeEventListener('model-error', modelErrorHandler);
+        };
+        const modelErrorHandler = (e) => {
+            modelRetryCount++;
+            console.error(`Error loading model for ${this.markerId} (Attempt ${modelRetryCount}):`, e.detail);
+            if (modelRetryCount < maxModelRetries) {
+                showNotification(`${this.config.name} 模型加载失败，第 ${modelRetryCount} 次重试中...`, true);
+                setTimeout(() => {
+                    this.modelEntity.setAttribute('gltf-model', `url(${this.config.model})`);
+                }, 1500 * modelRetryCount);
+            } else {
+                console.error(`All ${maxModelRetries} attempts failed for model ${this.config.name}.`);
+                hideLoadingOverlay(false);
+                showNotification(`${this.config.name} 模型加载失败，请检查网络后重试`, true);
+                this.modelEntity.removeEventListener('model-loaded', modelLoadHandler);
+                this.modelEntity.removeEventListener('model-error', modelErrorHandler);
+            }
+        };
+        this.modelEntity.addEventListener('model-loaded', modelLoadHandler);
+        this.modelEntity.addEventListener('model-error', modelErrorHandler);
+
+        // 子实体 gltf-model 若先于本组件完成加载，model-loaded 可能已触发过，需补判
+        if (this.modelEntity.getObject3D('mesh')) {
+            this.config.isLoaded = true;
+            this.modelEntity.removeEventListener('model-loaded', modelLoadHandler);
+            this.modelEntity.removeEventListener('model-error', modelErrorHandler);
+        }
+
         this.marker.addEventListener('markerFound', this.onMarkerFound.bind(this));
         this.marker.addEventListener('markerLost', this.onMarkerLost.bind(this));
     },
 
     onMarkerFound: function () {
         console.log(`Marker found: ${this.markerId} (${this.config.name})`);
-        this.setActiveInstrument();
+        currentMarkerId = this.markerId;
         if (this.config.isLoaded) {
-            this.modelEntity.setAttribute('visible', true);
-        } else {
-            this.loadResources();
+            this.worldEntity.setAttribute('visible', true);
+            tryPlayArBackgroundMusic();
         }
     },
 
     onMarkerLost: function () {
         console.log(`Marker lost: ${this.markerId}. State will be preserved.`);
-        this.modelEntity.setAttribute('visible', false);
-    },
-    
-    // ====================================================================
-    // 修改：loadResources 函数 - 引入了模型和文本文件的加载重试机制
-    // ====================================================================
-    loadResources: function() {
-        showLoadingOverlay(this.config.name);
-        
-        // --- 模型加载与重试逻辑 ---
-        let modelRetryCount = 0;
-        const maxModelRetries = 3; // 模型最多重试3次
-
-        const modelLoadHandler = () => {
-            console.log(`${this.config.name} model loaded.`);
-            this.config.isLoaded = true;
-            hideLoadingOverlay(true);
-            
-            if (this.marker.object3D.visible) {
-                 this.modelEntity.setAttribute('visible', true);
-            }
-            // 成功后移除监听器，避免内存泄漏
-            this.modelEntity.removeEventListener('model-loaded', modelLoadHandler);
-            this.modelEntity.removeEventListener('model-error', modelErrorHandler);
-        };
-
-        const modelErrorHandler = (e) => {
-            modelRetryCount++;
-            console.error(`Error loading model for ${this.markerId} (Attempt ${modelRetryCount}):`, e.detail);
-
-            if (modelRetryCount < maxModelRetries) {
-                showNotification(`${this.config.name} 模型加载失败，第 ${modelRetryCount} 次重试中...`, true);
-                setTimeout(() => {
-                    // 通过重新设置gltf-model属性来触发A-Frame的重新加载
-                    this.modelEntity.setAttribute('gltf-model', `url(${this.config.model})`);
-                }, 1500 * modelRetryCount); // 递增延迟重试
-            } else {
-                console.error(`All ${maxModelRetries} attempts failed for model ${this.config.name}.`);
-                hideLoadingOverlay(false);
-                showNotification(`${this.config.name} 模型加载失败，请检查网络后重试`, true);
-                // 失败后同样移除监听器
-                this.modelEntity.removeEventListener('model-loaded', modelLoadHandler);
-                this.modelEntity.removeEventListener('model-error', modelErrorHandler);
-            }
-        };
-        
-        // 绑定可移除的事件监听器
-        this.modelEntity.addEventListener('model-loaded', modelLoadHandler);
-        this.modelEntity.addEventListener('model-error', modelErrorHandler);
-        // 首次触发加载
-        this.modelEntity.setAttribute('gltf-model', `url(${this.config.model})`);
-
-        // --- 音频预加载 ---
-        if (!audioCache[this.markerId]) {
-            const audio = new Audio(this.config.audio);
-            audio.preload = 'auto';
-            audio.load(); // 开始预加载
-            audioCache[this.markerId] = audio;
+        this.worldEntity.setAttribute('visible', false);
+        pauseArBackgroundMusic();
+        if (currentMarkerId === this.markerId) {
+            currentMarkerId = null;
         }
-
-        // --- Info和Markdown文本加载与重试 ---
-        if (!infoCache[this.markerId]) {
-            fetchWithRetry(this.config.info, 3, 1000, `${this.config.name}描述`)
-                .then(response => response.text())
-                .then(text => {
-                    infoCache[this.markerId] = text || '';
-                    if (currentAudioManager && currentAudioManager.markerId === this.markerId) {
-                        updateInfoDisplay();
-                    }
-                })
-                .catch(err => console.error(`Failed to load info for ${this.markerId} after retries:`, err));
-        }
-        
-        if (!markdownCache[this.markerId]) {
-             fetchWithRetry(this.config.markdown, 3, 1000, `${this.config.name}介绍`)
-                .then(response => response.text())
-                .then(text => markdownCache[this.markerId] = text)
-                .catch(err => {
-                    console.error(`Failed to load markdown for ${this.markerId} after retries:`, err);
-                    markdownCache[this.markerId] = `## 加载错误\n\n加载介绍内容时发生网络错误。请检查网络后刷新页面。`;
-                });
-        }
-    },
-
-    setActiveInstrument: function() {
-        if (currentAudioManager && currentAudioManager.markerId !== this.markerId && currentAudioManager.audio && !currentAudioManager.audio.paused) {
-            currentAudioManager.audio.pause();
-            currentAudioManager.isPlaying = false;
-        }
-        
-        currentAudioManager = {
-            markerId: this.markerId,
-            config: this.config,
-            get audio() { return audioCache[this.markerId]; },
-            isPlaying: (currentAudioManager && currentAudioManager.markerId === this.markerId) ? currentAudioManager.isPlaying : false
-        };
-        
-        updateInfoDisplay();
-        updateDockButtons();
     }
 });
 
-// 模型触摸交互组件 (touch-handler)
+// 鱼在 marker 上方沿平滑 3D 曲线游动（无扭转），保持自然巡游感
+AFRAME.registerComponent('fish-swim', {
+    schema: {
+        radiusX: { type: 'number', default: 0.48 },
+        radiusZ: { type: 'number', default: 0.34 },
+        centerY: { type: 'number', default: 0.58 },
+        speed: { type: 'number', default: 0.00065 },
+        bob: { type: 'number', default: 0.07 },
+        yawOffset: { type: 'number', default: 0 },
+        phase: { type: 'number', default: -1 },
+        turnLerp: { type: 'number', default: 0.08 }
+    },
+    init: function () {
+        this.phase = this.data.phase >= 0 ? this.data.phase : Math.random() * Math.PI * 2;
+        this.currentYaw = this.data.yawOffset;
+    },
+    getCurvePoint: function (t) {
+        const x = Math.cos(t) * this.data.radiusX;
+        const z = Math.sin(t) * this.data.radiusZ;
+        // 仅做缓慢上下浮动，不引入大幅扭动
+        const y = this.data.centerY + Math.sin(t * 0.55 + 0.7) * this.data.bob;
+        return { x, y, z };
+    },
+    tick: function (time) {
+        const t = time * this.data.speed + this.phase;
+        const p = this.getCurvePoint(t);
+        const next = this.getCurvePoint(t + 0.02);
+        const targetYaw = THREE.Math.radToDeg(Math.atan2(next.x - p.x, next.z - p.z)) + this.data.yawOffset;
+
+        // 平滑转向，避免“突然转头”
+        const yawDiff = (((targetYaw - this.currentYaw) + 540) % 360) - 180;
+        this.currentYaw += yawDiff * this.data.turnLerp;
+
+        this.el.setAttribute('position', `${p.x} ${p.y} ${p.z}`);
+        this.el.setAttribute('rotation', `0 ${this.currentYaw} 0`);
+    }
+});
+
+// 光环 / 波纹脉动效果（随时间改变缩放和不透明度）
+AFRAME.registerComponent('pulse-ring', {
+    schema: {
+        speed: { type: 'number', default: 0.0009 },
+        phase: { type: 'number', default: 0 },
+        baseOpacity: { type: 'number', default: 0.55 },
+        scaleAmp: { type: 'number', default: 0.18 }
+    },
+    init: function () {
+        this.baseScale = this.el.object3D.scale.clone();
+    },
+    tick: function (time) {
+        const t = time * this.data.speed + this.data.phase;
+        const s = 1 + this.data.scaleAmp * Math.sin(t);
+        this.el.object3D.scale.set(this.baseScale.x * s, this.baseScale.y * s, this.baseScale.z * s);
+        const opacity = this.data.baseOpacity * (0.55 + 0.45 * Math.sin(t * 1.3));
+        this.el.setAttribute('material', 'opacity', opacity);
+    }
+});
+
+// 海草摇摆（绕 Z 轴轻微往复）
+AFRAME.registerComponent('sway-plant', {
+    schema: {
+        speed: { type: 'number', default: 0.0015 },
+        amplitude: { type: 'number', default: 6 },
+        phase: { type: 'number', default: 0 }
+    },
+    tick: function (time) {
+        const t = time * this.data.speed + this.data.phase;
+        const angle = THREE.Math.degToRad(this.data.amplitude * Math.sin(t));
+        this.el.object3D.rotation.z = angle;
+    }
+});
+
+// 光晕跟随：让光环跟随目标的位置（用于贴在鱼下方的光晕）
+AFRAME.registerComponent('halo-follow', {
+    schema: {
+        target: { type: 'selector' },
+        offsetY: { type: 'number', default: 0 }
+    },
+    tick: function () {
+        if (!this.data.target) return;
+        const pos = this.data.target.object3D.position;
+        this.el.object3D.position.set(pos.x, pos.y + this.data.offsetY, pos.z);
+    }
+});
+
+// 鱼模型：实心 / 发光线框二选一；切换时沿世界 Y 扫描过渡（扫描带高亮）
+AFRAME.registerComponent('wireframe-glow', {
+    schema: {
+        color: { type: 'color', default: '#aeefff' },
+        opacity: { type: 'number', default: 0.9 },
+        breathSpeed: { type: 'number', default: 0.002 },
+        transitionMs: { type: 'number', default: 980 }
+    },
+    init: function () {
+        this.wires = [];
+        this.mode = 'solid';
+        this._transition = null;
+        this._solidPatches = [];
+        this._box = new THREE.Box3();
+        this._tmpVec = new THREE.Vector3();
+        this._wireUniforms = null;
+        this.el.addEventListener('model-loaded', () => {
+            this.buildOverlay();
+            this.patchSolidMaterials();
+            this.setMode(this.mode, true);
+        });
+        if (this.el.getObject3D('mesh')) {
+            this.buildOverlay();
+            this.patchSolidMaterials();
+            this.setMode(this.mode, true);
+        }
+    },
+    buildOverlay: function () {
+        if (this.wires.length) return;
+        const mesh = this.el.getObject3D('mesh');
+        if (!mesh) return;
+        const data = this.data;
+        const c = new THREE.Color(data.color);
+        const u = {
+            uColor: { value: new THREE.Vector3(c.r, c.g, c.b) },
+            uOpacity: { value: data.opacity },
+            uScan: { value: 0 },
+            uTransitioning: { value: 0 },
+            uToWire: { value: 1 },
+            uWorldYMin: { value: 0 },
+            uWorldYMax: { value: 1 }
+        };
+        this._wireUniforms = u;
+        const wireVS = `
+attribute vec3 position;
+uniform mat4 modelMatrix;
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+varying float vWorldY;
+void main() {
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vWorldY = wp.y;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+        const wireFS = `
+uniform vec3 uColor;
+uniform float uOpacity;
+uniform float uWorldYMin;
+uniform float uWorldYMax;
+uniform float uScan;
+uniform float uTransitioning;
+uniform float uToWire;
+varying float vWorldY;
+void main() {
+  float span = max(uWorldYMax - uWorldYMin, 1e-5);
+  float st = clamp((vWorldY - uWorldYMin) / span, 0.0, 1.0);
+  float p = uScan;
+  float showLine;
+  if (uToWire > 0.5) {
+    showLine = 1.0 - smoothstep(p - 0.16, p + 0.03, st);
+  } else {
+    showLine = smoothstep(p - 0.03, p + 0.16, st);
+  }
+  float band = smoothstep(p - 0.058, p - 0.014, st) * (1.0 - smoothstep(p + 0.014, p + 0.058, st));
+  float baseA = uOpacity * mix(1.0, showLine, uTransitioning);
+  float bandBoost = band * uTransitioning * 0.75;
+  vec3 glow = uColor + vec3(0.28, 0.92, 1.0) * band * uTransitioning * 1.35;
+  gl_FragColor = vec4(glow, clamp(baseA + bandBoost, 0.0, 1.0));
+}`;
+        const wireMat = new THREE.ShaderMaterial({
+            uniforms: u,
+            vertexShader: wireVS,
+            fragmentShader: wireFS,
+            transparent: true,
+            depthWrite: false,
+            depthTest: false,
+            blending: THREE.AdditiveBlending,
+            toneMapped: false,
+            fog: false
+        });
+        mesh.traverse((node) => {
+            if (node.isMesh && node.geometry) {
+                const wireGeo = new THREE.WireframeGeometry(node.geometry);
+                const lines = new THREE.LineSegments(wireGeo, wireMat);
+                lines.userData.isWireframeOverlay = true;
+                lines.renderOrder = 999;
+                lines.frustumCulled = false;
+                lines.visible = false;
+                node.add(lines);
+                this.wires.push({ lines, mesh: node, mat: wireMat });
+            }
+        });
+    },
+    patchSolidMaterials: function () {
+        const mesh = this.el.getObject3D('mesh');
+        if (!mesh || this._solidPatches.length) return;
+        const injectFrag = (shader) => {
+            const fragTail = [
+                ['#include <dithering_fragment>', 'SCAN_FRAG'],
+                ['#include <opaque_fragment>', 'SCAN_FRAG'],
+                ['#include <output_fragment>', 'SCAN_FRAG']
+            ];
+            const scanBlock = `
+            {
+              float span = max(uWorldYMax - uWorldYMin, 1e-5);
+              float st = clamp((vWorldPosScan.y - uWorldYMin) / span, 0.0, 1.0);
+              float p = uScan;
+              float solidKeep;
+              if (uToWire > 0.5) {
+                solidKeep = smoothstep(p - 0.12, p + 0.07, st);
+              } else {
+                solidKeep = 1.0 - smoothstep(p - 0.07, p + 0.12, st);
+              }
+              float band = smoothstep(p - 0.055, p - 0.014, st) * (1.0 - smoothstep(p + 0.014, p + 0.055, st));
+              if (uTransitioning > 0.5) {
+                diffuseColor.rgb *= mix(0.18, 1.0, solidKeep);
+                diffuseColor.a *= solidKeep;
+                diffuseColor.rgb += vec3(0.22, 0.88, 1.0) * band * 0.95;
+              }
+            }
+            `;
+            for (let i = 0; i < fragTail.length; i++) {
+                if (shader.fragmentShader.indexOf(fragTail[i][0]) !== -1) {
+                    shader.fragmentShader = shader.fragmentShader.replace(
+                        fragTail[i][0],
+                        scanBlock + fragTail[i][0]
+                    );
+                    return;
+                }
+            }
+        };
+        mesh.traverse((node) => {
+            if (!node.isMesh || !node.material) return;
+            const mats = Array.isArray(node.material) ? node.material : [node.material];
+            mats.forEach((mat) => {
+                if (!mat || mat.userData._scanPatched) return;
+                if (!mat.isMeshStandardMaterial && !mat.isMeshPhysicalMaterial) return;
+                const uniforms = {
+                    uScan: { value: 0 },
+                    uTransitioning: { value: 0 },
+                    uToWire: { value: 1 },
+                    uWorldYMin: { value: 0 },
+                    uWorldYMax: { value: 1 }
+                };
+                mat.userData._scanUniforms = uniforms;
+                mat.userData._scanPatched = true;
+                mat.onBeforeCompile = (shader) => {
+                    const uniDecl =
+                        'uniform float uScan;\n' +
+                        'uniform float uTransitioning;\n' +
+                        'uniform float uToWire;\n' +
+                        'uniform float uWorldYMin;\n' +
+                        'uniform float uWorldYMax;\n' +
+                        'varying vec3 vWorldPosScan;\n';
+                    shader.uniforms.uScan = uniforms.uScan;
+                    shader.uniforms.uTransitioning = uniforms.uTransitioning;
+                    shader.uniforms.uToWire = uniforms.uToWire;
+                    shader.uniforms.uWorldYMin = uniforms.uWorldYMin;
+                    shader.uniforms.uWorldYMax = uniforms.uWorldYMax;
+                    shader.vertexShader = uniDecl + shader.vertexShader;
+                    shader.fragmentShader = uniDecl + shader.fragmentShader;
+                    shader.vertexShader = shader.vertexShader.replace(
+                        '#include <project_vertex>',
+                        `vec4 wPosScan = modelMatrix * vec4( transformed, 1.0 );
+                        vWorldPosScan = wPosScan.xyz;
+                        #include <project_vertex>`
+                    );
+                    injectFrag(shader);
+                };
+                this._solidPatches.push({ mat });
+            });
+        });
+    },
+    updateWorldYBounds: function () {
+        const mesh = this.el.getObject3D('mesh');
+        if (!mesh) return;
+        this._box.setFromObject(mesh);
+        const minY = this._box.min.y;
+        const maxY = this._box.max.y;
+        if (this._wireUniforms) {
+            this._wireUniforms.uWorldYMin.value = minY;
+            this._wireUniforms.uWorldYMax.value = maxY;
+        }
+        this._solidPatches.forEach(({ mat }) => {
+            const u = mat.userData._scanUniforms;
+            if (u) {
+                u.uWorldYMin.value = minY;
+                u.uWorldYMax.value = maxY;
+            }
+        });
+    },
+    setMaterialVisible: function (mat, v) {
+        if (!mat) return;
+        if (Array.isArray(mat)) mat.forEach(m => { if (m) m.visible = v; });
+        else mat.visible = v;
+    },
+    setMode: function (mode, immediate) {
+        this.mode = mode;
+        if (!this.wires.length) return;
+        const showSolid = mode === 'solid';
+        const showWire = mode === 'wireframe';
+        this.wires.forEach(({ lines, mesh }) => {
+            this.setMaterialVisible(mesh.material, showSolid);
+            lines.visible = showWire;
+        });
+        if (immediate && this._wireUniforms) {
+            this._wireUniforms.uTransitioning.value = 0;
+            this._wireUniforms.uScan.value = mode === 'wireframe' ? 1 : 0;
+        }
+        this._solidPatches.forEach(({ mat }) => {
+            const u = mat.userData._scanUniforms;
+            if (u && immediate) {
+                u.uTransitioning.value = 0;
+                u.uScan.value = mode === 'wireframe' ? 1 : 0;
+            }
+        });
+    },
+    beginTransition: function (targetMode) {
+        if (!this.wires.length) return;
+        if (this._transition) return;
+        if (targetMode === this.mode) return;
+        this._transition = {
+            from: this.mode,
+            to: targetMode,
+            start: performance.now()
+        };
+        this._wireUniforms.uTransitioning.value = 1;
+        this._wireUniforms.uToWire.value = targetMode === 'wireframe' ? 1 : 0;
+        this._wireUniforms.uScan.value = 0;
+        this._solidPatches.forEach(({ mat }) => {
+            const u = mat.userData._scanUniforms;
+            if (u) {
+                u.uTransitioning.value = 1;
+                u.uToWire.value = targetMode === 'wireframe' ? 1 : 0;
+                u.uScan.value = 0;
+            }
+            mat.transparent = true;
+        });
+        this.wires.forEach(({ lines, mesh }) => {
+            this.setMaterialVisible(mesh.material, true);
+            lines.visible = true;
+        });
+    },
+    easeInOutCubic: function (t) {
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    },
+    finishTransition: function () {
+        const to = this._transition.to;
+        this._transition = null;
+        this.setMode(to, true);
+        updateModeButtonLabel(to);
+    },
+    tick: function (time) {
+        this.updateWorldYBounds();
+        if (this._wireUniforms && this.wires.length) {
+            if (!this._transition) {
+                const breath = 0.55 + 0.45 * Math.sin(time * this.data.breathSpeed);
+                const base = this.data.opacity;
+                this._wireUniforms.uOpacity.value = base * (0.55 + 0.45 * breath);
+            } else {
+                this._wireUniforms.uOpacity.value = this.data.opacity;
+            }
+        }
+        if (!this._transition) return;
+        const { start, to } = this._transition;
+        const dur = this.data.transitionMs;
+        let t = (performance.now() - start) / dur;
+        if (t >= 1) {
+            this.finishTransition();
+            return;
+        }
+        t = this.easeInOutCubic(t);
+        if (this._wireUniforms) this._wireUniforms.uScan.value = t;
+        this._solidPatches.forEach(({ mat }) => {
+            const u = mat.userData._scanUniforms;
+            if (u) u.uScan.value = t;
+        });
+    }
+});
+
+let currentDisplayMode = 'solid';
+const displayModeLabels = {
+    solid: '实心',
+    wireframe: '线框'
+};
+function updateModeButtonLabel(mode) {
+    currentDisplayMode = mode;
+    const btn = document.getElementById('mode-toggle-btn');
+    if (btn) {
+        const label = btn.querySelector('.label');
+        if (label) label.textContent = displayModeLabels[mode] || mode;
+    }
+}
+function applyDisplayMode(mode) {
+    document.querySelectorAll('[wireframe-glow]').forEach(el => {
+        const comp = el.components && el.components['wireframe-glow'];
+        if (comp) comp.setMode(mode, true);
+    });
+    updateModeButtonLabel(mode);
+}
+function cycleDisplayMode() {
+    const next = currentDisplayMode === 'solid' ? 'wireframe' : 'solid';
+    document.querySelectorAll('[wireframe-glow]').forEach(el => {
+        const comp = el.components && el.components['wireframe-glow'];
+        if (comp) comp.beginTransition(next);
+    });
+}
+
+// 气泡从鱼缸底部向上漂浮，增加水下氛围
+AFRAME.registerComponent('bubble-rise', {
+    schema: {
+        minY: { type: 'number', default: 0.08 },
+        maxY: { type: 'number', default: 0.88 },
+        speed: { type: 'number', default: 0.00035 },
+        sway: { type: 'number', default: 0.04 }
+    },
+    init: function () {
+        this.phase = Math.random() * Math.PI * 2;
+        this.basePosition = this.el.object3D.position.clone();
+    },
+    tick: function (time) {
+        const range = this.data.maxY - this.data.minY;
+        const progress = (time * this.data.speed + this.phase) % 1;
+        const y = this.data.minY + progress * range;
+        const swayX = Math.sin(time * 0.002 + this.phase) * this.data.sway;
+        const swayZ = Math.cos(time * 0.0017 + this.phase) * this.data.sway;
+        this.el.setAttribute('position', `${this.basePosition.x + swayX} ${y} ${this.basePosition.z + swayZ}`);
+    }
+});
+
+// 保留手势交互：单指旋转整个鱼缸，双指缩放整个鱼缸
 AFRAME.registerComponent('touch-handler', {
     schema: {
         rotateSensitivity: { type: 'number', default: 0.006 },
-        minScale: { type: 'number', default: 0.3 },
-        maxScale: { type: 'number', default: 3.0 }
+        minScale: { type: 'number', default: 0.6 },
+        maxScale: { type: 'number', default: 2.4 }
     },
     init: function () {
         this.onTouchStart = this.onTouchStart.bind(this);
@@ -1609,26 +1540,11 @@ AFRAME.registerComponent('touch-handler', {
         this.isPinching = false;
         this.previousTouchPosition = { x: 0, y: 0 };
         this.initialPinchDistance = 0;
-        this.model = this.el.object3D;
         this.markerId = this.el.parentElement.id;
-        this.initialScale = new THREE.Vector3();
-        this.initialRotation = new THREE.Euler();
-        this.el.addEventListener('model-loaded', () => {
-            this.initialScale.copy(this.model.scale);
-            const o15Data = this.el.getAttribute('o15');
-            if (o15Data) {
-                 this.initialRotation.set(
-                    THREE.Math.degToRad(o15Data.x),
-                    THREE.Math.degToRad(o15Data.y),
-                    THREE.Math.degToRad(o15Data.z)
-                );
-            } else {
-                this.initialRotation.copy(this.model.rotation);
-            }
-        });
+        this.initialScale = this.el.object3D.scale.clone();
     },
     isThisMarkerActive: function() {
-        return currentAudioManager && currentAudioManager.markerId === this.markerId;
+        return arExperienceReady && currentMarkerId === this.markerId;
     },
     onTouchStart: function (e) {
         if (!this.isThisMarkerActive() || !this.el.getAttribute('visible')) return;
@@ -1647,18 +1563,18 @@ AFRAME.registerComponent('touch-handler', {
         if (this.isDragging && e.touches.length === 1) {
             const deltaX = e.touches[0].clientX - this.previousTouchPosition.x;
             const deltaY = e.touches[0].clientY - this.previousTouchPosition.y;
-            this.model.rotation.y += deltaX * this.data.rotateSensitivity;
-            this.model.rotation.x += deltaY * this.data.rotateSensitivity;
+            this.el.object3D.rotation.y += deltaX * this.data.rotateSensitivity;
+            this.el.object3D.rotation.x += deltaY * this.data.rotateSensitivity;
             this.previousTouchPosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
         }
         if (this.isPinching && e.touches.length === 2) {
             if (this.initialPinchDistance <= 0) return;
             const currentPinchDistance = this.getDistance(e.touches[0], e.touches[1]);
             const scaleFactor = currentPinchDistance / this.initialPinchDistance;
-            const newScaleX = this.model.scale.x * scaleFactor;
-            const relativeScale = newScaleX / this.initialScale.x;
+            const nextScale = this.el.object3D.scale.x * scaleFactor;
+            const relativeScale = nextScale / this.initialScale.x;
             if (relativeScale >= this.data.minScale && relativeScale <= this.data.maxScale) {
-                 this.model.scale.multiplyScalar(scaleFactor);
+                this.el.object3D.scale.multiplyScalar(scaleFactor);
             }
             this.initialPinchDistance = currentPinchDistance;
         }
@@ -1672,14 +1588,6 @@ AFRAME.registerComponent('touch-handler', {
         const dy = touch1.clientY - touch2.clientY;
         return Math.sqrt(dx * dx + dy * dy);
     },
-    reset: function() {
-        if (this.initialScale && this.initialRotation) {
-            this.model.scale.copy(this.initialScale);
-            this.model.rotation.copy(this.initialRotation);
-        } else {
-            console.warn("Cannot reset model: initial state not saved.");
-        }
-    },
     remove: function () {
         this.el.sceneEl.removeEventListener('touchstart', this.onTouchStart);
         this.el.sceneEl.removeEventListener('touchmove', this.onTouchMove);
@@ -1687,169 +1595,6 @@ AFRAME.registerComponent('touch-handler', {
     }
 });
 
-
-// =============== UI 和交互逻辑 ===============
-
-// toggleAudio 函数 - 增加了音频加载失败后的重试机制
-function toggleAudio() {
-    const playBtn = document.getElementById('play-btn');
-    if (!currentAudioManager || !currentAudioManager.audio) {
-        showNotification('⚠️ 请先对准乐器码');
-        return;
-    }
-
-    const audio = currentAudioManager.audio;
-
-    // 情况1: 音频已准备好，直接播放或暂停
-    if (audio.readyState >= 2) { // readyState 2 (HAVE_CURRENT_DATA) 或更高即可
-        if (audio.paused) {
-            audio.play().then(() => {
-                playBtn.innerHTML = '<span class="emoji">⏸️</span>';
-                playBtn.classList.add('playing');
-                currentAudioManager.isPlaying = true;
-            }).catch(error => {
-                console.error('Audio playback failed:', error);
-                showNotification('❌ 播放失败，请检查浏览器权限');
-            });
-        } else {
-            audio.pause();
-            playBtn.innerHTML = '<span class="emoji">🎵</span>';
-            playBtn.classList.remove('playing');
-            currentAudioManager.isPlaying = false;
-        }
-        return;
-    }
-
-    // 情况2: 音频未准备好，并且没有在重载中，则启动重载
-    if (audio.readyState < 2 && !isAudioReloading) {
-        isAudioReloading = true;
-        console.log(`Audio not ready for ${currentAudioManager.config.name}. Attempting to reload.`);
-
-        // 复用加载弹窗UI
-        const overlay = document.getElementById('loading-overlay');
-        const title = document.getElementById('loading-title');
-        const progressBar = document.getElementById('progress-bar');
-        const text = document.getElementById('loading-text');
-
-        if (!overlay) {
-             showNotification('❌ 加载组件出错');
-             isAudioReloading = false;
-             return;
-        }
-
-        title.textContent = `正在加载 ${currentAudioManager.config.name} 音频`;
-        progressBar.style.width = '50%'; // 使用一个中间值表示不确定的加载状态
-        text.textContent = '网络不佳，正在重新尝试...';
-        overlay.classList.remove('hidden');
-
-        // 定义一次性的事件处理器
-        const onCanPlay = () => {
-            cleanupListeners();
-            hideLoadingOverlay(true);
-            isAudioReloading = false;
-            console.log(`Audio for ${currentAudioManager.config.name} successfully reloaded.`);
-            // 加载成功后，再次调用本函数来播放音频
-            toggleAudio();
-        };
-
-        const onError = () => {
-            cleanupListeners();
-            hideLoadingOverlay(false);
-            isAudioReloading = false;
-            console.error(`Failed to reload audio for ${currentAudioManager.config.name}.`);
-            showNotification(`❌ ${currentAudioManager.config.name} 音频加载失败`, true);
-        };
-        
-        const cleanupListeners = () => {
-            audio.removeEventListener('canplaythrough', onCanPlay);
-            audio.removeEventListener('error', onError);
-        };
-
-        // 绑定事件
-        audio.addEventListener('canplaythrough', onCanPlay, { once: true });
-        audio.addEventListener('error', onError, { once: true });
-
-        // 触发重新加载
-        audio.load();
-    } else if (isAudioReloading) {
-        // 情况3: 如果正在重载中，提示用户等待
-        showNotification('🔄 音频正在加载中，请稍候...');
-    }
-}
-
-function showInfo() {
-    if (!currentAudioManager) {
-        showNotification('⚠️ 请先对准乐器码');
-        return;
-    }
-    const markdownText = markdownCache[currentAudioManager.markerId];
-    if (typeof markdownText === 'string') {
-        loadMarkdownContent(currentAudioManager.config.name, markdownText, currentAudioManager.config.markdown);
-    } else {
-        showNotification('🔄 介绍内容加载中...');
-    }
-}
-
-function resetModel() {
-    if (!currentAudioManager) {
-        showNotification('⚠️ 请先对准一个乐器码');
-        return;
-    }
-    const modelId = `model${currentAudioManager.markerId.replace('marker', '')}`;
-    const modelEl = document.getElementById(modelId);
-    if (modelEl && modelEl.components['touch-handler']) {
-        modelEl.components['touch-handler'].reset();
-        showNotification('🔄 模型已复位');
-    } else {
-        console.error('复位失败：无法找到模型或touch-handler组件', modelId);
-    }
-}
-
-function loadMarkdownContent(title, markdownText, markdownPath) {
-    if (typeof marked === 'undefined') {
-        console.error('marked.js 未加载');
-        showNotification('❌ Markdown渲染器未加载');
-        return;
-    }
-    const htmlContent = marked.parse(markdownText);
-    showInfoPanel(`📖 ${title}`, `<div class="markdown-content">${htmlContent}</div>`);
-
-    const infoPanel = document.getElementById('info-panel');
-    if (!infoPanel) return;
-    const contentDiv = infoPanel.querySelector('.info-content');
-    const markdownDir = markdownPath.substring(0, markdownPath.lastIndexOf('/') + 1);
-    const images = contentDiv.querySelectorAll('.markdown-content img');
-    
-    images.forEach(img => {
-        const originalSrc = img.getAttribute('src');
-        if (originalSrc && originalSrc.startsWith('./')) {
-            const newSrc = markdownDir + originalSrc.substring(2);
-            console.log(`Fixing image path: ${originalSrc} -> ${newSrc}`);
-            img.src = newSrc;
-            img.onerror = () => {
-                console.error(`Failed to load image: ${img.src}`);
-                img.alt = `图片加载失败: ${originalSrc}`;
-                const errorText = document.createElement('p');
-                errorText.textContent = `[图片: ${originalSrc} 加载失败]`;
-                errorText.style.color = 'red';
-                img.parentNode.replaceChild(errorText, img);
-            };
-        }
-    });
-}
-
-function showInfoPanel(title, content) {
-    let infoPanel = document.getElementById('info-panel');
-    if (!infoPanel) return;
-    infoPanel.querySelector('.info-title').innerHTML = title;
-    infoPanel.querySelector('.info-content').innerHTML = content;
-    infoPanel.classList.add('active');
-}
-
-function hideInfoPanel() {
-    const infoPanel = document.getElementById('info-panel');
-    if (infoPanel) infoPanel.classList.remove('active');
-}
 
 function showNotification(message, isError = false) {
     const notification = document.createElement('div');
@@ -1866,7 +1611,6 @@ function showNotification(message, isError = false) {
     }, 2500);
 }
 
-// 加载弹窗控制函数
 function showLoadingOverlay(instrumentName) {
     const overlay = document.getElementById('loading-overlay');
     const title = document.getElementById('loading-title');
@@ -1875,17 +1619,16 @@ function showLoadingOverlay(instrumentName) {
 
     if (!overlay) return;
 
-    title.textContent = `正在加载 ${instrumentName} 模型`;
+    title.textContent = instrumentName ? `正在加载：${instrumentName}` : '正在加载…';
     progressBar.style.width = '0%';
-    text.textContent = '0% - 预计需要 5-10 秒...';
+    text.textContent = '0% - 请稍候...';
     overlay.classList.remove('hidden');
 
     let progress = 0;
-    // 模拟加载进度
     loadingInterval = setInterval(() => {
         progress += Math.random() * 5;
         if (progress > 95) {
-            progress = 95; // 在加载完成前，最多只显示到95%
+            progress = 95;
             clearInterval(loadingInterval);
         }
         progressBar.style.width = `${progress}%`;
@@ -1908,59 +1651,9 @@ function hideLoadingOverlay(isSuccess) {
         text.textContent = '加载完成!';
         setTimeout(() => {
             overlay.classList.add('hidden');
-        }, 500); // 延迟半秒关闭，让用户看到"加载完成"
+        }, 500);
     } else {
-        // 如果失败，立即隐藏
         overlay.classList.add('hidden');
-    }
-}
-
-function updateInfoDisplay() {
-    const infoDisplay = document.getElementById('info-display');
-    const instrumentNameEl = infoDisplay.querySelector('.instrument-name');
-    const instrumentDescEl = infoDisplay.querySelector('.instrument-desc');
-    
-    if (currentAudioManager) {
-        const infoText = infoCache[currentAudioManager.markerId];
-        if (infoText) {
-            const lines = infoText.split('\n');
-            instrumentNameEl.textContent = lines[0] || currentAudioManager.config.name;
-            instrumentDescEl.textContent = lines[1] || '';
-            infoDisplay.classList.add('active');
-        } else {
-            instrumentNameEl.textContent = currentAudioManager.config.name;
-            instrumentDescEl.textContent = '正在加载描述...（取决于网络）';
-            infoDisplay.classList.add('active');
-        }
-    } else {
-        infoDisplay.classList.remove('active');
-    }
-}
-
-function updateDockButtons() {
-    const playBtn = document.getElementById('play-btn');
-    const infoBtn = document.getElementById('info-btn');
-    const resetBtn = document.getElementById('reset-btn');
-    
-    if (!playBtn || !infoBtn || !resetBtn) return;
-    
-    if (currentAudioManager) {
-        playBtn.classList.remove('disabled');
-        infoBtn.classList.remove('disabled');
-        resetBtn.classList.remove('disabled');
-        if (currentAudioManager.isPlaying) {
-            playBtn.innerHTML = '<span class="emoji">⏸️</span>';
-            playBtn.classList.add('playing');
-        } else {
-            playBtn.innerHTML = '<span class="emoji">🎵</span>';
-            playBtn.classList.remove('playing');
-        }
-    } else {
-        playBtn.classList.add('disabled');
-        infoBtn.classList.add('disabled');
-        resetBtn.classList.add('disabled');
-        playBtn.innerHTML = '<span class="emoji">🎵</span>';
-        playBtn.classList.remove('playing');
     }
 }
 
@@ -1970,21 +1663,21 @@ function createStartOverlay() {
     const device = getDeviceInfo();
     const permissionGuideHTML = device.isIOS ? `
         <div class="permission-guide">
-            <div class="guide-title">星海音乐学院师生团队温馨提示：</div>
+            <div class="guide-title">Tips：</div>
             <div class="guide-text">请点击"允许/Allow"授权以使用AR功能</div>
-            <div class="guide-text">进入AR界面后可用手指对乐器模型进行旋转缩放~</div>
+            <div class="guide-text">进入AR界面后对准自定义图案标记即可查看 3D 模型~</div>
         </div>
     ` : device.isDesktop ? `
         <div class="permission-guide">
-            <div class="guide-title">星海音乐学院师生团队温馨提示：</div>
+            <div class="guide-title">Tips：</div>
             <div class="guide-text">请点击"允许/Allow"授权以使用AR功能</div>
-            <div class="guide-text">进入AR界面后可用鼠标对乐器模型进行旋转缩放~</div>
+            <div class="guide-text">进入AR界面后对准自定义图案标记即可查看 3D 模型~</div>
         </div>
     ` : `
         <div class="permission-guide">
-            <div class="guide-title">星海音乐学院师生团队温馨提示：</div>
+            <div class="guide-title">Tips：</div>
             <div class="guide-text">请点击"允许/Allow"授权以使用AR功能</div>
-            <div class="guide-text">进入AR界面后可用手指对乐器模型进行旋转缩放~</div>
+            <div class="guide-text">进入AR界面后对准自定义图案标记即可查看 3D 模型~</div>
         </div>
     `;
     
@@ -2000,6 +1693,10 @@ function createStartOverlay() {
 // 修改：startAR 函数 - 添加权限检测
 async function startAR() {
     if (isARStarted) return;
+    if (!arModelPrefetchReady) {
+        showNotification('模型资源尚未就绪，请稍候', true);
+        return;
+    }
     console.log('启动AR体验');
     
     // 检查权限状态
@@ -2021,14 +1718,23 @@ async function startAR() {
         return;
     }
     
-    // 在用户手势上下文中提前解锁合成音，提升移动端发声成功率
-    await unlockSynthAudio();
-
-    // 权限正常，启动AR
-    isARStarted = true;
-    startOverlay.classList.add('hidden');
+    // 权限正常：先激活场景并等待模型解析，避免白屏 / 误播 BGM
     document.getElementById('ar-scene').classList.add('active');
-    document.getElementById('dock-container').classList.add('active');
+    startOverlay.classList.add('hidden');
+
+    try {
+        await waitForArModelParsedInScene();
+    } catch (e) {
+        revertArStartIfModelNotReady(e);
+        return;
+    }
+
+    arExperienceReady = true;
+    isARStarted = true;
+    syncMusicIfMarkerAlreadyVisible();
+    const modeBtn = document.getElementById('mode-toggle-btn');
+    if (modeBtn) modeBtn.classList.add('active');
+    primeArBackgroundMusicUnlock();
     
     // 设置超时检测，防止权限在启动过程中被拒绝
     permissionCheckTimeout = setTimeout(() => {
@@ -2139,15 +1845,18 @@ function backToStart() {
     if (deniedUI) deniedUI.remove();
     hidePermissionErrorOverlay();
     document.getElementById('ar-scene').classList.remove('active');
-    const dockContainer = document.getElementById('dock-container');
-    if (dockContainer) dockContainer.classList.remove('active');
     startOverlay.classList.remove('hidden');
+    const modeBtn = document.getElementById('mode-toggle-btn');
+    if (modeBtn) modeBtn.classList.remove('active');
     isARStarted = false;
+    arExperienceReady = false;
+    stopArBackgroundMusicForExit();
 }
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('页面加载完成，准备启动AR。');
     createStartOverlay();
+    prefetchArModelForStart();
     
     // 设置AR场景错误处理
     setupARSceneErrorHandling();
@@ -2184,11 +1893,11 @@ document.addEventListener('DOMContentLoaded', function() {
   
   <!-- UI元素 -->
   <div id="start-overlay" class="start-overlay">
-    <div class="start-title"> 中国传统音乐与乐器<br>增强现实(AR)<br>视听云平台</div>
-    <div class="start-subtitle">————把传统音乐文化"装进口袋"</div>
+    <div class="start-title">AR 预览</div>
+    <div class="start-subtitle">扫描自定义图案标记，在标记上方查看 3D 模型</div>
     
-    <button class="start-button" onclick="startAR()">
-         点我✨启动AR体验
+    <button id="start-ar-button" type="button" class="start-button" onclick="startAR()" disabled>
+         资源准备中…
     </button>
     
     <!-- 新增一个容器来包裹所有按钮下方的提示信息 -->
@@ -2210,26 +1919,8 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
   </div>
 
-  <div id="info-display" class="info-display">
-    <div class="instrument-name"></div>
-    <div class="instrument-desc"></div>
-  </div>
-  
-  <div id="dock-container" class="dock-container">
-    <div class="dock-bar">
-      <button id="play-btn" class="dock-button disabled" onclick="toggleAudio()"><span class="emoji">🎵</span></button>
-      <button id="info-btn" class="dock-button disabled" onclick="showInfo()"><span class="emoji">📖</span></button>
-      <button id="reset-btn" class="dock-button disabled" onclick="resetModel()"><span class="emoji">🔄</span></button>
-    </div>
-  </div>
-  
-  <div id="info-panel" class="info-panel">
-      <div class="info-panel-header">
-          <h3 class="info-title"></h3>
-          <button class="close-btn" onclick="hideInfoPanel()">×</button>
-      </div>
-      <div class="info-content"></div>
-  </div>
+  <!-- AR：标记上模型可见时播放，标记丢失暂停，再次出现继续 -->
+  <audio id="ar-bg-music" src="assets/audio/hologram-koi-hall.mp3" preload="auto" playsinline webkit-playsinline loop></audio>
 
   <!-- AR场景 -->
   <a-scene 
@@ -2239,80 +1930,36 @@ document.addEventListener('DOMContentLoaded', function() {
     renderer="logarithmicDepthBuffer: true;"
     arjs="sourceType: webcam; debugUIEnabled: false;">
 
-<!-- ==================================================================== -->
-   <!-- 所有23个Marker的完整结构 (已移除旧的 <a-torus> 加载动画) -->
-   <!-- ==================================================================== -->
-   <a-marker id="marker1" type="pattern" url="assets/patterns/pattern-pipa.patt" instrument-handler>
-        <a-entity id="model1" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
+   <a-assets timeout="30000">
+     <a-asset-item id="ar-model-asset" src="assets/models/base_basic_shaded.glb"></a-asset-item>
+   </a-assets>
+
+<!-- 自定义 pattern + 3D 模型 -->
+   <a-marker id="marker1" type="pattern" url="assets/patterns/pattern-aoyu.patt" instrument-handler>
+        <a-entity class="aquarium-world" touch-handler visible="false">
+            <!-- 仅保留基础光照 + 主鱼 -->
+            <a-entity light="type: ambient; color: #ffffff; intensity: 0.9"></a-entity>
+            <a-entity light="type: directional; color: #fff5d6; intensity: 0.7" position="1.5 2 1"></a-entity>
+
+            <a-entity
+                id="model1"
+                position="0 0.6 0"
+                scale="0.55 0.55 0.55"
+                gltf-model="#ar-model-asset"
+                wireframe-glow="color: #b8f3ff; opacity: 0.95"
+                fish-swim="radiusX: 0.42; radiusZ: 0.30; centerY: 0.62; speed: 0.00058; bob: 0.06; yawOffset: 0; turnLerp: 0.06">
+            </a-entity>
+        </a-entity>
    </a-marker>
-   <a-marker id="marker2" type="pattern" url="assets/patterns/pattern-hulusi.patt" instrument-handler>
-        <a-entity id="model2" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.014 0.014 0.014" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker3" type="pattern" url="assets/patterns/pattern-dongbei_dagu.patt" instrument-handler>
-        <a-entity id="model3" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker4" type="pattern" url="assets/patterns/pattern-dongbula.patt" instrument-handler>
-        <a-entity id="model4" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker5" type="pattern" url="assets/patterns/pattern-gaohu.patt" instrument-handler>
-        <a-entity id="model5" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker6" type="pattern" url="assets/patterns/pattern-huagu.patt" instrument-handler>
-        <a-entity id="model6" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker7" type="pattern" url="assets/patterns/pattern-huobusi.patt" instrument-handler>
-        <a-entity id="model7" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker8" type="pattern" url="assets/patterns/pattern-matouqin.patt" instrument-handler>
-        <a-entity id="model8" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker9" type="pattern" url="assets/patterns/pattern-niujiaoqin.patt" instrument-handler>
-        <a-entity id="model9" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker10" type="pattern" url="assets/patterns/pattern-suona.patt" instrument-handler>
-        <a-entity id="model10" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker11" type="pattern" url="assets/patterns/pattern-yueqin.patt" instrument-handler>
-        <a-entity id="model11" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker12" type="pattern" url="assets/patterns/pattern-chaozhou_suona.patt" instrument-handler>
-        <a-entity id="model12" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker13" type="pattern" url="assets/patterns/pattern-chaozhou_zheng.patt" instrument-handler>
-        <a-entity id="model13" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker14" type="pattern" url="assets/patterns/pattern-dongxiao.patt" instrument-handler>
-        <a-entity id="model14" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker15" type="pattern" url="assets/patterns/pattern-houguan.patt" instrument-handler>
-        <a-entity id="model15" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker16" type="pattern" url="assets/patterns/pattern-muyu.patt" instrument-handler>
-        <a-entity id="model16" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker17" type="pattern" url="assets/patterns/pattern-niujiaohao.patt" instrument-handler>
-        <a-entity id="model17" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker18" type="pattern" url="assets/patterns/pattern-qinqin.patt" instrument-handler>
-        <a-entity id="model18" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker19" type="pattern" url="assets/patterns/pattern-yehu.patt" instrument-handler>
-        <a-entity id="model19" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker20" type="pattern" url="assets/patterns/pattern-yugu.patt" instrument-handler>
-        <a-entity id="model20" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker21" type="pattern" url="assets/patterns/pattern-zhuban.patt" instrument-handler>
-        <a-entity id="model21" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-marker id="marker22" type="pattern" url="assets/patterns/pattern-huagudatong.patt" instrument-handler>
-        <a-entity id="model22" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-    <a-marker id="marker23" type="pattern" url="assets/patterns/pattern-koubidi.patt" instrument-handler>
-        <a-entity id="model23" class="playable" instrument-player o15="x:0; y:0; z:0" position="0 0 0" scale="0.03 0.03 0.03" touch-handler visible="false"></a-entity>
-   </a-marker>
-   <a-entity camera cursor="rayOrigin: mouse; fuse: false" raycaster="objects: .playable"></a-entity>
+   <a-entity camera></a-entity>
   </a-scene>
+
+  <!-- AR 形态切换按钮 -->
+  <button id="mode-toggle-btn" class="mode-toggle-btn" onclick="cycleDisplayMode()">
+    <span class="dot"></span>
+    <span>形态 · </span>
+    <span class="label">实心</span>
+  </button>
   
  </body>
 </html>
