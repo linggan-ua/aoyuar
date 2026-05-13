@@ -1147,14 +1147,17 @@ AFRAME.registerComponent('instrument-handler', {
 // 鱼在 marker 上方沿平滑 3D 曲线游动（无扭转），保持自然巡游感
 AFRAME.registerComponent('fish-swim', {
     schema: {
-        radiusX: { type: 'number', default: 0.48 },
-        radiusZ: { type: 'number', default: 0.34 },
-        centerY: { type: 'number', default: 0.58 },
-        speed: { type: 'number', default: 0.00065 },
-        bob: { type: 'number', default: 0.07 },
+        radiusX:   { type: 'number', default: 0.48 },
+        radiusZ:   { type: 'number', default: 0.34 },
+        centerY:   { type: 'number', default: 0.58 },
+        speed:     { type: 'number', default: 0.00065 },
+        bob:       { type: 'number', default: 0.07 },
         yawOffset: { type: 'number', default: 0 },
-        phase: { type: 'number', default: -1 },
-        turnLerp: { type: 'number', default: 0.08 }
+        phase:     { type: 'number', default: -1 },
+        turnLerp:  { type: 'number', default: 0.08 },
+        // 摆尾 S 曲线：沿模型自身 Y 轴正弦摇摆
+        tailAmp:   { type: 'number', default: 18 },    // 最大摆角（度）
+        tailSpeed: { type: 'number', default: 0.006 }  // 摆尾频率（独立于巡游速度）
     },
     init: function () {
         this.phase = this.data.phase >= 0 ? this.data.phase : Math.random() * Math.PI * 2;
@@ -1163,7 +1166,6 @@ AFRAME.registerComponent('fish-swim', {
     getCurvePoint: function (t) {
         const x = Math.cos(t) * this.data.radiusX;
         const z = Math.sin(t) * this.data.radiusZ;
-        // 仅做缓慢上下浮动，不引入大幅扭动
         const y = this.data.centerY + Math.sin(t * 0.55 + 0.7) * this.data.bob;
         return { x, y, z };
     },
@@ -1171,14 +1173,21 @@ AFRAME.registerComponent('fish-swim', {
         const t = time * this.data.speed + this.phase;
         const p = this.getCurvePoint(t);
         const next = this.getCurvePoint(t + 0.02);
-        const targetYaw = THREE.Math.radToDeg(Math.atan2(next.x - p.x, next.z - p.z)) + this.data.yawOffset;
 
-        // 平滑转向，避免“突然转头”
+        // 路径切线朝向（平滑插值）
+        const targetYaw = THREE.Math.radToDeg(Math.atan2(next.x - p.x, next.z - p.z)) + this.data.yawOffset;
         const yawDiff = (((targetYaw - this.currentYaw) + 540) % 360) - 180;
         this.currentYaw += yawDiff * this.data.turnLerp;
 
-        this.el.setAttribute('position', `${p.x} ${p.y} ${p.z}`);
-        this.el.setAttribute('rotation', `0 ${this.currentYaw} 0`);
+        // 摆尾：绕自身 Y 轴叠加正弦偏转，呈 S 型动态游动感
+        const tailSwing = Math.sin(time * this.data.tailSpeed + this.phase * 2.3) * this.data.tailAmp;
+
+        this.el.object3D.position.set(p.x, p.y, p.z);
+        this.el.object3D.rotation.set(
+            0,
+            THREE.Math.degToRad(this.currentYaw + tailSwing),
+            0
+        );
     }
 });
 
@@ -1945,8 +1954,8 @@ document.addEventListener('DOMContentLoaded', function() {
   
   <!-- UI元素 -->
   <div id="start-overlay" class="start-overlay">
-    <div class="start-title">AR 预览</div>
-    <div class="start-subtitle">扫描自定义图案标记，在标记上方查看 3D 模型</div>
+    <div class="start-title">鳌鱼AR增强现实</div>
+    <div class="start-subtitle">扫描AR标记，在标记上方查看鳌鱼</div>
     
     <button id="start-ar-button" type="button" class="start-button" onclick="startAR()" disabled>
          资源准备中…
