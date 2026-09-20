@@ -7,9 +7,12 @@
 <meta name="mobile-web-app-capable" content="yes">
 <title>鳌鱼 AR</title>
 <style>
-  html, body {
+  /* 黑底只能放在 html 上！放到 body 上会盖住 AR.js 那个 z-index:-2 的相机画面，
+     表现就是"相机其实在播、界面也正常，但屏幕全黑"（老版本页面的 body 就没有背景色）*/
+  html { background: #000; }
+  body {
     margin: 0; padding: 0; width: 100%; height: 100%;
-    background: #000; overflow: hidden;
+    overflow: hidden;
     font: 14px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
     -webkit-user-select: none; user-select: none;
     -webkit-tap-highlight-color: transparent;
