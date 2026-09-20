@@ -262,17 +262,35 @@
     },
 
     /**
+     * 渲染分辨率自适应（不是限制帧率）。
      * 手机 DPR 普遍 2~3，A-Frame 按 devicePixelRatio 渲染等于每帧多画 4~9 倍像素，
-     * 这是掉帧最大的一头。压到 1.5 后画面几乎看不出差别，帧率能翻倍。
-     * A-Frame 只在创建 renderer 时设过一次 pixelRatio，之后不会覆盖（除了退出 VR）。
+     * 这是掉帧最大的一头。但是直接压到 1.5 会牺牲画面锐度，所以改成看帧率动态调：
+     *   FPS ≥ 55 → 像素比 +0.25（更清晰）
+     *   FPS ≤ 40 → 像素比 -0.25（更顺）
+     * 40~55 之间是死区，不动，避免来回抖。上限 min(DPR, 2)，下限 1.0。
      */
     limitPixelRatio: function () {
       var renderer = this.sceneEl && this.sceneEl.renderer;
       if (!renderer) return;
-      this.pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+      var self = this;
+      this.minPixelRatio = 1.0;
+      this.maxPixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      this.pixelRatio = Math.min(1.5, this.maxPixelRatio);
       renderer.setPixelRatio(this.pixelRatio);
       console.log('AOYU_PIXEL_RATIO', this.pixelRatio,
-        'drawingBuffer=' + renderer.domElement.width + '×' + renderer.domElement.height);
+        'drawingBuffer=' + renderer.domElement.width + '×' + renderer.domElement.height,
+        'max=' + this.maxPixelRatio);
+      setInterval(function () {
+        if (!self.fps) return;
+        var next = self.pixelRatio;
+        if (self.fps >= 55 && next < self.maxPixelRatio) next = Math.min(self.maxPixelRatio, next + 0.25);
+        else if (self.fps <= 40 && next > self.minPixelRatio) next = Math.max(self.minPixelRatio, next - 0.25);
+        if (next !== self.pixelRatio) {
+          self.pixelRatio = next;
+          self.sceneEl.renderer.setPixelRatio(next);
+          console.log('AOYU_PIXEL_RATIO_CHANGE', next, 'fps=' + self.fps);
+        }
+      }, 3000);
     },
 
     /** 帧率计数（调试面板显示用） */
@@ -713,7 +731,8 @@
         var fish = self.activeFish();
         if (!fish) return;
         var status = fish.status();
-        statusText.textContent = 'FPS ' + (self.fps || '--') + '　' +
+        statusText.textContent = 'FPS ' + (self.fps || '--') +
+          '（渲染×' + (self.pixelRatio ? self.pixelRatio.toFixed(2) : '--') + '）　' +
           '卡片姿态：' + status.posture.name + '（法线偏' + status.posture.tiltDeg + '°）· ' +
           status.state + '　速度×' + status.tuning.speedScale.toFixed(2) +
           ' 转向×' + status.tuning.turnScale.toFixed(2) +
