@@ -302,6 +302,15 @@
       var playing = video.play();
       if (playing && playing.catch) playing.catch(function () {});
       var self = this;
+      // AR.js 是先设 srcObject、后把 video 插进文档的；iOS 上有时候要等它进文档后
+      // 再重新触发一次解码才会出画面。重新赋一次同一路流是安全的。
+      if (video.srcObject) {
+        var stream = video.srcObject;
+        video.srcObject = null;
+        video.srcObject = stream;
+        var again = video.play();
+        if (again && again.catch) again.catch(function () {});
+      }
       if (this.isVideoLive(video)) this.onCameraLive();
       else video.addEventListener('loadeddata', function () { self.onCameraLive(); }, { once: true });
     },
@@ -380,17 +389,33 @@
     attachStream: function (video, stream) {
       var self = this;
       var detached = !video.parentNode;      // 没挂上去 = AR.js 那次开相机是失败的
+      // 顺序很重要：必须先插进 DOM 再给 srcObject。
+      // iOS/微信 WebView 下，脱离文档的 video 拿到流之后即使再插进来也一直黑屏。
+      if (detached) this.recoverArSource(video);
       video.srcObject = stream;
       video.muted = true;
       var playing = video.play();
       if (playing && playing.catch) playing.catch(function () {});
-      if (detached) this.recoverArSource(video);
       console.log('AOYU_CAMERA_STREAM_ATTACHED');
       if (this.isVideoLive(video)) this.onCameraLive();
       else {
         video.addEventListener('loadeddata', function () { self.onCameraLive(); }, { once: true });
         setTimeout(function () { self.onCameraLive(); }, 800);
       }
+    },
+
+    /** 相机状态：黑屏之类的问题，直接把这个字符串报出来就能定位 */
+    cameraStatusText: function () {
+      var video = this.findArVideo();
+      if (!video) return '相机：还没有 video 元素';
+      var rect = video.getBoundingClientRect();
+      var style = getComputedStyle(video);
+      return '相机：画面 ' + (video.videoWidth || 0) + '×' + (video.videoHeight || 0) +
+        '　显示 ' + Math.round(rect.width) + '×' + Math.round(rect.height) +
+        '　ready ' + video.readyState +
+        '　' + (video.paused ? '暂停' : '播放中') +
+        '　' + (video.srcObject ? '有流' : '无流') +
+        '　z ' + style.zIndex + '　' + style.display + '/' + style.visibility + '/' + style.opacity;
     },
 
     showGate: function (error) {
@@ -631,6 +656,8 @@
           ? (self.forceMode === 'aoyu' ? '鳌鱼' : '锦鲤') + '（强制）'
           : natural;
         modeText.textContent = '当前预设：' + text;
+        var statusText2 = document.getElementById('debug-camera');
+        if (statusText2) statusText2.textContent = self.cameraStatusText();
         var fish = self.activeFish();
         if (!fish) return;
         var status = fish.status();
