@@ -165,13 +165,6 @@
       var up = new THREE.Vector3(0, 1, 0).applyQuaternion(
         marker.object3D.getWorldQuaternion(new THREE.Quaternion()).invert()
       );
-      // 指数平滑：单次检测跳变不该让鱼的姿态歪半秒（0.5 秒才估一次，一歪很明显）
-      var k = 0.35;
-      up.set(
-        this.upRef[0] + (up.x - this.upRef[0]) * k,
-        this.upRef[1] + (up.y - this.upRef[1]) * k,
-        this.upRef[2] + (up.z - this.upRef[2]) * k
-      ).normalize();
       this.upRef = [up.x, up.y, up.z];
       var tilt = Math.acos(clamp(up.y, -1, 1)) * 180 / Math.PI;
       var name = tilt < 20 ? '平放' : (tilt > 70 ? '竖直贴墙' : '倾斜');
