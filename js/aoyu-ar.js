@@ -93,7 +93,14 @@
       this.mixer.update((delta / 1000) * this.data.speed);
     },
     pause: function () { if (this.action) this.action.paused = true; },
-    resume: function () { if (this.action) this.action.paused = false; }
+    resume: function () { if (this.action) this.action.paused = false; },
+    status: function () {
+      if (!this.action) return '摆尾：还没加载';
+      return '摆尾：' + this.action.getClip().name +
+        '　时间 ' + this.action.time.toFixed(2) + 's' +
+        '　速度 ×' + this.data.speed.toFixed(2) +
+        '　' + (this.action.paused ? '已暂停' : '播放中');
+    }
   });
 
   /* =========================================================================
@@ -658,6 +665,9 @@
         modeText.textContent = '当前预设：' + text;
         var statusText2 = document.getElementById('debug-camera');
         if (statusText2) statusText2.textContent = self.cameraStatusText();
+        var animLine = document.getElementById('debug-anim');
+        var activeAnim = self.activeFish() && self.activeFish().animator();
+        if (animLine) animLine.textContent = activeAnim ? activeAnim.status() : '摆尾：还没加载';
         var fish = self.activeFish();
         if (!fish) return;
         var status = fish.status();
