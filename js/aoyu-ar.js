@@ -238,30 +238,179 @@
       window.addEventListener('markerLost', function () { self.setMarkerActive(false); });
 
       this.bindTap();
-      this.bindCameraStatus();
+      this.initCamera();
       this.bindDebugPanel();
       this.updateTimeMode();
       console.log('AOYU_AR_READY');
     },
 
     /* ---------- 相机 ---------- */
-    bindCameraStatus: function () {
-      var hint = document.getElementById('hint');
-      var error = document.getElementById('ar-error');
-      var started = false;
-      window.addEventListener('arjs-video-loaded', function () {
-        started = true;
-        error.textContent = '';
-        hint.classList.remove('hidden');
-        hint.textContent = '把整张卡片放进画面';
+    /**
+     * 分两步走：
+     *   1) 先让 AR.js 自己去开相机：安卓 Chrome / 桌面直接就出画面，不需要任何点击；
+     *   2) 拿不到画面才弹出"点一下开启相机"。iOS 和微信 WebView 会因为"没有用户手势"
+     *      拒绝 getUserMedia（老版本页面也是靠一个开始按钮先拿到手势才起相机的，
+     *      随机打开的时候同样是黑屏）。这时在点击回调里自己调 getUserMedia，
+     *      再把拿到的流接到 AR.js 的 video 元素上——AR.js 的识别循环读的就是这个
+     *      video 元素，接上流就正常识别，不需要重载页面。
+     */
+    initCamera: function () {
+      var self = this;
+      this.cameraReady = false;
+      this.pendingStream = null;
+      this.hintEl = document.getElementById('hint');
+      this.errorEl = document.getElementById('ar-error');
+      this.gateEl = document.getElementById('tap-gate');
+
+      window.addEventListener('arjs-video-loaded', function (event) {
+        var video = (event.detail && event.detail.component) || document.querySelector('#arjs-video');
+        self.prepareVideo(video);
       });
+      // AR.js 开相机失败时会抛这个事件（微信/iOS 上最常见的就是缺用户手势）
+      window.addEventListener('camera-error', function (event) {
+        self.showGate((event && (event.error || (event.detail && event.detail.error))) || null);
+      });
+      this.gateEl.addEventListener('click', function () { self.openCameraByGesture(); });
+
+      // 兜底：2 秒后还没画面就弹手势层；已经出画面了就补一次"相机就绪"
       setTimeout(function () {
-        if (started) return;
-        hint.classList.add('hidden');
-        error.classList.remove('hidden');
-        error.textContent = '相机没有启动。如果刚才拒绝了权限，请在浏览器设置里允许访问摄像头，然后刷新页面。';
-        error.onclick = function () { location.reload(); };
-      }, 8000);
+        if (self.isVideoLive(self.findArVideo())) self.onCameraLive();
+        else self.showGate(null);
+      }, 2000);
+    },
+
+    /** AR.js 建的 video 元素：iOS / 微信 WebView 要这几个属性才肯内联播放 */
+    prepareVideo: function (video) {
+      if (!video || video.dataset.aoyuPrepared) return;
+      video.dataset.aoyuPrepared = '1';
+      video.setAttribute('playsinline', '');
+      video.setAttribute('webkit-playsinline', '');
+      video.setAttribute('muted', '');
+      video.setAttribute('autoplay', '');
+      video.muted = true;
+      if (this.pendingStream) {
+        this.attachStream(video, this.pendingStream);
+        this.pendingStream = null;
+        return;
+      }
+      var playing = video.play();
+      if (playing && playing.catch) playing.catch(function () {});
+      var self = this;
+      if (this.isVideoLive(video)) this.onCameraLive();
+      else video.addEventListener('loadeddata', function () { self.onCameraLive(); }, { once: true });
+    },
+
+    /**
+     * 找 AR.js 的 video 元素。
+     * AR.js 开相机失败时，video 元素是**建好了但没挂到页面上**的（挂载和 ready 标记都在成功回调里），
+     * 所以这里除了查 DOM，还要去它的 source 对象上把那个元素捞出来。
+     */
+    findArVideo: function () {
+      var video = document.querySelector('#arjs-video');
+      if (video) return video;
+      var arjs = this.sceneEl && this.sceneEl.systems && this.sceneEl.systems.arjs;
+      var session = arjs && arjs._arSession;
+      var source = session && session.arSource;
+      return (source && source.domElement) || null;
+    },
+
+    /**
+     * 补上 AR.js 成功回调里没来得及做的事情（挂视频、标 ready、发 arjs-video-loaded）。
+     * AR.js 的 AR context 是监听 arjs-video-loaded 才开始 init 的，不发这个事件识别不会启动。
+     */
+    recoverArSource: function (video) {
+      video.style.position = 'absolute';
+      video.style.top = '0px';
+      video.style.left = '0px';
+      video.style.zIndex = '-2';
+      video.setAttribute('id', 'arjs-video');
+      document.body.appendChild(video);
+      var arjs = this.sceneEl && this.sceneEl.systems && this.sceneEl.systems.arjs;
+      var session = arjs && arjs._arSession;
+      var source = session && session.arSource;
+      if (source) source.ready = true;
+      window.dispatchEvent(new CustomEvent('arjs-video-loaded', { detail: { component: video } }));
+      console.log('AOYU_CAMERA_SOURCE_RECOVERED');
+    },
+
+    isVideoLive: function (video) {
+      return !!(video && video.srcObject && video.readyState >= 2);
+    },
+
+    onCameraLive: function () {
+      if (this.cameraReady) return;
+      this.cameraReady = true;
+      this.errorEl.textContent = '';
+      this.gateEl.classList.remove('show');
+      this.hintEl.classList.remove('hidden');
+      this.hintEl.textContent = '把整张卡片放进画面';
+      console.log('AOYU_CAMERA_LIVE');
+    },
+
+    /** 只有用户点过之后才会走到这里：这一步在"用户手势"里，iOS/微信才肯弹权限、才给流 */
+    openCameraByGesture: function () {
+      var self = this;
+      this.errorEl.textContent = '';
+      this.gateEl.classList.remove('show');
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        this.showCameraError({ name: 'NotSupported' });
+        return;
+      }
+      navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+      }).then(function (stream) {
+        var video = self.findArVideo();
+        if (!video) {
+          self.pendingStream = stream;      // AR.js 连 video 元素都还没建出来，等它建好再接
+          return;
+        }
+        self.attachStream(video, stream);
+      }).catch(function (error) {
+        self.showCameraError(error);
+      });
+    },
+
+    attachStream: function (video, stream) {
+      var self = this;
+      var detached = !video.parentNode;      // 没挂上去 = AR.js 那次开相机是失败的
+      video.srcObject = stream;
+      video.muted = true;
+      var playing = video.play();
+      if (playing && playing.catch) playing.catch(function () {});
+      if (detached) this.recoverArSource(video);
+      console.log('AOYU_CAMERA_STREAM_ATTACHED');
+      if (this.isVideoLive(video)) this.onCameraLive();
+      else {
+        video.addEventListener('loadeddata', function () { self.onCameraLive(); }, { once: true });
+        setTimeout(function () { self.onCameraLive(); }, 800);
+      }
+    },
+
+    showGate: function (error) {
+      if (this.cameraReady) return;
+      this.gateEl.classList.add('show');
+      this.hintEl.classList.add('hidden');
+      if (error) console.log('AOYU_CAMERA_BLOCKED', error.name || '', error.message || '');
+    },
+
+    showCameraError: function (error) {
+      var name = (error && error.name) || '';
+      var text;
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        text = '摄像头权限被拒绝。请在浏览器的网站设置里允许摄像头，然后刷新页面。';
+      } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+        text = '没有找到可用的摄像头。';
+      } else if (name === 'NotReadableError') {
+        text = '摄像头被其它程序占用了，关掉再用摄像头打开的应用，然后刷新页面。';
+      } else if (name === 'NotSupported') {
+        text = '这个浏览器不支持摄像头 API。';
+      } else {
+        text = '相机没有启动' + (name ? '（' + name + '）' : '') + '。点这里重试。';
+      }
+      this.gateEl.classList.remove('show');
+      this.errorEl.textContent = text;
+      this.errorEl.onclick = function () { location.reload(); };
     },
 
     /* ---------- 点击：点鱼身出声，点空白吓一跳 ---------- */

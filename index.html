@@ -17,7 +17,8 @@
   /* AR 画面铺满：AR.js 的 video 自己会定位，这里保证 scene/canvas 跟着走 */
   a-scene { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: block; }
   .a-canvas { width: 100% !important; height: 100% !important; }
-  #arjs-video { width: 100% !important; height: 100% !important; object-fit: cover; }
+  /* AR.js 失败时自己会往 body 塞一个没样式的 #error-popup，统一走我们自己的提示卡 */
+  #error-popup { display: none !important; }
 
   #ui { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
 
@@ -39,6 +40,20 @@
     color: #f4f7f8; font-size: 14px; line-height: 1.7; text-align: center;
     pointer-events: auto; white-space: pre-wrap;
   }
+
+  /* 只有 iOS / 微信这种"必须先有用户手势"的环境才会出现 */
+  #tap-gate {
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px;
+    background: rgba(0, 0, 0, .55); pointer-events: auto;
+  }
+  #tap-gate.show { display: flex; }
+  #tap-gate .pill {
+    padding: 15px 30px; border-radius: 999px;
+    background: rgba(245, 194, 67, .94); color: #1a1206;
+    font-size: 17px; font-weight: 700;
+  }
+  #tap-gate .note { color: rgba(244, 247, 248, .78); font-size: 12px; }
 
   #debug-toggle {
     position: absolute; right: calc(14px + env(safe-area-inset-right));
@@ -129,6 +144,10 @@
 
 <div id="ui">
   <div id="hint">正在打开相机…</div>
+  <div id="tap-gate">
+    <div class="pill">点一下开启相机</div>
+    <div class="note">浏览器要求先有一次点击，才允许网页使用摄像头</div>
+  </div>
   <div id="ar-error"></div>
 
   <div id="debug-toggle">调试</div>
