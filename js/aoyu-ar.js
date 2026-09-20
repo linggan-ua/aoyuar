@@ -198,6 +198,43 @@
     startle: function (threat) {
       FishMotion.startle(this.motion, threat);
     },
+    /**
+     * 材质轻量化：把 Standard/Physical 换成不考虑光照的 Basic（水墨本来就是平的）。
+     * 用来现场判断"卡"是不是卡在片元着色器上。原来的材质存起来，可以切回去。
+     */
+    setLightweightMaterials: function (on) {
+      var meshEl = this.data.anim;
+      var root = meshEl && meshEl.getObject3D('mesh');
+      if (!root) return false;
+      var THREE = AFRAME.THREE;
+      if (on) {
+        if (this._savedMaterials) return true;
+        this._savedMaterials = [];
+        root.traverse(function (node) {
+          if (!node.isMesh || !node.material) return;
+          var list = Array.isArray(node.material) ? node.material : [node.material];
+          var swapped = list.map(function (m) {
+            return new THREE.MeshBasicMaterial({
+              map: m.map || null,
+              color: m.color ? m.color.clone() : new THREE.Color(0xffffff),
+              alphaTest: m.alphaTest || 0,
+              transparent: m.transparent,
+              opacity: m.opacity,
+              side: m.side,
+              depthWrite: m.depthWrite
+            });
+          });
+          this._savedMaterials.push({ node: node, material: node.material });
+          node.material = Array.isArray(node.material) ? swapped : swapped[0];
+        }, this);
+      } else if (this._savedMaterials) {
+        this._savedMaterials.forEach(function (item) { item.node.material = item.material; });
+        this._savedMaterials = null;
+      }
+      console.log('AOYU_MATERIAL_MODE', on ? 'basic' : 'standard');
+      return true;
+    },
+
     status: function () {
       return {
         tuning: {
@@ -786,6 +823,7 @@
       knobs.forEach(function (item) {
         document.getElementById(item[2]).addEventListener('click', function () { knob(item[0], item[1]); });
       });
+      document.getElementById('db-material').addEventListener('click', function () { self.toggleLightweight(); });
       document.getElementById('db-reset').addEventListener('click', function () {
         var fish = self.activeFish();
         if (fish) fish.tuning = { speedScale: 1, turnScale: 1, rangeScale: 1, animSpeedMax: 2.2, modelScale: 1 };
@@ -794,6 +832,18 @@
 
       this.syncModeButtons();
       this.refreshDebug();
+    },
+
+    toggleLightweight: function () {
+      var fish = this.activeFish();
+      if (!fish) return;
+      var on = !this.lightweight;
+      if (fish.setLightweightMaterials(on)) {
+        this.lightweight = on;
+        var btn = document.getElementById('db-material');
+        if (btn) btn.textContent = on ? '材质：轻量' : '材质：标准';
+        if (this.refreshDebug) this.refreshDebug();
+      }
     },
 
     setOffset: function (offsetMs) {
