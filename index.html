@@ -128,8 +128,12 @@
 
   <!-- 识别用的 .patt：同名 .png 是要打印的卡片（黑方块占 80%、内图占黑方块 50%，
        所以 arjs 的 patternRatio 必须是 0.5；换卡就换这两个文件 + 下面这一行） -->
+  <!-- 锚点平滑必须开：AR.js 默认 smooth:false，每次检测（约 30Hz）直接把位姿写进锚点，
+       中间不插值，而鱼是挂在锚点下面的——锚点一跳整条鱼的坐标系就跳，看着就是"机械、卡顿"。
+       平滑只在小幅抖动时生效（超过 smoothTolerance 的快速移动会直接跟随，不会拖泥带水）。 -->
   <a-marker id="ar-marker" type="pattern" url="assets/patterns/pattern-aoyu-ink.patt"
-            emitevents="true" size="1">
+            emitevents="true" size="1"
+            smooth="true" smooth-count="10" smooth-tolerance="0.01" smooth-threshold="2">
 
     <!-- 游动节点：位置和朝向每帧由 fish-swim 直接写 object3D，
          模型挂在下面，rotation="0 90 0" 让小程序的朝向约定（头朝局部 +Z）成立 -->
@@ -210,7 +214,7 @@
   </div>
 </div>
 
-<script src="js/fish-motion.js?v=3"></script>
-<script src="js/aoyu-ar.js?v=3"></script>
+<script src="js/fish-motion.js?v=4"></script>
+<script src="js/aoyu-ar.js?v=4"></script>
 </body>
 </html>
