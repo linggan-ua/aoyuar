@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<title>鳌鱼 AR</title>
+<title>游动测试（无相机）</title>
 <style>
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%;
@@ -86,32 +86,28 @@
 })();
 </script>
 <!-- A-Frame 和 AR.js 必须在 <a-scene> 之前加载：A-Frame 解析 scene 时要找已注册的 arjs system -->
-<script src="aframe.min.js"></script>
-<script src="aframe-ar.js"></script>
+<script src="../aframe.min.js"></script>
+<script src="../aframe-ar.js"></script>
 </head>
 <body>
 
-<a-scene id="ar-scene"
-         embedded
-         vr-mode-ui="enabled: false"
-         renderer="logarithmicDepthBuffer: true;"
-         arjs="sourceType: webcam; debugUIEnabled: false; patternRatio: 0.5; labelingMode: black_region; errorPopup: ar-error;">
+<a-scene id="ar-scene" embedded vr-mode-ui="enabled: false"
+         renderer="logarithmicDepthBuffer: true;">
 
   <a-assets timeout="30000">
-    <a-asset-item id="aoyu-model" src="assets/models/aoyu_ink.glb"></a-asset-item>
-    <a-asset-item id="koi-model" src="assets/models/koi_ink.glb"></a-asset-item>
+    <a-asset-item id="aoyu-model" src="../assets/models/aoyu_ink.glb"></a-asset-item>
+    <a-asset-item id="koi-model" src="../assets/models/koi_ink.glb"></a-asset-item>
   </a-assets>
 
-  <!-- 鳌鱼是 unlit 材质（水墨质感全靠贴图），锦鲤是普通材质，需要一点光 -->
   <a-entity light="type: ambient; color: #ffffff; intensity: 0.9"></a-entity>
   <a-entity light="type: directional; color: #fff5d6; intensity: 0.7" position="1.5 2 1"></a-entity>
 
-  <!-- 识别用的 .patt 改这里：assets/patterns/ 里放新文件，文件名对上就行 -->
-  <a-marker id="ar-marker" type="pattern" url="assets/patterns/pattern-aoyu1.patt"
-            emitevents="true" size="1">
+  <!-- 用普通实体假冒 marker：实体自身就是卡片坐标系（局部 +Y = 卡面法线），
+       卡面网格在局部 XZ 平面上，和 AR.js 里 marker 的坐标关系一致 -->
+  <a-entity id="ar-marker">
+    <a-plane rotation="-90 0 0" position="0 -0.002 0" width="1.06" height="1.06" color="#1b1b1b"></a-plane>
+    <a-plane rotation="-90 0 0" width="1" height="1" color="#e6dcc9"></a-plane>
 
-    <!-- 游动节点：位置和朝向每帧由 fish-swim 直接写 object3D，
-         模型挂在下面，rotation="0 90 0" 让小程序的朝向约定（头朝局部 +Z）成立 -->
     <a-entity id="aoyu-swim" fish-swim="key: aoyu; anim: #aoyu-anim" scale="0.64 0.64 0.64">
       <a-entity id="aoyu-anim" fish-anim="clip: Ao_Swim_Loop_3.2s"
                 gltf-model="#aoyu-model" rotation="0 90 0"></a-entity>
@@ -121,10 +117,9 @@
       <a-entity id="koi-anim" fish-anim="clip: Swim_Loop_2.4s"
                 gltf-model="#koi-model" rotation="0 90 0"></a-entity>
     </a-entity>
+  </a-entity>
 
-  </a-marker>
-
-  <a-entity camera></a-entity>
+  <a-entity camera position="0 1.15 1.15" rotation="-45 0 0"></a-entity>
 </a-scene>
 
 <div id="ui">
@@ -183,7 +178,14 @@
   </div>
 </div>
 
-<script src="js/fish-motion.js"></script>
-<script src="js/aoyu-ar.js"></script>
+<script src="../js/fish-motion.js"></script>
+<script src="../js/aoyu-ar.js"></script>
+<script>
+  // 无相机测试：1.5 秒后模拟"卡片进入画面"，鱼应该从边缘游进来
+  setTimeout(function () {
+    window.dispatchEvent(new CustomEvent('markerFound', { detail: document.getElementById('ar-marker') }));
+    console.log('TEST_MARKER_FOUND 已派发');
+  }, 1500);
+</script>
 </body>
 </html>
