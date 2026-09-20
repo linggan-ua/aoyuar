@@ -25,8 +25,9 @@
     tuningLimits: {
       speedScale: [0.5, 2.0],
       turnScale: [0.5, 1.7],
-      rangeScale: [0.6, 1.4],
-      animSpeedMax: [1.0, 3.0]
+      rangeScale: [0.5, 3.0],     // 活动范围：1 = 原来的值（±0.95 卡宽），最大可以放大到 3 倍
+      animSpeedMax: [1.0, 3.0],
+      modelScale: [0.4, 2.0]      // 鱼的大小
     }
   };
 
@@ -121,7 +122,9 @@
       });
       this.upRef = [0, 1, 0];
       this.posture = { name: '平放（默认）', tiltDeg: 0 };
-      this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 1, animSpeedMax: 2.2 };
+      this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 1, animSpeedMax: 2.2, modelScale: 1 };
+      this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 锦鲤 0.55）
+      this.appliedScale = 1;
       this.hidden = true;
       this.upRefTimer = 99;                 // 第一帧就估一次姿态
       this.el.object3D.visible = false;
@@ -142,6 +145,10 @@
       if (this.upRefTimer >= 0.5) {
         this.upRefTimer = 0;
         this.updateUpRef();
+      }
+      if (this.appliedScale !== this.tuning.modelScale) {
+        this.appliedScale = this.tuning.modelScale;
+        this.el.object3D.scale.setScalar(this.baseScale * this.tuning.modelScale);
       }
       if (this.hidden) return;
       var out = FishMotion.step(this.motion, d, { upRef: this.upRef, tuning: this.tuning });
@@ -204,7 +211,8 @@
           speedScale: this.tuning.speedScale,
           turnScale: this.tuning.turnScale,
           rangeScale: this.tuning.rangeScale,
-          animSpeedMax: this.tuning.animSpeedMax
+          animSpeedMax: this.tuning.animSpeedMax,
+          modelScale: this.tuning.modelScale
         },
         posture: { name: this.posture.name, tiltDeg: Math.round(this.posture.tiltDeg) },
         upRef: this.upRef,
@@ -679,9 +687,11 @@
         if (!fish) return;
         var status = fish.status();
         statusText.textContent = '卡片姿态：' + status.posture.name + '（法线偏' + status.posture.tiltDeg + '°）· ' +
-          status.state + '　游动参数：速度×' + status.tuning.speedScale.toFixed(2) +
+          status.state + '　速度×' + status.tuning.speedScale.toFixed(2) +
           ' 转向×' + status.tuning.turnScale.toFixed(2) +
           ' 范围×' + status.tuning.rangeScale.toFixed(2) +
+          '（左右各 ' + (0.95 * status.tuning.rangeScale).toFixed(2) + ' 张卡宽）' +
+          ' 大小×' + status.tuning.modelScale.toFixed(2) +
           ' 摆尾上限×' + status.tuning.animSpeedMax.toFixed(1);
       };
 
@@ -723,14 +733,15 @@
       };
       var knobs = [['speedScale', -0.25, 'db-speed-m'], ['speedScale', 0.25, 'db-speed-p'],
         ['turnScale', -0.2, 'db-turn-m'], ['turnScale', 0.2, 'db-turn-p'],
-        ['rangeScale', -0.1, 'db-range-m'], ['rangeScale', 0.1, 'db-range-p'],
-        ['animSpeedMax', -0.2, 'db-tail-m'], ['animSpeedMax', 0.2, 'db-tail-p']];
+        ['rangeScale', -0.25, 'db-range-m'], ['rangeScale', 0.25, 'db-range-p'],
+        ['animSpeedMax', -0.2, 'db-tail-m'], ['animSpeedMax', 0.2, 'db-tail-p'],
+        ['modelScale', -0.1, 'db-size-m'], ['modelScale', 0.1, 'db-size-p']];
       knobs.forEach(function (item) {
         document.getElementById(item[2]).addEventListener('click', function () { knob(item[0], item[1]); });
       });
       document.getElementById('db-reset').addEventListener('click', function () {
         var fish = self.activeFish();
-        if (fish) fish.tuning = { speedScale: 1, turnScale: 1, rangeScale: 1, animSpeedMax: 2.2 };
+        if (fish) fish.tuning = { speedScale: 1, turnScale: 1, rangeScale: 1, animSpeedMax: 2.2, modelScale: 1 };
         self.refreshDebug();
       });
 
