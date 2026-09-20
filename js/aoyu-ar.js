@@ -252,11 +252,45 @@
       window.addEventListener('markerFound', function () { self.setMarkerActive(true); });
       window.addEventListener('markerLost', function () { self.setMarkerActive(false); });
 
+      this.limitPixelRatio();
       this.bindTap();
       this.initCamera();
       this.bindDebugPanel();
+      this.startFpsCounter();
       this.updateTimeMode();
       console.log('AOYU_AR_READY');
+    },
+
+    /**
+     * 手机 DPR 普遍 2~3，A-Frame 按 devicePixelRatio 渲染等于每帧多画 4~9 倍像素，
+     * 这是掉帧最大的一头。压到 1.5 后画面几乎看不出差别，帧率能翻倍。
+     * A-Frame 只在创建 renderer 时设过一次 pixelRatio，之后不会覆盖（除了退出 VR）。
+     */
+    limitPixelRatio: function () {
+      var renderer = this.sceneEl && this.sceneEl.renderer;
+      if (!renderer) return;
+      this.pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+      renderer.setPixelRatio(this.pixelRatio);
+      console.log('AOYU_PIXEL_RATIO', this.pixelRatio,
+        'drawingBuffer=' + renderer.domElement.width + '×' + renderer.domElement.height);
+    },
+
+    /** 帧率计数（调试面板显示用） */
+    startFpsCounter: function () {
+      var self = this;
+      var frames = 0;
+      var last = performance.now();
+      var loop = function () {
+        frames++;
+        var now = performance.now();
+        if (now - last >= 1000) {
+          self.fps = Math.round((frames * 1000) / (now - last));
+          frames = 0;
+          last = now;
+        }
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
     },
 
     /* ---------- 相机 ---------- */
@@ -679,7 +713,8 @@
         var fish = self.activeFish();
         if (!fish) return;
         var status = fish.status();
-        statusText.textContent = '卡片姿态：' + status.posture.name + '（法线偏' + status.posture.tiltDeg + '°）· ' +
+        statusText.textContent = 'FPS ' + (self.fps || '--') + '　' +
+          '卡片姿态：' + status.posture.name + '（法线偏' + status.posture.tiltDeg + '°）· ' +
           status.state + '　速度×' + status.tuning.speedScale.toFixed(2) +
           ' 转向×' + status.tuning.turnScale.toFixed(2) +
           ' 范围×' + status.tuning.rangeScale.toFixed(2) +
