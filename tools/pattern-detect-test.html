@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<title>鳌鱼 AR</title>
+<title>离线识别测试</title>
 <style>
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%;
@@ -86,6 +86,7 @@
   .db-row button.on { border-color: #f5c243; color: #f5c243; }
   .db-status { margin: 8px 0 4px; color: #8b98a9; font-size: 11px; line-height: 1.6; }
   .db-hint { margin-top: 6px; color: #5d6b7d; font-size: 11px; text-align: center; }
+  #tap-gate { display: none !important; }
 </style>
 <!-- 子路径部署（GitHub Pages /aoyuar/）时保证 assets、.patt 相对当前目录解析 -->
 <script>
@@ -101,8 +102,8 @@
 })();
 </script>
 <!-- A-Frame 和 AR.js 必须在 <a-scene> 之前加载：A-Frame 解析 scene 时要找已注册的 arjs system -->
-<script src="aframe.min.js"></script>
-<script src="aframe-ar.js"></script>
+<script src="../aframe.min.js"></script>
+<script src="../aframe-ar.js"></script>
 </head>
 <body>
 
@@ -110,11 +111,11 @@
          embedded
          vr-mode-ui="enabled: false"
          renderer="logarithmicDepthBuffer: true;"
-         arjs="sourceType: webcam; debugUIEnabled: false; patternRatio: 0.5; labelingMode: black_region; errorPopup: ar-error;">
+         arjs="sourceType: image; sourceUrl: ../assets/patterns/pattern-aoyu-ink.png; debugUIEnabled: false; patternRatio: 0.5; labelingMode: black_region; errorPopup: ar-error;">
 
   <a-assets timeout="30000">
-    <a-asset-item id="aoyu-model" src="assets/models/aoyu_ink.glb"></a-asset-item>
-    <a-asset-item id="koi-model" src="assets/models/koi_ink.glb"></a-asset-item>
+    <a-asset-item id="aoyu-model" src="../assets/models/aoyu_ink.glb"></a-asset-item>
+    <a-asset-item id="koi-model" src="../assets/models/koi_ink.glb"></a-asset-item>
   </a-assets>
 
   <!-- 鳌鱼是 unlit 材质（水墨质感全靠贴图），锦鲤是普通材质，需要一点光 -->
@@ -123,7 +124,7 @@
 
   <!-- 识别用的 .patt：同名 .png 是要打印的卡片（黑方块占 80%、内图占黑方块 50%，
        所以 arjs 的 patternRatio 必须是 0.5；换卡就换这两个文件 + 下面这一行） -->
-  <a-marker id="ar-marker" type="pattern" url="assets/patterns/pattern-aoyu-ink.patt"
+  <a-marker id="ar-marker" type="pattern" url="../assets/patterns/pattern-aoyu-ink.patt"
             emitevents="true" size="1">
 
     <!-- 游动节点：位置和朝向每帧由 fish-swim 直接写 object3D，
@@ -203,7 +204,16 @@
   </div>
 </div>
 
-<script src="js/fish-motion.js"></script>
-<script src="js/aoyu-ar.js"></script>
+<script src="../js/fish-motion.js"></script>
+<script src="../js/aoyu-ar.js"></script>
+<script>
+  window.addEventListener('markerFound', function () {
+    console.log('TEST_MARKER_FOUND');
+    var h = document.getElementById('hint');
+    if (h) { h.textContent = '识别成功'; h.classList.remove('hidden'); }
+  });
+  window.addEventListener('markerLost', function () { console.log('TEST_MARKER_LOST'); });
+  setTimeout(function () { console.log('TEST_DONE'); }, 12000);
+</script>
 </body>
 </html>

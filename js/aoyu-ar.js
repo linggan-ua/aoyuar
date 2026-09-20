@@ -283,6 +283,12 @@
     prepareVideo: function (video) {
       if (!video || video.dataset.aoyuPrepared) return;
       video.dataset.aoyuPrepared = '1';
+      // 图片/视频文件源（比如 tools/pattern-detect-test.html）给的不是 video 元素，
+      // 它们本来就在播，不需要补 iOS 那套属性
+      if (video.tagName !== 'VIDEO') {
+        this.onCameraLive();
+        return;
+      }
       video.setAttribute('playsinline', '');
       video.setAttribute('webkit-playsinline', '');
       video.setAttribute('muted', '');
@@ -334,7 +340,7 @@
     },
 
     isVideoLive: function (video) {
-      return !!(video && video.srcObject && video.readyState >= 2);
+      return !!(video && video.tagName === 'VIDEO' && video.srcObject && video.readyState >= 2);
     },
 
     onCameraLive: function () {
