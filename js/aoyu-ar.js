@@ -728,13 +728,17 @@
     },
 
     /**
-     * 命中判定。要点一次就中，必须绕开蒙皮模型的一个坑：
-     *   three 的 mesh.raycast / Box3.setFromObject 用的都是**绑定姿势**的几何体，
-     *   而画面上看到的是骨骼动画摆过之后的鱼——两者差得远，所以以前老是点不中。
-     * 这里改成三层，任意一层命中就算点到鱼：
-     *   1) 模型网格射线（绑定姿势，偶尔能中）
-     *   2) 骨骼包围盒：骨骼的世界坐标就是当前姿势，把它放大 1.8 倍覆盖鱼鳍和尾
-     *   3) 骨骼包围盒再外扩一点做兜底（手指本来就比像素粗）
+     * 命中判定：用**骨骼的世界坐标**做包围盒（骨骼才是当前姿势）。
+     *
+     * 试过的坑：
+     *   1) mesh.raycast / Box3.setFromObject → 用绑定姿势几何体，和摆过尾的鱼对不上（命中 0 次）
+     *   2) 模型本地包围盒（OBB）→ 绑定姿势的几何体尺寸和实际渲染差得多，盒子虚胖（84 点中 56）
+     *   3) 只按骨骼算 → 尺寸对（11%），但骨骼沿脊椎是一条细线，横截面太薄，鱼鳍尾部点不中
+     *
+     * 现在＝骨骼包围盒 + 手指容差：
+     *   - 骨骼世界坐标 → 当前姿势的准确位置与长度
+     *   - 每边外扩 0.07（卡片宽度的 7%）
+     *   - 每个轴至少 0.22 厚，避免脊椎塌成一条细线时判定区过小
      */
     hitFish: function (fish, clientX, clientY) {
       var sceneEl = this.sceneEl;
@@ -749,6 +753,7 @@
               -((clientY - rect.top) / rect.height) * 2 + 1);
       raycaster.setFromCamera(ndc, camera);
 
+      // 非蒙皮模型这一层就够精准
       if (raycaster.intersectObject(mesh, true).length) return true;
 
       var bones = this._bones;
@@ -761,9 +766,7 @@
       if (!bones.length) {
         var fallback = new THREE.Box3().setFromObject(mesh);
         if (fallback.isEmpty()) return false;
-        var fs = fallback.getSize(new THREE.Vector3()).multiplyScalar(1.2);
-        var fc = fallback.getCenter(new THREE.Vector3());
-        fallback.setFromCenterAndSize(fc, fs);
+        fallback.expandByScalar(0.07);
         return raycaster.ray.intersectsBox(fallback);
       }
       var box = new THREE.Box3();
@@ -771,12 +774,10 @@
       for (var i = 0; i < bones.length; i++) {
         box.expandByPoint(bones[i].getWorldPosition(v));
       }
+      box.expandByScalar(0.07);                    // 手指容差
       var size = box.getSize(new THREE.Vector3());
       var center = box.getCenter(new THREE.Vector3());
-      // 骨骼只沿脊椎分布，鱼鳍/尾巴在包围盒外，所以放大；再给一个最小体积避免塌成一条线
-      size.set(Math.max(size.x, 0.04) * 1.8,
-               Math.max(size.y, 0.04) * 1.8,
-               Math.max(size.z, 0.04) * 1.8);
+      size.set(Math.max(size.x, 0.22), Math.max(size.y, 0.22), Math.max(size.z, 0.22));
       box.setFromCenterAndSize(center, size);
       return raycaster.ray.intersectsBox(box);
     },
