@@ -22,6 +22,7 @@
     notes: ['note-c6', 'note-d6', 'note-e6', 'note-g6', 'note-a6'].map(function (name) {
       return 'assets/audio/' + name + '.mp3';
     }),
+    storageKey: 'aoyu-tuning-v1',
     tuningLimits: {
       speedScale: [0.5, 2.0],
       turnScale: [0.5, 1.7],
@@ -294,6 +295,7 @@
       this.initCamera();
       this.bindDebugPanel();
       this.startFpsCounter();
+      this.applySavedTuning();
       this.updateTimeMode();
       console.log('AOYU_AR_READY');
     },
@@ -774,7 +776,7 @@
           status.state + '　速度×' + status.tuning.speedScale.toFixed(2) +
           ' 转向×' + status.tuning.turnScale.toFixed(2) +
           ' 范围×' + status.tuning.rangeScale.toFixed(2) +
-          '（左右各 ' + (0.95 * status.tuning.rangeScale).toFixed(2) + ' 张卡宽）' +
+          '（左右各 ' + (0.70 * status.tuning.rangeScale).toFixed(2) + ' 张卡宽，高 0.35~0.90）' +
           ' 大小×' + status.tuning.modelScale.toFixed(2) +
           ' 摆尾上限×' + status.tuning.animSpeedMax.toFixed(1);
       };
@@ -813,6 +815,7 @@
         var limits = CONFIG.tuningLimits[key];
         var next = clamp(fish.tuning[key] + delta, limits[0], limits[1]);
         fish.tuning[key] = Math.round(next * 100) / 100;
+        self.saveTuning();
         self.refreshDebug();
       };
       var knobs = [['speedScale', -0.25, 'db-speed-m'], ['speedScale', 0.25, 'db-speed-p'],
@@ -827,11 +830,55 @@
       document.getElementById('db-reset').addEventListener('click', function () {
         var fish = self.activeFish();
         if (fish) fish.tuning = { speedScale: 1, turnScale: 1, rangeScale: 1, animSpeedMax: 2.2, modelScale: 1 };
+        self.saveTuning();
         self.refreshDebug();
       });
 
       this.syncModeButtons();
       this.refreshDebug();
+    },
+
+    /** 调参存 localStorage：不然刷新一次就回默认，现场会觉得"莫名其妙又变了" */
+    loadSavedTuning: function () {
+      try {
+        var raw = localStorage.getItem(CONFIG.storageKey);
+        return raw ? JSON.parse(raw) : null;
+      } catch (error) {
+        return null;
+      }
+    },
+
+    saveTuning: function () {
+      var fish = this.activeFish();
+      if (!fish) return;
+      try {
+        localStorage.setItem(CONFIG.storageKey, JSON.stringify({
+          tuning: fish.tuning,
+          lightweight: !!this.lightweight
+        }));
+      } catch (error) {
+        /* 隐私模式之类写不了就算了 */
+      }
+    },
+
+    applySavedTuning: function () {
+      var saved = this.loadSavedTuning();
+      if (!saved || !saved.tuning) return;
+      Object.keys(instances).forEach(function (key) {
+        var fish = instances[key];
+        if (!fish) return;
+        Object.keys(saved.tuning).forEach(function (k) {
+          if (typeof saved.tuning[k] === 'number') fish.tuning[k] = saved.tuning[k];
+        });
+      });
+      if (saved.lightweight) {
+        this.lightweight = true;
+        var fish = this.activeFish();
+        if (fish) fish.setLightweightMaterials(true);
+        var btn = document.getElementById('db-material');
+        if (btn) btn.textContent = '材质：轻量';
+      }
+      console.log('AOYU_TUNING_RESTORED', JSON.stringify(saved.tuning));
     },
 
     toggleLightweight: function () {
@@ -840,6 +887,7 @@
       var on = !this.lightweight;
       if (fish.setLightweightMaterials(on)) {
         this.lightweight = on;
+        this.saveTuning();
         var btn = document.getElementById('db-material');
         if (btn) btn.textContent = on ? '材质：轻量' : '材质：标准';
         if (this.refreshDebug) this.refreshDebug();

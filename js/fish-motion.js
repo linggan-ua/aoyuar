@@ -81,7 +81,7 @@ var DEFAULTS = {
   boundaryMargin: 0.25,
   gravityTau: 0.4,          // 重力矫正时间常数（秒）
   bankTau: 0.25,
-  region: { x: 0.95, yMin: 0.35, yMax: 0.90, z: 0.70 }
+  region: { x: 0.70, yMin: 0.35, yMax: 0.90, z: 0.55 }
 };
 
 function pickTarget(s, region) {
@@ -116,8 +116,10 @@ function enterState(s, name, region, personality) {
     s.stateDuration = randomBetween(s, 0.8, 1.8);
     s.targetSpeed = s.baseSpeed * personality.speedScale * randomBetween(s, 0.25, 0.45);
   } else {
-    s.stateDuration = randomBetween(s, 1.2, 3.0) * personality.hoverBias;
-    s.targetSpeed = s.baseSpeed * personality.speedScale * randomBetween(s, 0.08, 0.25);
+    // 悬停：原来 1.2~3.0 秒 × 最多 1.5 倍，几乎停在原地，看着像卡住。缩短并把速度抬一点，
+    // 从"停住"变成"慢慢悠着游"。
+    s.stateDuration = randomBetween(s, 0.8, 2.0) * personality.hoverBias;
+    s.targetSpeed = s.baseSpeed * personality.speedScale * randomBetween(s, 0.12, 0.30);
   }
 }
 
@@ -470,9 +472,12 @@ function step(s, dt, env) {
   // 活动范围（调试面板可缩放）
   var region = _region;
   region.x = s.region.x * rangeScale;
-  region.yMin = s.region.yMin;
-  region.yMax = Math.max(s.region.yMin + 0.1, s.region.yMin + (s.region.yMax - s.region.yMin) * rangeScale);
   region.z = s.region.z * rangeScale;
+  // 高度**不跟着范围缩放**：范围旋钮只管横向活动面。
+  // 之前一起放大，范围开到 3 倍时鱼会飘到卡片上方 1.7 个卡宽的高度，
+  // 斜着看会被透视放大成巨大的屏幕位移，表现就是"游出屏幕"。
+  region.yMin = s.region.yMin;
+  region.yMax = Math.max(s.region.yMin + 0.1, s.region.yMax);
 
   // 1) 状态机
   s.stateTime += d;
