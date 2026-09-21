@@ -43,14 +43,17 @@
 
   function log() { console.log.apply(console, ['AOYU_TRK'].concat([].slice.call(arguments))); }
 
-  /** 切换质量档位：处理分辨率 + RANSAC 阈值一起缩放（阈值按处理像素算才等价） */
+  /** 切换质量档位：只改处理分辨率和跟踪点数；RANSAC 阈值不跟着缩放（见下面的注释） */
   function setQuality(scale, grid) {
     S.quality.scale = Math.min(CONFIG.adaptive.maxScale, Math.max(CONFIG.adaptive.minScale, scale));
     S.quality.grid = Math.min(CONFIG.adaptive.maxGrid, Math.max(CONFIG.adaptive.minGrid, grid));
     if (S.canvas) {
       S.canvas.width = Math.round(CONFIG.frameW * S.quality.scale);
       S.canvas.height = Math.round(CONFIG.frameH * S.quality.scale);
-      S.ransacThresh = S.ransacThresh || CONFIG.ransacThresh * S.quality.scale;
+      // 阈值按"像素"算，不随处理分辨率缩放：KLT/ORB 的定位误差本身就是 1-2 像素量级，
+      // 降分辨率并不会让同样的像素误差变得更不可接受。实验台实测（tracker-lab-results.md 第十四轮）：
+      // 阈值 1.2/1.8/3.0/5.0px 对应出位姿 44/43/54/64 帧——收紧只会更容易丢，所以保持固定值。
+      S.ransacThresh = CONFIG.ransacThresh;
       log('质量档位 → 处理 ' + S.canvas.width + '×' + S.canvas.height + '，跟踪点 ' + S.quality.grid + '²');
     }
   }
