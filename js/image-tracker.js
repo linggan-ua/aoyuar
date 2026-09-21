@@ -35,7 +35,7 @@
     anchor: null, sceneEl: null, staticMode: false, source: null,
     refs: [], card: null, cardSize: [0, 0],
     prevGray: null, trackPts: null, refPts: null, lastH: null, lastCorners: null,
-    frame: 0, found: false, miss: 0, forceDetect: true, rejLog: 0, cardErr: false,
+    frame: 0, found: false, miss: 0, forceDetect: true, rejLog: 0, cardErr: false, coarsePass: false,
     oneEuro: null, pose: null, lastDetectMs: 0, lastTrackMs: 0, poses: 0,
     stats: { frames: 0, posed: 0, detect: [], track: [], inliers: [], gaps: [], lastPoseT: 0, lastT: 0, fps: 0, startedAt: 0, costMs: 0 },
     quality: { scale: 1.0, grid: 8 }
@@ -214,7 +214,9 @@
       useRefs = S.refs.slice().sort(function (a, b) { return Math.abs(a.w - target) - Math.abs(b.w - target); }).slice(0, 2);
     } else {
       var small = new cv.Mat();
-      var ds = CONFIG.detectScale * S.quality.scale;
+      // 粗检固定半分辨率：跟着自适应档位走的话，档位降到 0.6 时 ds=0.3、卡片只剩几十像素，
+      // 重新捕获会直接失败；这一遍只在"没锁住"时跑，贵一次没关系
+      var ds = CONFIG.detectScale;
       cv.resize(gray, small, new cv.Size(0, 0), ds, ds, cv.INTER_AREA);
       base = small; scale = ds; roi = small;
     }
@@ -253,6 +255,27 @@
     mask.delete(); kp.delete(); desc.delete();
     if (roi !== gray) roi.delete();
     if (base !== gray && base !== roi) base.delete();
+
+    // ROI 里没找到 → 换成半分辨率全图重检一次（否则下一帧还在同一个 ROI 里打转）
+    if (!H && S.lastCorners && !S.coarsePass) {
+      var savedRoi = S.lastCorners;
+      S.lastCorners = null;
+      H = detect(gray);
+      S.lastCorners = savedRoi;
+    }
+
+    // 首次捕获：半分辨率全图这一遍只用来"定位"（实验台实测小卡片会偏 25px，还带 10° 假旋转），
+    // 拿到大致位置后立刻开 ROI、全分辨率重检一次再交出去。只在捕获时多花一次 ROI 检测。
+    if (H && !S.lastCorners && !S.coarsePass) {
+      S.coarsePass = true;
+      var savedCorners = S.lastCorners;
+      S.lastCorners = quadFromH(H);
+      var Hfine = detect(gray);
+      S.lastCorners = savedCorners;
+      S.coarsePass = false;
+      if (Hfine) H = Hfine;
+    }
+
     S.lastDetectMs = performance.now() - t0;
     return H;
   }
