@@ -207,6 +207,9 @@
         tuning: this.tuning,
         state: this.boosting ? '受惊加速' : '巡游',
         radius: { x: rx, z: rz },
+        // 轨道相位与当前位置：真机上一眼看得出"到底动没动"
+        t: this.t.toFixed(1),
+        pos: this.el.object3D.position,
         centerY: this.data.centerY.toFixed(2)
       };
     }
@@ -784,7 +787,9 @@
           ' 转向×' + status.tuning.turnScale.toFixed(2) +
           ' 范围×' + status.tuning.rangeScale.toFixed(2) +
           ' 摆尾×' + status.tuning.animSpeedMax.toFixed(2) +
-          ' 大小×' + status.tuning.modelScale.toFixed(2);
+          ' 大小×' + status.tuning.modelScale.toFixed(2) +
+          '　t=' + status.t + ' 位置 ' + status.pos.x.toFixed(2) + ',' +
+          status.pos.y.toFixed(2) + ',' + status.pos.z.toFixed(2);
       };
 
       toggle.addEventListener('click', function () {
