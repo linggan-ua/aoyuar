@@ -514,7 +514,7 @@
       this.errorEl.textContent = '';
       this.gateEl.classList.remove('show');
       this.hintEl.classList.remove('hidden');
-      this.hintEl.textContent = '把整张卡片放进画面';
+      this.hintEl.textContent = '把整张鳌鱼二维码放进画面';
       console.log('AOYU_CAMERA_LIVE');
     },
 
