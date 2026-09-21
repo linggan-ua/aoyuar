@@ -34,7 +34,8 @@
     refs: [], card: null, cardSize: [0, 0],
     prevGray: null, trackPts: null, refPts: null, lastH: null, lastCorners: null,
     frame: 0, found: false, miss: 0, forceDetect: true,
-    oneEuro: null, pose: null, lastDetectMs: 0, lastTrackMs: 0, poses: 0
+    oneEuro: null, pose: null, lastDetectMs: 0, lastTrackMs: 0, poses: 0,
+    stats: { frames: 0, posed: 0, detect: [], track: [], inliers: [], lastT: 0, fps: 0, startedAt: 0 }
   };
 
   function log() { console.log.apply(console, ['AOYU_TRK'].concat([].slice.call(arguments))); }
@@ -264,6 +265,7 @@
     S.anchor.object3D.matrix.copy(pose);
     S.anchor.object3D.matrixWorldNeedsUpdate = true;
     S.poses++;
+    S.stats.posed++;
     ip.delete(); K.delete(); rvec.delete(); tvec.delete(); R.delete();
   }
 
@@ -272,6 +274,21 @@
     requestAnimationFrame(tick);
     if (!S.cv || !S.source || !S.card) return;
     S.frame++;
+    var st = S.stats;
+    if (!st.startedAt) st.startedAt = performance.now();
+    st.frames++;
+    st.lastT = performance.now();
+    if (S.lastDetectMs) { st.detect.push(S.lastDetectMs); S.lastDetectMs = 0; }
+    if (S.lastTrackMs) { st.track.push(S.lastTrackMs); S.lastTrackMs = 0; }
+    if (S.lastInliers !== undefined) st.inliers.push(S.lastInliers);
+    // 每秒刷新面板与 fps
+    if (!S.statsEl) makeStatsEl();
+    if (st.frames % 30 === 0) {
+      var now = performance.now();
+      st.fps = 30000 / (now - (st.markT || st.startedAt));
+      st.markT = now;
+      updateStatsEl();
+    }
     var cv = S.cv;
     var sw = S.source.videoWidth || S.source.naturalWidth || S.source.width;
     var sh = S.source.videoHeight || S.source.naturalHeight || S.source.height;
@@ -324,7 +341,44 @@
     window.dispatchEvent(new CustomEvent('markerLost'));
   }
 
-  window.AOYU_TRACKER = { config: CONFIG, state: S };
+  function avg(a) { return a.length ? a.reduce(function (x, y) { return x + y; }, 0) / a.length : 0; }
+  function pct(a) { if (!a.length) return 0; var b = a.slice().sort(function (x, y) { return x - y; }); return b[Math.floor(b.length * 0.95)]; }
+
+  function reportText() {
+    var st = S.stats;
+    var secs = st.startedAt ? ((performance.now() - st.startedAt) / 1000).toFixed(1) : '0';
+    return [
+      '【图像跟踪实测】时长 ' + secs + 's  帧 ' + st.frames + '  FPS≈' + st.fps.toFixed(1),
+      '锁定率 ' + (st.frames ? (st.posed / st.frames * 100).toFixed(0) : 0) + '%（出位姿 ' + st.posed + '/' + st.frames + '）',
+      '检测 平均 ' + avg(st.detect).toFixed(0) + 'ms（p95 ' + pct(st.detect).toFixed(0) + 'ms，' + st.detect.length + ' 次）',
+      '跟踪 平均 ' + avg(st.track).toFixed(1) + 'ms（p95 ' + pct(st.track).toFixed(1) + 'ms）',
+      'KLT 内点 平均 ' + avg(st.inliers).toFixed(0) + '（最小 ' + (st.inliers.length ? Math.min.apply(null, st.inliers) : 0) + '）',
+      '设备 DPR ' + window.devicePixelRatio + '，渲染像素比 ' + (S.pixelRatio || '—')
+    ].join('\n');
+  }
+
+  function makeStatsEl() {
+    var el = document.createElement('div');
+    el.id = 'trk-stats';
+    el.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:50;max-width:92vw;padding:8px 10px;' +
+      'background:rgba(8,11,16,.86);color:#7fd1ff;font:11px/1.5 ui-monospace,Menlo,monospace;' +
+      'border:1px solid rgba(127,209,255,.4);border-radius:8px;white-space:pre-wrap;pointer-events:auto';
+    el.onclick = function () {
+      var txt = reportText();
+      if (navigator.clipboard) navigator.clipboard.writeText(txt);
+      el.textContent = txt + '\n\n（已复制，粘贴发我即可）';
+      setTimeout(updateStatsEl, 1500);
+    };
+    document.body.appendChild(el);
+    S.statsEl = el;
+  }
+
+  function updateStatsEl() {
+    if (!S.statsEl) return;
+    S.statsEl.textContent = reportText() + '\n\n（点一下可复制，粘贴发我）';
+  }
+
+  window.AOYU_TRACKER = { config: CONFIG, state: S, report: reportText };
 
   window.addEventListener('load', function () {
     S.sceneEl = document.querySelector('a-scene');
