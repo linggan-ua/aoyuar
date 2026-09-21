@@ -37,7 +37,7 @@
     anchor: null, sceneEl: null, staticMode: false, source: null,
     refs: [], card: null, cardSize: [0, 0],
     prevGray: null, trackPts: null, refPts: null, lastH: null, lastCorners: null,
-    frame: 0, found: false, miss: 0, forceDetect: true, rejLog: 0, cardErr: false, coarsePass: false,
+    frame: 0, found: false, miss: 0, forceDetect: true, rejLog: 0, cardErr: false, coarsePass: false, diag: null, lastPoseFrame: 0,
     oneEuro: null, pose: null, lastDetectMs: 0, lastTrackMs: 0, poses: 0,
     stats: { frames: 0, posed: 0, detect: [], track: [], inliers: [], gaps: [], lastPoseT: 0, lastT: 0, fps: 0, startedAt: 0, costMs: 0, frameMs: 0, lastTickT: 0 },
     quality: { scale: 1.0, grid: 8 }
@@ -186,6 +186,28 @@
     var cs = S.cardSize;
     return [[0, 0], [cs[0], 0], [cs[0], cs[1]], [0, cs[1]]].map(function (p) { return toFrame(H, p[0], p[1]); });
   }
+  function meanEdge(q) {
+    var e = 0;
+    for (var i = 0; i < 4; i++) {
+      var a = q[i], b = q[(i + 1) % 4];
+      e += Math.hypot(b[0] - a[0], b[1] - a[1]);
+    }
+    return e / 4;
+  }
+  /* 连续性检查：只在"上一次位姿还在最近几帧内"时生效。手抖不可能让卡片在 1 帧内放大/缩小 40%，
+     所以那种解一定是错的（典型是把卡片内的一小块画当成整张卡，解出 2× 尺度偏差 → 深度减半）。
+     丢跟踪后重新锁定时不检查（那时卡片本来就可能离得远/近）。 */
+  var SCALE_JUMP_LO = 0.7, SCALE_JUMP_HI = 1.4, SCALE_FRESH_FRAMES = 3;
+  function scaleJumpReject(corners) {
+    if (!S.lastCorners || !S.lastPoseFrame) return null;
+    if ((S.frame - S.lastPoseFrame) > SCALE_FRESH_FRAMES) return null;
+    var prev = meanEdge(S.lastCorners), cur = meanEdge(corners);
+    if (!(prev > 1) || !(cur > 1)) return null;
+    var ratio = cur / prev;
+    if (ratio < SCALE_JUMP_LO || ratio > SCALE_JUMP_HI) return '卡片尺寸突变 ' + ratio.toFixed(2) + '×（上一帧 ' + Math.round(prev) + 'px → 本帧 ' + Math.round(cur) + 'px）';
+    return null;
+  }
+
   function quadRejectReason(q) {
     var frameArea = S.canvas.width * S.canvas.height, i;
     for (i = 0; i < 4; i++) if (!isFinite(q[i][0]) || !isFinite(q[i][1])) return '非有限值';
@@ -257,7 +279,8 @@
       var Hm = cv.findHomography(cdM, frM, cv.RANSAC, S.ransacThresh || CONFIG.ransacThresh, mo, 200, 0.995);
       var inl = 0; for (var j = 0; j < mo.rows; j++) if (mo.data[j]) inl++;
       if (!Hm.empty() && inl >= CONFIG.minDetectInliers) {
-        var hArr = Array.from(Hm.data64F), whyD = quadRejectReason(quadFromH(hArr));
+        var hArr = Array.from(Hm.data64F), qArr = quadFromH(hArr);
+        var whyD = quadRejectReason(qArr) || scaleJumpReject(qArr);
         if (whyD) { if (S.rejLog < 5) { S.rejLog++; log('拒绝检测位姿（' + whyD + '）内点 ' + inl); } }
         else H = hArr;
       }
@@ -371,11 +394,16 @@
       return false;
     }
     S.lastCorners = corners;
+    S.lastPoseFrame = S.frame;
     var R = new cv.Mat(); cv.Rodrigues(rvec, R);
     var rr = R.data64F, tt = tvec.data64F;
     // One-Euro 只作用在平移上（旋转靠 solvePnP 输出 + 低频刷新）
     if (!S.oneEuro) S.oneEuro = makeOneEuro(CONFIG.oneEuro);
     var t2 = S.oneEuro([tt[0], tt[1], tt[2]], S.stats.frameMs);
+    if (S.diag) {   // ?diag=1：把原始/滤波后的平移都记下来，离线算抖动降幅（不动正常路径）
+      S.diag.push([tt[0], tt[1], tt[2], t2[0], t2[1], t2[2]]);
+      if (S.diag.length > 3000) S.diag.shift();
+    }
     var inCv = new THREE.Matrix4().set(
       rr[0], rr[1], rr[2], t2[0],
       rr[3], rr[4], rr[5], t2[1],
@@ -531,7 +559,9 @@
     S.anchor = document.getElementById('ar-marker');
     S.canvas = document.createElement('canvas');
     S.canvas.width = CONFIG.frameW; S.canvas.height = CONFIG.frameH;
-    var qOverride = new URLSearchParams(location.search).get('quality');
+    var params0 = new URLSearchParams(location.search);
+    if (params0.get('diag')) { S.diag = []; log('诊断模式：记录原始/滤波平移，state.diag 可读'); }
+    var qOverride = params0.get('quality');
     if (qOverride) { var qv = parseFloat(qOverride); if (qv > 0) { S.qualityLocked = true; setQuality(qv, 8); log('质量档位被 URL 锁定为 ' + qv); } }
     S.ctx = S.canvas.getContext('2d', { willReadFrequently: true });
 
