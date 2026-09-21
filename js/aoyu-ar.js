@@ -435,11 +435,21 @@
           return;
         }
         var video = self.findArVideo();
-        if (video && video.srcObject) {
-          self.attachStream(video, video.srcObject);   // 回调里已经有流了：播起来就行
+        if (video && self.isVideoLive(video)) {
+          // 相机在点按钮之前就已经就绪（AR.js 一加载就开相机，这是常态）：
+          // 直接进。这里不能走 onCameraLive——它开头有 if (cameraReady) return，
+          // 而 cameraReady 早就被置过了，会直接把启动页卡住。
+          self.closeStartOverlay();
+          self.onCameraLive();
+        } else if (video && video.srcObject) {
+          self.attachStream(video, video.srcObject);   // 有流但还没出画面：踢一下
         } else {
           self.openCameraByGesture();
         }
+        // 兜底：8 秒还没画面就报错并把启动页收掉，不让人干等
+        setTimeout(function () {
+          if (self.pendingStart) self.showCameraError({ name: 'Timeout' });
+        }, 8000);
       });
 
       var assets = document.querySelector('a-assets');
@@ -478,6 +488,18 @@
           })
           .catch(function (error) { console.error('AOYU_NOTE_DECODE_ERROR', index, error); });
       });
+    },
+
+    /**
+     * 收起启动页。只在用户点过「进入」之后才动它（pendingStart），
+     * 免得相机比用户先就绪时把启动页自己关掉。
+     * 幂等：重复调用安全。
+     */
+    closeStartOverlay: function () {
+      if (!this.pendingStart) return;
+      this.pendingStart = false;
+      if (this.startOverlay) this.startOverlay.classList.add('hidden');
+      console.log('AOYU_START_ENTER');
     },
 
     /** 用户手势里必须把 AudioContext 唤醒（iOS/微信要），否则 start() 不出声 */
@@ -600,10 +622,7 @@
     onCameraLive: function () {
       if (this.cameraReady) return;
       this.cameraReady = true;
-      if (this.pendingStart && this.startOverlay) {
-        this.startOverlay.classList.add('hidden');   // 相机出画面了才收启动页
-        this.pendingStart = false;
-      }
+      this.closeStartOverlay();   // 相机出画面了才收启动页
       this.errorEl.textContent = '';
       this.gateEl.classList.remove('show');
       this.hintEl.classList.remove('hidden');
@@ -689,10 +708,7 @@
         text = '相机没有启动' + (name ? '（' + name + '）' : '') + '。点这里重试。';
       }
       this.gateEl.classList.remove('show');
-      if (this.pendingStart && this.startOverlay) {
-        this.startOverlay.classList.add('hidden');
-        this.pendingStart = false;
-      }
+      this.closeStartOverlay();   // 相机起不来也要收，否则错误卡被启动页盖住
       this.errorEl.textContent = text;
       this.errorEl.onclick = function () { location.reload(); };
     },
