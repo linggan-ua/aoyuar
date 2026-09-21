@@ -296,17 +296,17 @@
 <script>
   // image 模式下再加载跟踪器（它自己开相机、算位姿、写锚点矩阵，并派发 markerFound/markerLost）
   if (window.AOYU_USE_IMAGE_TRACKER) {
-    // 先加载 OpenCV.js（跟踪器的全部 CV 原语都来自它），再加载跟踪器
-    var o = document.createElement('script');
-    o.src = 'https://docs.opencv.org/4.x/opencv.js';
-    o.onload = function () {
+    // OpenCV.js 走多源加载器（官方 CDN 会间歇性给 Cloudflare 挑战页，见 js/opencv-loader.js）
+    var l = document.createElement('script');
+    l.src = 'js/opencv-loader.js?v=1';
+    l.onload = function () {
+      window.AOYU_LOAD_OPENCV(function (ok) { console.log('AOYU_TRACKER_MODE opencv 就绪=' + ok); });
       var t = document.createElement('script');
       t.src = 'js/image-tracker.js?v=21';   // 改 js/image-tracker.js 时这个数字要 +1：否则手机会用缓存里的旧算法
       document.body.appendChild(t);
-      console.log('AOYU_TRACKER_MODE opencv 加载完成，跟踪器就绪');
     };
-    o.onerror = function () { console.error('AOYU_TRACKER_MODE opencv 加载失败'); };
-    document.body.appendChild(o);
+    l.onerror = function () { console.error('AOYU_TRACKER_MODE opencv-loader 没加载出来'); };
+    document.body.appendChild(l);
   } else if (window.__aoyuRewriteMarker) {
     window.__aoyuRewriteMarker();   // AR.js 模式下不需要改写，保持原样
   }
