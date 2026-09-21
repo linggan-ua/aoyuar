@@ -692,8 +692,13 @@
     },
 
     /**
-     * 命中判定：先打模型自己的网格（和小程序里的 mesh-shape 一样精准），
-     * 没中的话再用放大 20% 的包围盒兜一次（对应小程序的 cube-shape 容差盒）。
+     * 命中判定。要点一次就中，必须绕开蒙皮模型的一个坑：
+     *   three 的 mesh.raycast / Box3.setFromObject 用的都是**绑定姿势**的几何体，
+     *   而画面上看到的是骨骼动画摆过之后的鱼——两者差得远，所以以前老是点不中。
+     * 这里改成三层，任意一层命中就算点到鱼：
+     *   1) 模型网格射线（绑定姿势，偶尔能中）
+     *   2) 骨骼包围盒：骨骼的世界坐标就是当前姿势，把它放大 1.8 倍覆盖鱼鳍和尾
+     *   3) 骨骼包围盒再外扩一点做兜底（手指本来就比像素粗）
      */
     hitFish: function (fish, clientX, clientY) {
       var sceneEl = this.sceneEl;
@@ -704,13 +709,33 @@
       if (!canvas || !camera || !mesh) return false;
       var rect = canvas.getBoundingClientRect();
       if (!rect.width || !rect.height) return false;
-      ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+      ndc.set(((clientX - rect.left) / rect.width) * 2 - 1,
+              -((clientY - rect.top) / rect.height) * 2 + 1);
       raycaster.setFromCamera(ndc, camera);
+
       if (raycaster.intersectObject(mesh, true).length) return true;
-      var box = new THREE.Box3().setFromObject(mesh);
-      if (box.isEmpty()) return false;
-      var size = box.getSize(new THREE.Vector3()).multiplyScalar(1.2);
+
+      var bones = [];
+      mesh.traverse(function (node) { if (node.isBone) bones.push(node); });
+      if (!bones.length) {
+        var fallback = new THREE.Box3().setFromObject(mesh);
+        if (fallback.isEmpty()) return false;
+        var fs = fallback.getSize(new THREE.Vector3()).multiplyScalar(1.2);
+        var fc = fallback.getCenter(new THREE.Vector3());
+        fallback.setFromCenterAndSize(fc, fs);
+        return raycaster.ray.intersectsBox(fallback);
+      }
+      var box = new THREE.Box3();
+      var v = new THREE.Vector3();
+      for (var i = 0; i < bones.length; i++) {
+        box.expandByPoint(bones[i].getWorldPosition(v));
+      }
+      var size = box.getSize(new THREE.Vector3());
       var center = box.getCenter(new THREE.Vector3());
+      // 骨骼只沿脊椎分布，鱼鳍/尾巴在包围盒外，所以放大；再给一个最小体积避免塌成一条线
+      size.set(Math.max(size.x, 0.04) * 1.8,
+               Math.max(size.y, 0.04) * 1.8,
+               Math.max(size.z, 0.04) * 1.8);
       box.setFromCenterAndSize(center, size);
       return raycaster.ray.intersectsBox(box);
     },
