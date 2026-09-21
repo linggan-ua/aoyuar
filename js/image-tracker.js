@@ -37,7 +37,7 @@
     prevGray: null, trackPts: null, refPts: null, lastH: null, lastCorners: null,
     frame: 0, found: false, miss: 0, forceDetect: true,
     oneEuro: null, pose: null, lastDetectMs: 0, lastTrackMs: 0, poses: 0,
-    stats: { frames: 0, posed: 0, detect: [], track: [], inliers: [], lastT: 0, fps: 0, startedAt: 0, costMs: 0 },
+    stats: { frames: 0, posed: 0, detect: [], track: [], inliers: [], gaps: [], lastPoseT: 0, lastT: 0, fps: 0, startedAt: 0, costMs: 0 },
     quality: { scale: 1.0, grid: 8 }
   };
 
@@ -300,6 +300,12 @@
     S.anchor.object3D.matrixWorldNeedsUpdate = true;
     S.poses++;
     S.stats.posed++;
+    var nowT = performance.now();
+    if (S.stats.lastPoseT) {
+      var gap = nowT - S.stats.lastPoseT;
+      if (gap < 1000) { S.stats.gaps.push(gap); if (S.stats.gaps.length > 600) S.stats.gaps.shift(); }
+    }
+    S.stats.lastPoseT = nowT;
     ip.delete(); K.delete(); rvec.delete(); tvec.delete(); R.delete();
   }
 
@@ -389,6 +395,11 @@
       '检测 平均 ' + avg(st.detect).toFixed(0) + 'ms（p95 ' + pct(st.detect).toFixed(0) + 'ms，' + st.detect.length + ' 次）',
       '跟踪 平均 ' + avg(st.track).toFixed(1) + 'ms（p95 ' + pct(st.track).toFixed(1) + 'ms）',
       'KLT 内点 平均 ' + avg(st.inliers).toFixed(0) + '（最小 ' + (st.inliers.length ? Math.min.apply(null, st.inliers) : 0) + '）',
+      '出位姿间隔 平均 ' + avg(st.gaps).toFixed(1) + 'ms（p95 ' + pct(st.gaps).toFixed(1) + 'ms）→ 位姿率≈' +
+        (avg(st.gaps) > 0 ? (1000 / avg(st.gaps)).toFixed(0) : '—') + 'Hz',
+      // 判断要不要上 IMU 帧间预测：位姿率明显低于渲染帧率时，陀螺仪插值才有意义
+      (st.fps > 0 && avg(st.gaps) > 0 && st.fps < 1000 / avg(st.gaps) * 0.8)
+        ? '→ 位姿率明显低于渲染帧率，IMU 帧间预测会有帮助' : '→ 位姿率已跟得上渲染帧率，暂不需要 IMU',
       '质量档位 处理 ' + (S.canvas ? S.canvas.width + '×' + S.canvas.height : '—') + '，点 ' + S.quality.grid + '²，每帧成本≈' + st.costMs.toFixed(1) + 'ms' + (S.qualityLocked ? '（手动锁定）' : '（自适应）'),
       '设备 DPR ' + window.devicePixelRatio
     ].join('\n');
