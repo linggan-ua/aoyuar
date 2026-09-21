@@ -25,7 +25,9 @@
     grid: 8,                      // 跟踪种子 8×8 = 64 点
     lostGrace: 2,
     // One-Euro（扫参得到的参数：静止重滤波、运动自动放开）
-    oneEuro: { minCutoff: 0.2, beta: 0.2, dCutoff: 1.0, dt: 1 / 30 }
+    oneEuro: { minCutoff: 0.2, beta: 0.2, dCutoff: 1.0, dt: 1 / 30 },
+    // 自适应质量：按实测每帧耗时升降处理分辨率与跟踪点数，让不同性能的手机都能守住 30fps
+    adaptive: { targetMs: 28, window: 30, minScale: 0.6, maxScale: 1.0, minGrid: 6, maxGrid: 8 }
   };
 
   var S = {
@@ -35,10 +37,41 @@
     prevGray: null, trackPts: null, refPts: null, lastH: null, lastCorners: null,
     frame: 0, found: false, miss: 0, forceDetect: true,
     oneEuro: null, pose: null, lastDetectMs: 0, lastTrackMs: 0, poses: 0,
-    stats: { frames: 0, posed: 0, detect: [], track: [], inliers: [], lastT: 0, fps: 0, startedAt: 0 }
+    stats: { frames: 0, posed: 0, detect: [], track: [], inliers: [], lastT: 0, fps: 0, startedAt: 0, costMs: 0 },
+    quality: { scale: 1.0, grid: 8 }
   };
 
   function log() { console.log.apply(console, ['AOYU_TRK'].concat([].slice.call(arguments))); }
+
+  /** 切换质量档位：处理分辨率 + RANSAC 阈值一起缩放（阈值按处理像素算才等价） */
+  function setQuality(scale, grid) {
+    S.quality.scale = Math.min(CONFIG.adaptive.maxScale, Math.max(CONFIG.adaptive.minScale, scale));
+    S.quality.grid = Math.min(CONFIG.adaptive.maxGrid, Math.max(CONFIG.adaptive.minGrid, grid));
+    if (S.canvas) {
+      S.canvas.width = Math.round(CONFIG.frameW * S.quality.scale);
+      S.canvas.height = Math.round(CONFIG.frameH * S.quality.scale);
+      S.ransacThresh = S.ransacThresh || CONFIG.ransacThresh * S.quality.scale;
+      log('质量档位 → 处理 ' + S.canvas.width + '×' + S.canvas.height + '，跟踪点 ' + S.quality.grid + '²');
+    }
+  }
+
+  /** 每 window 帧评估一次：超预算就降档，富余很多才升档（升慢降快，避免来回抖） */
+  function adaptQuality() {
+    if (S.qualityLocked) return;          // ?quality= 指定时锁死档位，便于真机做 A/B
+    var st = S.stats, A = CONFIG.adaptive;
+    var trk = st.track.slice(-A.window);
+    var det = st.detect.slice(-3);
+    var cost = (trk.length ? trk.reduce(function (a, b) { return a + b; }, 0) / trk.length : 0) +
+               (det.length ? det.reduce(function (a, b) { return a + b; }, 0) / det.length / CONFIG.detectIntervalFrames : 0);
+    st.costMs = cost;
+    if (cost > A.targetMs) {
+      if (S.quality.grid > A.minGrid) setQuality(S.quality.scale, S.quality.grid - 1);
+      else setQuality(S.quality.scale - 0.15, S.quality.grid);
+    } else if (cost < A.targetMs * 0.5) {
+      if (S.quality.scale < A.maxScale) setQuality(S.quality.scale + 0.15, S.quality.grid);
+      else if (S.quality.grid < A.maxGrid) setQuality(S.quality.scale, S.quality.grid + 1);
+    }
+  }
 
   /* ---------------- One-Euro 滤波（三个平移分量各一路，旋转用球面插值近似） ---------------- */
   function makeOneEuro(cfg) {
@@ -146,8 +179,9 @@
       useRefs = S.refs.slice().sort(function (a, b) { return Math.abs(a.w - target) - Math.abs(b.w - target); }).slice(0, 2);
     } else {
       var small = new cv.Mat();
-      cv.resize(gray, small, new cv.Size(0, 0), CONFIG.detectScale, CONFIG.detectScale, cv.INTER_AREA);
-      base = small; scale = CONFIG.detectScale; roi = small;
+      var ds = CONFIG.detectScale * S.quality.scale;
+      cv.resize(gray, small, new cv.Size(0, 0), ds, ds, cv.INTER_AREA);
+      base = small; scale = ds; roi = small;
     }
     var mask = new cv.Mat(roi.rows, roi.cols, cv.CV_8UC1, new cv.Scalar(255));
     var kp = new cv.KeyPointVector(), desc = new cv.Mat();
@@ -172,7 +206,7 @@
       var cdM = cv.matFromArray(srcP.length / 2, 1, cv.CV_32FC2, srcP);
       var frM = cv.matFromArray(dstP.length / 2, 1, cv.CV_32FC2, dstP);
       var mo = new cv.Mat();
-      var Hm = cv.findHomography(cdM, frM, cv.RANSAC, CONFIG.ransacThresh, mo, 200, 0.995);
+      var Hm = cv.findHomography(cdM, frM, cv.RANSAC, S.ransacThresh || CONFIG.ransacThresh, mo, 200, 0.995);
       var inl = 0; for (var j = 0; j < mo.rows; j++) if (mo.data[j]) inl++;
       if (!Hm.empty() && inl >= CONFIG.minDetectInliers) H = Array.from(Hm.data64F);
       cdM.delete(); frM.delete(); mo.delete(); Hm.delete();
@@ -218,7 +252,7 @@
       var cdM = cv.matFromArray(srcP.length / 2, 1, cv.CV_32FC2, srcP);
       var frM = cv.matFromArray(dstP.length / 2, 1, cv.CV_32FC2, dstP);
       var mo = new cv.Mat();
-      var Hm = cv.findHomography(cdM, frM, cv.RANSAC, CONFIG.ransacThresh, mo, 200, 0.995);
+      var Hm = cv.findHomography(cdM, frM, cv.RANSAC, S.ransacThresh || CONFIG.ransacThresh, mo, 200, 0.995);
       for (var k2 = 0; k2 < mo.rows; k2++) if (mo.data[k2]) inl++;
       var minInl = Math.max(10, Math.min(20, Math.round((srcP.length / 2) * 0.3)));
       if (!Hm.empty() && inl >= minInl) { H = Array.from(Hm.data64F); S.lastInliers = inl; }
@@ -287,6 +321,7 @@
       var now = performance.now();
       st.fps = 30000 / (now - (st.markT || st.startedAt));
       st.markT = now;
+      adaptQuality();
       updateStatsEl();
     }
     var cv = S.cv;
@@ -308,8 +343,9 @@
       if (H) {
         // 重新布种子（8×8）
         var pts = [], refs = [];
-        for (var iy = 0; iy < CONFIG.grid; iy++) for (var ix = 0; ix < CONFIG.grid; ix++) {
-          var gx = 0.1 + ix * 0.8 / (CONFIG.grid - 1), gy = 0.1 + iy * 0.8 / (CONFIG.grid - 1);
+        var NG = S.quality.grid;
+        for (var iy = 0; iy < NG; iy++) for (var ix = 0; ix < NG; ix++) {
+          var gx = 0.1 + ix * 0.8 / (NG - 1), gy = 0.1 + iy * 0.8 / (NG - 1);
           var p = toFrame(H, gx * S.cardSize[0], gy * S.cardSize[1]);
           pts.push(p[0], p[1]); refs.push(gx * S.cardSize[0], gy * S.cardSize[1]);
         }
@@ -353,7 +389,8 @@
       '检测 平均 ' + avg(st.detect).toFixed(0) + 'ms（p95 ' + pct(st.detect).toFixed(0) + 'ms，' + st.detect.length + ' 次）',
       '跟踪 平均 ' + avg(st.track).toFixed(1) + 'ms（p95 ' + pct(st.track).toFixed(1) + 'ms）',
       'KLT 内点 平均 ' + avg(st.inliers).toFixed(0) + '（最小 ' + (st.inliers.length ? Math.min.apply(null, st.inliers) : 0) + '）',
-      '设备 DPR ' + window.devicePixelRatio + '，渲染像素比 ' + (S.pixelRatio || '—')
+      '质量档位 处理 ' + (S.canvas ? S.canvas.width + '×' + S.canvas.height : '—') + '，点 ' + S.quality.grid + '²，每帧成本≈' + st.costMs.toFixed(1) + 'ms' + (S.qualityLocked ? '（手动锁定）' : '（自适应）'),
+      '设备 DPR ' + window.devicePixelRatio
     ].join('\n');
   }
 
@@ -385,6 +422,8 @@
     S.anchor = document.getElementById('ar-marker');
     S.canvas = document.createElement('canvas');
     S.canvas.width = CONFIG.frameW; S.canvas.height = CONFIG.frameH;
+    var qOverride = new URLSearchParams(location.search).get('quality');
+    if (qOverride) { var qv = parseFloat(qOverride); if (qv > 0) { S.qualityLocked = true; setQuality(qv, 8); log('质量档位被 URL 锁定为 ' + qv); } }
     S.ctx = S.canvas.getContext('2d', { willReadFrequently: true });
 
     var start = function () {
