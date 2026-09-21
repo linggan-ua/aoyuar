@@ -366,6 +366,13 @@
         if (button.disabled) return;
         overlay.classList.add('hidden');
         console.log('AOYU_START_TAP');
+        if (window.AOYU_USE_IMAGE_TRACKER) {
+          // 相机交给 image-tracker；它开不起来时会把提示写在 #ar-error 上，
+          // 顺手替用户点一下（这一次点击同样是用户手势）
+          var retry = document.getElementById('ar-error');
+          if (retry && retry.textContent.trim() && typeof retry.onclick === 'function') retry.onclick();
+          return;
+        }
         var video = self.findArVideo();
         if (video && video.srcObject) {
           self.attachStream(video, video.srcObject);   // 回调里已经有流了：播起来就行
