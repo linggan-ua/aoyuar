@@ -113,14 +113,18 @@
 <a-scene id="ar-scene"
          embedded
          vr-mode-ui="enabled: false"
-         renderer="logarithmicDepthBuffer: true;"
-         arjs="sourceType: image; sourceUrl: ../assets/patterns/pattern-card-v2.png; debugUIEnabled: false; patternRatio: 0.5; labelingMode: black_region; errorPopup: ar-error;">
+         renderer="colorManagement: true;"
+         arjs="sourceType: image; sourceUrl: ../assets/patterns/pattern-card-v2.png; debugUIEnabled: false; patternRatio: 0.5; labelingMode: black_region; errorPopup: ar-error">
 
   <a-assets timeout="30000">
     <a-asset-item id="aoyu-model" src="../assets/models/aoyu_ink.glb"></a-asset-item>
     <a-asset-item id="koi-model" src="../assets/models/koi_ink.glb"></a-asset-item>
   </a-assets>
 
+  <!-- 性能：不要开 logarithmicDepthBuffer（会关掉早期深度测试优化）。
+       识别频率和采集分辨率都用 AR.js 默认值，不人为限制。 -->
+  <!-- renderer 必须带 colorManagement：A-Frame 1.3 默认不做 sRGB 输出，
+       glTF 贴图会被当线性值写出去，整体明显偏暗（小程序那边是正常的色彩管理） -->
   <!-- 鳌鱼是 unlit 材质（水墨质感全靠贴图），锦鲤是普通材质，需要一点光 -->
   <a-entity light="type: ambient; color: #ffffff; intensity: 0.9"></a-entity>
   <a-entity light="type: directional; color: #fff5d6; intensity: 0.7" position="1.5 2 1"></a-entity>
@@ -185,6 +189,8 @@
       <button id="db-follow">跟随真实时间</button>
     </div>
 
+    <div id="debug-anim" class="db-status"></div>
+    <div id="debug-camera" class="db-status"></div>
     <div id="debug-status" class="db-status"></div>
 
     <div class="db-row">
@@ -200,15 +206,17 @@
       <button id="db-tail-p">摆尾+</button>
     </div>
     <div class="db-row">
-      <button id="db-reset">恢复默认游动参数</button>
+      <button id="db-size-m">鱼小一点</button>
+      <button id="db-size-p">鱼大一点</button>
+      <button id="db-material">材质：标准</button>
+      <button id="db-reset">恢复默认</button>
     </div>
 
     <div class="db-hint">只改页面内部的时间，不动手机系统时间</div>
   </div>
 </div>
 
-<script src="../js/fish-motion.js"></script>
-<script src="../js/aoyu-ar.js"></script>
+<script src="../js/fish-motion.js?v=9"></script>
 <script>
   window.addEventListener('markerFound', function () {
     console.log('TEST_MARKER_FOUND');
@@ -218,5 +226,6 @@
   window.addEventListener('markerLost', function () { console.log('TEST_MARKER_LOST'); });
   setTimeout(function () { console.log('TEST_DONE'); }, 12000);
 </script>
+<script src="../js/aoyu-ar.js?v=9"></script>
 </body>
 </html>
