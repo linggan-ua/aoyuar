@@ -15,14 +15,13 @@
 
   var CONFIG = {
     switchHour: 20,            // 20:00 之后显示鳌鱼，之前显示锦鲤
-    transitionMs: 900,         // 换鱼时两条同时在场的时长
     hideDelayMs: 1000,         // 丢卡后让鱼游走再隐藏
     noteVolume: 0.75,          // 和小程序一致
     clips: { aoyu: 'Ao_Swim_Loop_3.2s', koi: 'Swim_Loop_2.4s' },
     notes: ['note-c6', 'note-d6', 'note-e6', 'note-g6', 'note-a6'].map(function (name) {
       return 'assets/audio/' + name + '.mp3';
     }),
-    storageKey: 'aoyu-tuning-v1',
+    storageKey: 'aoyu-tuning-v2',   // v1 的『摆尾上限』语义已变成『摆尾倍率』，换键避免旧值生效
     tuningLimits: {
       speedScale: [0.5, 2.0],
       turnScale: [0.5, 1.7],
@@ -725,20 +724,16 @@
         return;
       }
 
-      // 换鱼：旧的游走、新的游入，两条同时在场约 0.9 秒
-      FishMotion.startExiting(instances[prev].motion);
+      // 换鱼：直接硬切——新的入场、旧的立刻隐藏。
+      // （小程序那边是"旧的游走、新的游入，同框 0.9 秒"；椭圆轨道没有游走动作，
+      //   同框那 0.9 秒看起来就是"两条鱼同时冒出来"，所以这里不保留交叉过渡。
+      //   另外原来这里调 FishMotion.startExiting(instances[prev].motion)，
+      //   换掉状态机之后 .motion 不存在，会抛异常把整个切换流程打断——那才是切换失效的原因。）
       if (this.markerActive) {
         instances[next].enter();
         this.fishHidden = false;
       }
-      var self = this;
-      if (this.transitionTimer) clearTimeout(this.transitionTimer);
-      this.transitionTimer = setTimeout(function () {
-        self.transitionTimer = null;
-        if (self.targetMode !== next) return;
-        instances[prev].hide();
-        self.syncModeButtons();
-      }, CONFIG.transitionMs);
+      if (instances[prev]) instances[prev].hide();
       this.syncModeButtons();
     },
 
