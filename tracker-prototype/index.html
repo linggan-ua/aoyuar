@@ -233,7 +233,7 @@
 
 <script src="https://docs.opencv.org/4.x/opencv.js"></script>
 <script src="js/fish-motion.js"></script>
-<script>window.AOYU_TRACKER_CARD = "../assets/patterns/pattern-card-v2.png";</script>
+<script>window.AOYU_TRACKER_CARD = "../assets/patterns/pattern-card-v2-track.png";</script>
 <script src="js/image-tracker.js"></script>
 <script src="js/aoyu-ar.js"></script>
 </body>
@@ -246,7 +246,7 @@
     if (!el || !s) return;
     el.textContent = 'source=' + (s.staticMode ? '静态图' : '相机') +
       ' | cv=' + (s.cv ? 'ok' : '…') +
-      ' | 卡片=' + (s.cardSize ? s.cardSize.join('×') : '…') +
+      ' | 卡片=' + (s.cardSize ? s.cardSize.join('×') : (s.cardErr ? '图片加载失败' : '…')) +
       ' | 参考=' + (s.refs ? s.refs.length : 0) + '层' +
       ' | 锁定=' + (s.found ? '是' : '否') +
       ' | 位姿=' + (s.poses || 0) +

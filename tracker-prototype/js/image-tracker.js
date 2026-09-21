@@ -13,7 +13,7 @@
 
   var CONFIG = {
     // 卡片图路径：子目录部署时用 window.AOYU_TRACKER_CARD 覆盖（相对文档解析）
-    cardImage: (typeof window !== 'undefined' && window.AOYU_TRACKER_CARD) || 'assets/patterns/pattern-card-v2.png',
+    cardImage: (typeof window !== 'undefined' && window.AOYU_TRACKER_CARD) || 'assets/patterns/pattern-card-v2-track.png',
     cardWidth: 1,                 // 世界单位 = 卡片宽度（与 fish-motion 的 ±0.7 卡宽一致）
     hfovDeg: 60,
     frameW: 640, frameH: 480,
@@ -35,7 +35,7 @@
     anchor: null, sceneEl: null, staticMode: false, source: null,
     refs: [], card: null, cardSize: [0, 0],
     prevGray: null, trackPts: null, refPts: null, lastH: null, lastCorners: null,
-    frame: 0, found: false, miss: 0, forceDetect: true,
+    frame: 0, found: false, miss: 0, forceDetect: true, rejLog: 0, cardErr: false,
     oneEuro: null, pose: null, lastDetectMs: 0, lastTrackMs: 0, poses: 0,
     stats: { frames: 0, posed: 0, detect: [], track: [], inliers: [], gaps: [], lastPoseT: 0, lastT: 0, fps: 0, startedAt: 0, costMs: 0 },
     quality: { scale: 1.0, grid: 8 }
@@ -117,6 +117,8 @@
         ok = true; clearTimeout(timer);
         S.video.srcObject = stream; S.video.play();
         S.source = S.video; log('相机就绪');
+        var hint = document.getElementById('hint');
+        if (hint) hint.classList.add('hidden');
       })
       .catch(function (e) { ok = true; clearTimeout(timer); showRetry('相机打不开（' + (e && e.name) + '）点这里重试'); });
   }
@@ -164,6 +166,39 @@
     return [(H[0] * x + H[1] * y + H[2]) / d, (H[3] * x + H[4] * y + H[5]) / d];
   }
 
+  /* 位姿合理性校验。遮挡/误匹配时 RANSAC 也能凑出"内点够多"的垃圾单应，投影出的四边形
+     自交、翻面或尺寸离谱；这种位姿送进 solvePnP 会直接抛异常，送进渲染则让模型瞬移到画面外。
+     实测（tracker-lab-node.js --occlude 0.25）：加这一层之前会输出 293px 误差的假位姿并
+     让 IPPE 抛异常打断整个 rAF 循环。 */
+  var QUAD_MIN_AREA_RATIO = 0.0013, QUAD_MAX_AREA_RATIO = 8;
+  function quadFromH(H) {
+    var cs = S.cardSize;
+    return [[0, 0], [cs[0], 0], [cs[0], cs[1]], [0, cs[1]]].map(function (p) { return toFrame(H, p[0], p[1]); });
+  }
+  function quadRejectReason(q) {
+    var frameArea = S.canvas.width * S.canvas.height, i;
+    for (i = 0; i < 4; i++) if (!isFinite(q[i][0]) || !isFinite(q[i][1])) return '非有限值';
+    var sign = 0;
+    for (i = 0; i < 4; i++) {
+      var a = q[i], b = q[(i + 1) % 4], c = q[(i + 2) % 4];
+      var cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+      if (Math.abs(cross) < 1e-9) return '退化(共线)';
+      var sg = cross > 0 ? 1 : -1;
+      if (!sign) sign = sg; else if (sg !== sign) return '自交/凹';
+    }
+    var area2 = 0;
+    for (i = 0; i < 4; i++) { var p1 = q[i], p2 = q[(i + 1) % 4]; area2 += p1[0] * p2[1] - p2[0] * p1[1]; }
+    var area = Math.abs(area2) / 2;
+    if (area < frameArea * QUAD_MIN_AREA_RATIO) return '面积过小 ' + Math.round(area) + 'px²';
+    if (area > frameArea * QUAD_MAX_AREA_RATIO) return '面积过大 ' + Math.round(area) + 'px²';
+    var e = [0, 1, 2, 3].map(function (k) {
+      return Math.hypot(q[(k + 1) % 4][0] - q[k][0], q[(k + 1) % 4][1] - q[k][1]);
+    });
+    var ratio = Math.max.apply(null, e) / Math.min.apply(null, e);
+    if (ratio > 8) return '边长比 ' + ratio.toFixed(1);
+    return null;
+  }
+
   /* ---------------- 检测（首次半分辨率全图 / 之后全分辨率 ROI） ---------------- */
   function detect(gray) {
     var cv = S.cv, t0 = performance.now();
@@ -208,7 +243,11 @@
       var mo = new cv.Mat();
       var Hm = cv.findHomography(cdM, frM, cv.RANSAC, S.ransacThresh || CONFIG.ransacThresh, mo, 200, 0.995);
       var inl = 0; for (var j = 0; j < mo.rows; j++) if (mo.data[j]) inl++;
-      if (!Hm.empty() && inl >= CONFIG.minDetectInliers) H = Array.from(Hm.data64F);
+      if (!Hm.empty() && inl >= CONFIG.minDetectInliers) {
+        var hArr = Array.from(Hm.data64F), whyD = quadRejectReason(quadFromH(hArr));
+        if (whyD) { if (S.rejLog < 5) { S.rejLog++; log('拒绝检测位姿（' + whyD + '）内点 ' + inl); } }
+        else H = hArr;
+      }
       cdM.delete(); frM.delete(); mo.delete(); Hm.delete();
     }
     mask.delete(); kp.delete(); desc.delete();
@@ -255,8 +294,15 @@
       var Hm = cv.findHomography(cdM, frM, cv.RANSAC, S.ransacThresh || CONFIG.ransacThresh, mo, 200, 0.995);
       for (var k2 = 0; k2 < mo.rows; k2++) if (mo.data[k2]) inl++;
       var minInl = Math.max(10, Math.min(20, Math.round((srcP.length / 2) * 0.3)));
-      if (!Hm.empty() && inl >= minInl) { H = Array.from(Hm.data64F); S.lastInliers = inl; }
-      else { S.lastInliers = inl; S.forceDetect = true; }
+      S.lastInliers = inl;
+      if (!Hm.empty() && inl >= minInl) {
+        var hArrT = Array.from(Hm.data64F), whyT = quadRejectReason(quadFromH(hArrT));
+        if (whyT) { if (S.rejLog < 5) { S.rejLog++; log('拒绝跟踪位姿（' + whyT + '）内点 ' + inl); } S.forceDetect = true; }
+        else H = hArrT;
+      } else if (inl < minInl * 0.75) {
+        // 内点"差得不多"时先不重检测：KLT 点还在，下一帧大概率能救回来（重检测 ~36ms 太贵）
+        S.forceDetect = true;
+      }
       cdM.delete(); frM.delete(); mo.delete(); Hm.delete();
     }
     if (keepPts.length >= 24 && inl >= 10) {
@@ -274,14 +320,23 @@
   function applyPose(H) {
     var cv = S.cv;
     var corners = [[0, 0], [S.cardSize[0], 0], [S.cardSize[0], S.cardSize[1]], [0, S.cardSize[1]]].map(function (p) { return toFrame(H, p[0], p[1]); });
-    S.lastCorners = corners;
+    var why = quadRejectReason(corners);
+    if (why) { log('位姿不合理（' + why + '），本帧按丢失处理'); return false; }
     var imgPts = [];
     corners.forEach(function (p) { imgPts.push(p[0], p[1]); });
     var ip = cv.matFromArray(4, 1, cv.CV_32FC2, imgPts);
     var K = cameraMatrix();
     var rvec = new cv.Mat(), tvec = new cv.Mat();
-    cv.solvePnP(S.objPts, ip, K, S.distC, rvec, tvec, false, cv.SOLVEPNP_IPPE_SQUARE);
-    cv.solvePnPRefineLM(S.objPts, ip, K, S.distC, rvec, tvec);
+    try {
+      cv.solvePnP(S.objPts, ip, K, S.distC, rvec, tvec, false, cv.SOLVEPNP_IPPE_SQUARE);
+      cv.solvePnPRefineLM(S.objPts, ip, K, S.distC, rvec, tvec);
+    } catch (err) {
+      // IPPE / LM 在病态配置下会抛异常；不接住会打断整个 rAF 循环（画面卡死），这里如实降级为"本帧没锁住"
+      console.error('AOYU_TRK solvePnP 失败，本帧按丢失处理', err);
+      ip.delete(); K.delete(); rvec.delete(); tvec.delete();
+      return false;
+    }
+    S.lastCorners = corners;
     var R = new cv.Mat(); cv.Rodrigues(rvec, R);
     var rr = R.data64F, tt = tvec.data64F;
     // One-Euro 只作用在平移上（旋转靠 solvePnP 输出 + 低频刷新）
@@ -307,12 +362,15 @@
     }
     S.stats.lastPoseT = nowT;
     ip.delete(); K.delete(); rvec.delete(); tvec.delete(); R.delete();
+    return true;
   }
 
   /* ---------------- 主循环 ---------------- */
   function tick() {
     requestAnimationFrame(tick);
-    if (!S.cv || !S.source || !S.card) return;
+    // 等 cv / 画面 / 卡片参考 / 锚点都就绪再跑。锚点要等 a-scene 初始化完（模型 2MB，
+    // 慢网络下要几十秒），但相机不该跟着等——所以这里拦 tick，而不是拦 startCamera。
+    if (!S.cv || !S.source || !S.card || !S.anchor || !S.anchor.object3D) return;
     S.frame++;
     var st = S.stats;
     if (!st.startedAt) st.startedAt = performance.now();
@@ -359,11 +417,11 @@
         S.trackPts = cv.matFromArray(pts.length / 2, 1, cv.CV_32FC2, pts);
         S.refPts = refs;
         S.lastH = H;
-        if (S.poses === 0) { applyPose(H); onFound(); }      // 首次或丢失后先给一帧
+        if (S.poses === 0) { if (applyPose(H)) onFound(); }  // 首次或丢失后先给一帧
       }
     } else {
       H = track(S.prevGray, gray);
-      if (H) { applyPose(H); S.lastH = H; onFound(); }
+      if (H && applyPose(H)) { S.lastH = H; onFound(); }
       else { onMiss(); }
     }
     if (S.staticMode) { S.frame = 0; S.forceDetect = false; }  // 静态测试模式：跑一帧就停
@@ -437,18 +495,21 @@
     if (qOverride) { var qv = parseFloat(qOverride); if (qv > 0) { S.qualityLocked = true; setQuality(qv, 8); log('质量档位被 URL 锁定为 ' + qv); } }
     S.ctx = S.canvas.getContext('2d', { willReadFrequently: true });
 
-    var start = function () {
+    // 相机画面不跟着 a-assets 的模型走：模型（约 2MB GLB）在慢网络下要几十秒，
+    // 等它就会一直停在"正在打开相机…"。先开相机，tick 里再等锚点。
+    var syncFov = function () {
       var cam = S.sceneEl.camera;
-      if (cam) {
-        var vfov = 2 * Math.atan(Math.tan(CONFIG.hfovDeg * Math.PI / 360) * S.canvas.height / S.canvas.width) * 180 / Math.PI;
-        cam.fov = vfov; cam.aspect = S.canvas.width / S.canvas.height; cam.updateProjectionMatrix();
-      }
-      var params = new URLSearchParams(location.search);
-      var st = params.get('static');
-      if (st) useStaticImage(st); else startCamera();
-      requestAnimationFrame(tick);
+      if (!cam) return;
+      var vfov = 2 * Math.atan(Math.tan(CONFIG.hfovDeg * Math.PI / 360) * S.canvas.height / S.canvas.width) * 180 / Math.PI;
+      cam.fov = vfov; cam.aspect = S.canvas.width / S.canvas.height; cam.updateProjectionMatrix();
     };
-    if (S.sceneEl.hasLoaded) start(); else S.sceneEl.addEventListener('loaded', start);
+    syncFov();
+    if (!S.sceneEl.hasLoaded) S.sceneEl.addEventListener('loaded', syncFov);
+
+    var params = new URLSearchParams(location.search);
+    var st = params.get('static');
+    if (st) useStaticImage(st); else startCamera();
+    requestAnimationFrame(tick);
 
     (function waitCv(n) {
       if (window.cv && window.cv.Mat && window.cv.ORB) {
@@ -462,7 +523,7 @@
           buildReferences(S.cv);
           log('卡片参考就绪', cw + '×' + ch);
         };
-        img.onerror = function () { log('卡片图加载失败（检查 AOYU_TRACKER_CARD 路径）', CONFIG.cardImage); };
+        img.onerror = function () { S.cardErr = true; log('卡片图加载失败（检查 AOYU_TRACKER_CARD 路径）', CONFIG.cardImage); };
         img.src = CONFIG.cardImage;
         return;
       }
