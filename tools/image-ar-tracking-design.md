@@ -1,0 +1,125 @@
+# 浏览器端图像 AR 跟踪 · 设计与实现方案
+
+> 目标：在**网页**里做到"对准卡片 → 稳稳跟住 → 鱼不抖不掉"。
+> 现在的 pattern（AR.js）能用但抖、纯二维码原型（qr-prototype）思路错在跳过跟踪阶段，
+> 本文给出可实现的正确管线。
+
+## 1. 现状与问题
+
+| 方案 | 检测 | 跟踪 | 位姿 | 结果 |
+|---|---|---|---|---|
+| AR.js pattern（线上主页） | 每帧黑框四边形检测 | **无** | 单应/模板 | 能用，但每帧独立 → 世界坐标一跳一跳 |
+| 纯二维码原型（qr-prototype） | 每帧 QR 解码 | **无** | 四点 PnP | 解码失败即丢，10Hz 台阶感 |
+| 系统级（ARCore/ARKit/xr-frame） | 离线特征库 | **有（含 IMU 融合）** | 系统级 | 稳 |
+
+**结论：差距不在"检测算法好不好"，而在缺了"跟踪"这一整段。**
+
+## 2. 管线设计
+
+```
+相机 640×480 → 灰度化
+  │
+  ├─【跟踪态】每帧：
+  │    ROI 内 KLT 光流跟踪上一帧的内点
+  │      → findHomography(RANSAC) 重算单应
+  │      → solvePnP(IPPE_SQUARE) 出 6DoF
+  │      → One-Euro 滤波 → 写锚点矩阵
+  │
+  ├─【重检测】满足任一条件时（每 15~30 帧 / 内点<阈值 / 重投影误差超限）：
+  │    全图 ORB 检测 + BFMatcher(ratio 0.75) + RANSAC 单应
+  │      → 内点 ≥ 20 才算成功，重初始化跟踪
+  │
+  └─【兜底】连续 2~3 帧重检测失败才判 lost（避免闪烁）
+```
+
+### 2.1 检测（Detection）
+- 特征：**ORB**（主）/ **AKAZE**（备，抗模糊更强）
+- 匹配：BFMatcher + Hamming 距离 + Lowe ratio 0.75 + 交叉验证
+- 几何：findHomography(RANSAC, thresh 3px)，内点 ≥ 20
+- 卡片特征**离线预算**：ORB 500~1000 个描述子存 JSON（几十 KB）
+
+### 2.2 跟踪（Tracking）—— 稳定性核心
+- **KLT**：calcOpticalFlowPyrLK，金字塔 3~4 层，winSize 21×21，200~300 点
+- 布点：卡片区域内均匀网格（比角点更抗漂移）+ 上帧强角点
+- **ECC**（可选增强）：findTransformECC 对 ROI 做直接对齐，用于 KLT 内点不足时救场
+- 单应重算：跟踪点 ↔ 卡片规范坐标 → RANSAC
+- ROI：目标周围 1.5 倍区域（省算力 + 抗背景干扰）
+
+### 2.3 位姿（Pose）
+- `solvePnP(objPts4, imgPts4, K, dist, rvec, tvec, false, SOLVEPNP_IPPE_SQUARE)`
+- 精化：`solvePnPRefineLM`
+- 内参：`f = (W/2)/tan(hfov/2)`，hfov 默认 60°，主点=画面中心；需要更准用 `undistort`
+- 世界单位：**卡片宽度 = 1**（与现有 fish-motion 的 ±0.7 卡宽/高 0.35~0.9 卡宽一致）
+
+### 2.4 滤波（Filtering）
+- **One-Euro filter**（位置 + 四元数各一路）
+  - `mincutoff`（默认 1.0，越小越稳）
+  - `beta`（默认 0.02，越大越跟手）
+- **IMU 融合**：`DeviceMotionEvent` 角速度 → 帧间旋转预测（iOS 需在用户手势里 `requestPermission()`）
+- 预测渲染：速度外推 0.5 帧，抵消运动到光子延迟
+
+## 3. 浏览器可用性（已在真实浏览器实测）
+
+```
+ORB ✓ AKAZE ✓ BRISK ✓ BFMatcher ✓ findHomography ✓
+calcOpticalFlowPyrLK ✓ findTransformECC ✓ matchTemplate ✓
+goodFeaturesToTrack ✓ warpPerspective ✓ GaussianBlur ✓
+solvePnP ✓ solvePnPRefineLM ✓ Rodrigues ✓ undistort ✓
+SOLVEPNP_IPPE_SQUARE=7 ✓ RANSAC=8 ✓ NORM_HAMMING=6 ✓ COLOR_RGBA2GRAY=11 ✓
+（缺 estimateAffinePartial2D、ArUco 便捷函数；后者类存在但 JS 构造 API 别扭）
+```
+来源：`qr-prototype/cv-probe.html` 的实际运行输出。
+
+## 4. 性能预算（手机 640×480）
+
+| 阶段 | 耗时 | 频率 |
+|---|---|---|
+| KLT 200~300 点 | 3~8 ms | 每帧 |
+| RANSAC 单应 | 1~3 ms | 每帧 |
+| 位姿 + 滤波 | <1 ms | 每帧 |
+| ORB 全图重检测 | 15~40 ms | 每 15~30 帧 / 丢失时 |
+
+→ 稳态可跑 30fps；重检测那一帧可能掉到 20fps，可通过分帧摊开（先检测上半区再下半区）优化。
+
+## 5. 失败判定与状态机
+
+```
+LOST ──检测成功(内点≥20)──▶ TRACKING
+  ▲                            │
+  └──连续 2~3 帧重检测失败──────┘ （内点<50% 或重投影误差 > 5px）
+```
+- 进入 LOST 后**先不隐藏鱼**：给 1~2 秒宽限（鱼继续按最后一次位姿游），仍失败才走退场动画
+- 恢复时**不重置鱼的位置**（避免瞬移），沿用现有 `startEntering/startExiting` 语义
+
+## 6. 调参入口（tracker-lab.html）
+
+实时可调：检测间隔、ratio、RANSAC 阈值/内点下限、KLT winSize/层数/点数、ROI 倍数、
+One-Euro `mincutoff`/`beta`、IMU 开关与权重、预测帧数。
+可视化：特征点、KLT 轨迹、内点/外点、单应框、重投影误差、每帧耗时、FPS。
+
+## 7. 里程碑与验收
+
+| # | 内容 | 验收 |
+|---|---|---|
+| M1 | tracker-lab 骨架 + 静态图序列离线验证 | 合成轨迹下，位姿误差曲线可输出 |
+| M2 | 检测→KLT→单应→IPPE 最小闭环 | 静态序列 30 帧内不丢；单帧 ≤12ms |
+| M3 | One-Euro + 失败判定 + 宽限 | 抖动 RMS 相比裸 PnP 降 ≥50%，延迟增加 ≤1 帧 |
+| M4 | IMU 融合（可选） | 快速转动设备时旋转滞后明显减小 |
+| M5 | 真机验证 | 报告：丢跟踪次数/分钟、每帧耗时、抖动 RMS、主观跟手度 |
+
+## 8. 风险与对策
+
+| 风险 | 对策 |
+|---|---|
+| 水墨卡留白多、特征少 | 先跑**特征密度评估**；不足则卡面加淡纹/印章等纹理，或改用 ArUco 类黑方块 |
+| OpenCV.js 体积 10.9MB | 首屏先用 pattern 兜底，加载完再切换跟踪器；或用精简构建 |
+| iOS 陀螺仪权限 | 在用户手势（点击开始）里 `requestPermission()`，失败则退化为纯视觉 |
+| 跟踪漂移（跟偏了） | 每 15~30 帧强制重检测 + 重投影误差阈值判据 |
+| 手机性能差异 | 分辨率自适应（已有）+ 检测分帧摊开 |
+
+## 9. 文件与位置
+
+- 实验与开发：副本仓库 `/Users/mac/aoyuar-qr`（不碰线上）
+- 本方案文档：主仓库 `tools/image-ar-tracking-design.md`
+- 手机可测的临时页：主仓库 `qr-prototype/`（用完删除）
+- 最终合入：主仓库 `js/`（作为 `arjs` 之外的可选跟踪器，按能力自动选择）
