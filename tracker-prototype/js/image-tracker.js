@@ -17,7 +17,7 @@
     cardWidth: 1,                 // 世界单位 = 卡片宽度（与 fish-motion 的 ±0.7 卡宽一致）
     hfovDeg: 60,
     frameW: 640, frameH: 480,
-    detectIntervalFrames: 45,
+    detectIntervalFrames: 30,     // 周期重检测间隔：实验台扫过 15/30/45/60/90，30 在模糊/噪声/变暗下都最好，干净场景只差 0.4px
     detectScale: 0.5,             // 首次捕获用半分辨率
     minDetectInliers: 20,
     ratio: 0.75,
