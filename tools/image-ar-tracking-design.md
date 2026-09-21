@@ -117,6 +117,13 @@ One-Euro `mincutoff`/`beta`、IMU 开关与权重、预测帧数。
 | 跟踪漂移（跟偏了） | 每 15~30 帧强制重检测 + 重投影误差阈值判据 |
 | 手机性能差异 | 分辨率自适应（已有）+ 检测分帧摊开 |
 
+## 8.5 部署与缓存（踩过的坑）
+
+`index.html` / `tracker-prototype/index.html` 里的脚本都带版本串（`?v=N`）。GitHub Pages 会给
+JS 发缓存头，**改了 `js/image-tracker.js` 必须同时把这几个 `?v=` 加一**，否则手机拉到的还是旧算法
+（页面 URL 上带 `?v=` 只能穿透 HTML 自己的缓存，挡不住脚本缓存）。卡片参考图走"换文件名"
+（`pattern-card-v3-track.png`）而不是原地改，避免同一个坑。
+
 ## 9. 文件与位置
 
 - 实验与开发：副本仓库 `/Users/mac/aoyuar-qr`（不碰线上）

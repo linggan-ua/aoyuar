@@ -293,7 +293,7 @@
     o.src = 'https://docs.opencv.org/4.x/opencv.js';
     o.onload = function () {
       var t = document.createElement('script');
-      t.src = 'js/image-tracker.js';
+      t.src = 'js/image-tracker.js?v=20';   // 改 js/image-tracker.js 时这个数字要 +1：否则手机会用缓存里的旧算法
       document.body.appendChild(t);
       console.log('AOYU_TRACKER_MODE opencv 加载完成，跟踪器就绪');
     };
