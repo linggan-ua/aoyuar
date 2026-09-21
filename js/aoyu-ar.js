@@ -414,13 +414,20 @@
       var overlay = document.getElementById('start-overlay');
       var button = document.getElementById('start-ar-button');
       if (!overlay || !button) return;
+      this.startOverlay = overlay;
 
       button.addEventListener('click', function () {
         if (button.disabled) return;
-        overlay.classList.add('hidden');
         self.resumeAudio();
+        button.disabled = true;
+        button.textContent = '正在打开相机…';
         console.log('AOYU_START_TAP');
+        // 启动页先留着：AR.js 的 video 刚插进 DOM 时还没定尺寸，那一刻会看到
+        // "小画面 + 四周黑边"，随后才被拉到 cover。等 onCameraLive 再收，就不会看到这段过渡。
+        self.pendingStart = true;
         if (window.AOYU_USE_IMAGE_TRACKER) {
+          overlay.classList.add('hidden');
+          self.pendingStart = false;
           // 相机交给 image-tracker；它开不起来时会把提示写在 #ar-error 上，
           // 顺手替用户点一下（这一次点击同样是用户手势）
           var retry = document.getElementById('ar-error');
@@ -593,6 +600,10 @@
     onCameraLive: function () {
       if (this.cameraReady) return;
       this.cameraReady = true;
+      if (this.pendingStart && this.startOverlay) {
+        this.startOverlay.classList.add('hidden');   // 相机出画面了才收启动页
+        this.pendingStart = false;
+      }
       this.errorEl.textContent = '';
       this.gateEl.classList.remove('show');
       this.hintEl.classList.remove('hidden');
@@ -678,6 +689,10 @@
         text = '相机没有启动' + (name ? '（' + name + '）' : '') + '。点这里重试。';
       }
       this.gateEl.classList.remove('show');
+      if (this.pendingStart && this.startOverlay) {
+        this.startOverlay.classList.add('hidden');
+        this.pendingStart = false;
+      }
       this.errorEl.textContent = text;
       this.errorEl.onclick = function () { location.reload(); };
     },
