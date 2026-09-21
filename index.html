@@ -143,6 +143,8 @@
   var useImageTracker = /(?:^|[?&])tracker=image(?:&|$)/.test(location.search);
   window.AOYU_USE_IMAGE_TRACKER = useImageTracker;
   window.AOYU_SKIP_CAMERA = useImageTracker;      // 相机由 image-tracker 自己开
+  // 图像跟踪用的卡片参考图（默认值写死在 image-tracker.js 里，这里跟随 pattern 一起换）
+  window.AOYU_TRACKER_CARD = 'assets/patterns/pattern-card-v3-track.png';
   if (!useImageTracker) return;
   document.addEventListener('DOMContentLoaded', function () {});
   var rewrite = function () {
@@ -189,7 +191,7 @@
 
   <!-- 识别用的 .patt：同名 .png 是要打印的卡片（黑方块占 80%、内图占黑方块 50%，
        所以 arjs 的 patternRatio 必须是 0.5；换卡就换这两个文件 + 下面这一行） -->
-  <a-marker id="ar-marker" type="pattern" url="assets/patterns/pattern-card-v2.patt"
+  <a-marker id="ar-marker" type="pattern" url="assets/patterns/pattern-card-v3.patt"
             emitevents="true" size="1">
 
     <!-- 游动节点：位置和朝向每帧由 fish-swim 直接写 object3D，
@@ -213,15 +215,15 @@
   <!-- 启动页（还原老版本）-->
   <div id="start-overlay" class="start-overlay">
     <img id="start-poster" src="assets/ui/title-ink.png" alt="水墨與絲竹的對話 · 沉浸式国乐剧场">
-    <div class="start-tips">扫描<b>鳌鱼二维码</b>，在二维码上方查看<b>鳌鱼</b><br>首次进入请点击「允许」授权摄像头</div>
+    <div class="start-tips">扫描<b>鳌鱼二维码</b>，在二维码上方查看<b>鳌鱼</b><br>首次进入请点击「允许/Allow」授权摄像头</div>
     <button id="start-ar-button" type="button" disabled>资源准备中…</button>
-    <div class="start-note">二维码平放或贴墙都可以识别</div>
+    <div class="start-note"> </div>
   </div>
 
   <div id="hint">正在打开相机…</div>
   <div id="tap-gate">
-    <div class="pill">点一下开启相机</div>
-    <div class="note">浏览器要求先有一次点击，才允许网页使用摄像头</div>
+    <div class="pill">点击此处开启相机</div>
+    <div class="note">请允许网页使用摄像头</div>
   </div>
   <div id="ar-error"></div>
 
@@ -301,6 +303,6 @@
     window.__aoyuRewriteMarker();   // AR.js 模式下不需要改写，保持原样
   }
 </script>
-<script src="js/aoyu-ar.js?v=12"></script>
+<script src="js/aoyu-ar.js?v=13"></script>
 </body>
 </html>

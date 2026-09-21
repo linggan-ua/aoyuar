@@ -114,7 +114,7 @@
          embedded
          vr-mode-ui="enabled: false"
          renderer="colorManagement: true;"
-         arjs="sourceType: image; sourceUrl: ../assets/patterns/pattern-card-v2.png; debugUIEnabled: false; patternRatio: 0.5; labelingMode: black_region; errorPopup: ar-error">
+         arjs="sourceType: image; sourceUrl: ../assets/patterns/pattern-card-v3.png; debugUIEnabled: false; patternRatio: 0.5; labelingMode: black_region; errorPopup: ar-error">
 
   <a-assets timeout="30000">
     <a-asset-item id="aoyu-model" src="../assets/models/aoyu_ink.glb"></a-asset-item>
@@ -131,7 +131,7 @@
 
   <!-- 识别用的 .patt：同名 .png 是要打印的卡片（黑方块占 80%、内图占黑方块 50%，
        所以 arjs 的 patternRatio 必须是 0.5；换卡就换这两个文件 + 下面这一行） -->
-  <a-marker id="ar-marker" type="pattern" url="../assets/patterns/pattern-card-v2.patt"
+  <a-marker id="ar-marker" type="pattern" url="../assets/patterns/pattern-card-v3.patt"
             emitevents="true" size="1">
 
     <!-- 游动节点：位置和朝向每帧由 fish-swim 直接写 object3D，
