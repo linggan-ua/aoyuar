@@ -27,7 +27,7 @@
       speedScale: [0.5, 2.0],
       turnScale: [0.5, 1.7],
       rangeScale: [0.5, 3.0],     // 活动范围：1 = 原来的值（±0.95 卡宽），最大可以放大到 3 倍
-      animSpeedMax: [1.0, 3.0],
+      animSpeedMax: [0.5, 2.5],   // 摆尾倍率（椭圆轨道下它就是骨骼动画的速度倍率）
       modelScale: [0.4, 2.0]      // 鱼的大小
     }
   };
@@ -108,74 +108,79 @@
   /* =========================================================================
    * 一条鱼：游动 + 入场退场 + 惊吓
    * ========================================================================= */
+  /**
+   * 鱼的游动：沿用老版本 index.html 的那套椭圆轨道。
+   *
+   * 老版本的做法是"绕卡片中心的固定椭圆 + 贴卡平面 + 固定高度 + 轻微起伏"，
+   * 朝向永远跟着轨道的切线走。它比之前那套状态机（随机巡游/冲刺/滑行/悬停 + 重力对齐）
+   * 可控得多：鱼始终在卡片附近，不会突然跑远、也不会自己立起来。
+   * 摆尾交给 GLB 自带的骨骼动画，这里只按受惊状态给它提速。
+   */
   AFRAME.registerComponent('fish-swim', {
     schema: {
       key: { type: 'string' },
-      baseSpeed: { type: 'number', default: 0.30 },
-      anim: { type: 'selector' }
+      anim: { type: 'selector' },
+      radiusX: { type: 'number', default: 1.20 },   // 左右各几张卡宽（卡片 = 1 单位）
+      radiusZ: { type: 'number', default: 0.90 },
+      centerY: { type: 'number', default: 0.65 },   // 悬浮高度
+      speed: { type: 'number', default: 0.00055 },  // 弧度/毫秒
+      bob: { type: 'number', default: 0.10 },       // 上下起伏
+      yawOffset: { type: 'number', default: 0 },
+      turnLerp: { type: 'number', default: 0.06 },  // 朝向跟随切线的快慢
+      phase: { type: 'number', default: -1 }
     },
     init: function () {
-      var key = this.data.key;
-      this.key = key;
-      this.motion = FishMotion.createState({
-        seed: (Date.now() % 100000) + (key === 'aoyu' ? 11 : 977),
-        baseSpeed: this.data.baseSpeed
-      });
-      this.upRef = [0, 1, 0];
-      this.posture = { name: '平放（默认）', tiltDeg: 0 };
-      this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 1, animSpeedMax: 2.2, modelScale: 1 };
+      this.phase = this.data.phase >= 0 ? this.data.phase : Math.random() * Math.PI * 2;
+      this.currentYaw = this.data.yawOffset;
+      this.t = 0;
+      this.startleUntil = 0;
+      this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 1, animSpeedMax: 1, modelScale: 1 };
       this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 锦鲤 0.55）
       this.appliedScale = 1;
       this.hidden = true;
-      this.upRefTimer = 99;                 // 第一帧就估一次姿态
       this.el.object3D.visible = false;
-      instances[key] = this;
+      instances[this.data.key] = this;
     },
     remove: function () {
-      if (instances[this.key] === this) delete instances[this.key];
+      if (instances[this.data.key] === this) delete instances[this.data.key];
     },
     animator: function () {
       var el = this.data.anim;
       return el && el.components['fish-anim'];
     },
+    getCurvePoint: function (t) {
+      var rx = this.data.radiusX * this.tuning.rangeScale;
+      var rz = this.data.radiusZ * this.tuning.rangeScale;
+      return {
+        x: Math.cos(t) * rx,
+        y: this.data.centerY + Math.sin(t * 0.55 + 0.7) * this.data.bob,
+        z: Math.sin(t) * rz
+      };
+    },
     tick: function (time, delta) {
-      var d = Math.min(0.05, (delta || 0) / 1000);
-      if (!d) return;
-      // 卡片姿态低频刷新：卡片是固定的，不用每帧算（小程序里也是 0.5 秒一次）
-      this.upRefTimer += d;
-      if (this.upRefTimer >= 0.5) {
-        this.upRefTimer = 0;
-        this.updateUpRef();
-      }
+      var d = Math.min(50, delta || 16);
+      var boosting = this.startleUntil > time;
+      var boost = boosting ? 4.5 : 1;
+      this.t += d * this.data.speed * this.tuning.speedScale * boost;
+      var t0 = this.t + this.phase;
+      var p = this.getCurvePoint(t0);
+      var next = this.getCurvePoint(t0 + 0.02);
+
+      // 朝向跟着轨道切线，转向用插值，避免拐角处硬折
+      var targetYaw = THREE.Math.radToDeg(Math.atan2(next.x - p.x, next.z - p.z)) + this.data.yawOffset;
+      var yawDiff = (((targetYaw - this.currentYaw) + 540) % 360) - 180;
+      this.currentYaw += yawDiff * Math.min(1, this.data.turnLerp * this.tuning.turnScale);
+
       if (this.appliedScale !== this.tuning.modelScale) {
         this.appliedScale = this.tuning.modelScale;
         this.el.object3D.scale.setScalar(this.baseScale * this.tuning.modelScale);
       }
-      if (this.hidden) return;
-      var out = FishMotion.step(this.motion, d, { upRef: this.upRef, tuning: this.tuning });
-      this.el.object3D.position.set(out.position[0], out.position[1], out.position[2]);
-      this.el.object3D.quaternion.set(out.quaternion[0], out.quaternion[1], out.quaternion[2], out.quaternion[3]);
+      this.el.object3D.position.set(p.x, p.y, p.z);
+      this.el.object3D.rotation.set(0, THREE.Math.degToRad(this.currentYaw), 0);
+
       var animator = this.animator();
-      if (animator) animator.data.speed = out.animSpeed;
-      this.lastState = out.state;
-    },
-    /** 世界正上方换算到卡片局部：卡片平放时是 (0,1,0)，贴墙时是水平的 */
-    updateUpRef: function () {
-      var marker = document.getElementById('ar-marker');
-      if (!marker || !marker.object3D) return;
-      var up = new THREE.Vector3(0, 1, 0).applyQuaternion(
-        marker.object3D.getWorldQuaternion(new THREE.Quaternion()).invert()
-      );
-      this.upRef = [up.x, up.y, up.z];
-      var tilt = Math.acos(clamp(up.y, -1, 1)) * 180 / Math.PI;
-      var name = tilt < 20 ? '平放' : (tilt > 70 ? '竖直贴墙' : '倾斜');
-      if (name !== this.posture.name) {
-        this.posture = { name: name, tiltDeg: tilt };
-        console.log('AOYU_POSTURE', name, 'tilt=' + Math.round(tilt) + '°',
-          'upRef=' + this.upRef.map(function (v) { return v.toFixed(2); }).join(','));
-      } else {
-        this.posture.tiltDeg = tilt;
-      }
+      if (animator) animator.data.speed = this.tuning.animSpeedMax * (boosting ? 2.6 : 1);
+      this.boosting = boosting;
     },
     show: function () {
       this.hidden = false;
@@ -189,65 +194,21 @@
       var animator = this.animator();
       if (animator) animator.pause();
     },
-    enter: function () {
-      FishMotion.startEntering(this.motion);
-      this.show();
+    enter: function () { this.show(); },
+    exit: function () { /* 椭圆轨道没有"游走"过渡，丢卡后由 hide 收尾 */ },
+    /** 点屏幕吓一跳：轨道上突然加速 + 摆尾加快 */
+    startle: function () {
+      this.startleUntil = performance.now() + 900;
     },
-    exit: function () {
-      FishMotion.startExiting(this.motion);
-    },
-    startle: function (threat) {
-      FishMotion.startle(this.motion, threat);
-    },
-    /**
-     * 材质轻量化：把 Standard/Physical 换成不考虑光照的 Basic（水墨本来就是平的）。
-     * 用来现场判断"卡"是不是卡在片元着色器上。原来的材质存起来，可以切回去。
-     */
-    setLightweightMaterials: function (on) {
-      var meshEl = this.data.anim;
-      var root = meshEl && meshEl.getObject3D('mesh');
-      if (!root) return false;
-      var THREE = AFRAME.THREE;
-      if (on) {
-        if (this._savedMaterials) return true;
-        this._savedMaterials = [];
-        root.traverse(function (node) {
-          if (!node.isMesh || !node.material) return;
-          var list = Array.isArray(node.material) ? node.material : [node.material];
-          var swapped = list.map(function (m) {
-            return new THREE.MeshBasicMaterial({
-              map: m.map || null,
-              color: m.color ? m.color.clone() : new THREE.Color(0xffffff),
-              alphaTest: m.alphaTest || 0,
-              transparent: m.transparent,
-              opacity: m.opacity,
-              side: m.side,
-              depthWrite: m.depthWrite
-            });
-          });
-          this._savedMaterials.push({ node: node, material: node.material });
-          node.material = Array.isArray(node.material) ? swapped : swapped[0];
-        }, this);
-      } else if (this._savedMaterials) {
-        this._savedMaterials.forEach(function (item) { item.node.material = item.material; });
-        this._savedMaterials = null;
-      }
-      console.log('AOYU_MATERIAL_MODE', on ? 'basic' : 'standard');
-      return true;
-    },
-
     status: function () {
+      var rx = (this.data.radiusX * this.tuning.rangeScale).toFixed(2);
+      var rz = (this.data.radiusZ * this.tuning.rangeScale).toFixed(2);
       return {
-        tuning: {
-          speedScale: this.tuning.speedScale,
-          turnScale: this.tuning.turnScale,
-          rangeScale: this.tuning.rangeScale,
-          animSpeedMax: this.tuning.animSpeedMax,
-          modelScale: this.tuning.modelScale
-        },
-        posture: { name: this.posture.name, tiltDeg: Math.round(this.posture.tiltDeg) },
-        upRef: this.upRef,
-        state: this.lastState || 'cruise'
+        posture: { name: '贴卡平面（椭圆轨道）', tiltDeg: 0 },
+        tuning: this.tuning,
+        state: this.boosting ? '受惊加速' : '巡游',
+        radius: { x: rx, z: rz },
+        centerY: this.data.centerY.toFixed(2)
       };
     }
   });
@@ -822,13 +783,13 @@
         var status = fish.status();
         statusText.textContent = 'FPS ' + (self.fps || '--') +
           '（渲染×' + (self.pixelRatio ? self.pixelRatio.toFixed(2) : '--') + '）　' +
-          '卡片姿态：' + status.posture.name + '（法线偏' + status.posture.tiltDeg + '°）· ' +
-          status.state + '　速度×' + status.tuning.speedScale.toFixed(2) +
+          '游动：椭圆轨道　半径 ' + status.radius.x + '×' + status.radius.z + ' 张卡宽' +
+          '　高 ' + status.centerY + '　' + status.state + '　' +
+          '速度×' + status.tuning.speedScale.toFixed(2) +
           ' 转向×' + status.tuning.turnScale.toFixed(2) +
           ' 范围×' + status.tuning.rangeScale.toFixed(2) +
-          '（左右各 ' + (0.70 * status.tuning.rangeScale).toFixed(2) + ' 张卡宽，高 0.35~0.90）' +
-          ' 大小×' + status.tuning.modelScale.toFixed(2) +
-          ' 摆尾上限×' + status.tuning.animSpeedMax.toFixed(1);
+          ' 摆尾×' + status.tuning.animSpeedMax.toFixed(2) +
+          ' 大小×' + status.tuning.modelScale.toFixed(2);
       };
 
       toggle.addEventListener('click', function () {
@@ -879,7 +840,7 @@
       document.getElementById('db-material').addEventListener('click', function () { self.toggleLightweight(); });
       document.getElementById('db-reset').addEventListener('click', function () {
         var fish = self.activeFish();
-        if (fish) fish.tuning = { speedScale: 1, turnScale: 1, rangeScale: 1, animSpeedMax: 2.2, modelScale: 1 };
+        if (fish) fish.tuning = { speedScale: 1, turnScale: 1, rangeScale: 1, animSpeedMax: 1, modelScale: 1 };
         self.saveTuning();
         self.refreshDebug();
       });

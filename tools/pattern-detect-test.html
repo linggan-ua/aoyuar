@@ -44,6 +44,39 @@
     pointer-events: auto; white-space: pre-wrap;
   }
 
+  /* ---------- 启动页（还原老版本：标题图 + 进入按钮）---------- */
+  .start-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 20px; padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
+    /* 底色取自标题图：近黑带一点墨绿 */
+    background: radial-gradient(120% 90% at 50% 38%, #071712 0%, #020806 58%, #000 100%);
+    color: #eaf6f1; text-align: center;
+    pointer-events: auto;
+    transition: opacity .45s ease, visibility .45s ease;
+  }
+  .start-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+  #start-poster {
+    max-height: 48vh; max-width: 76vw; width: auto;
+    filter: drop-shadow(0 12px 44px rgba(5, 248, 171, .16));
+  }
+  .start-tips { color: #9fb3a9; font-size: 13px; line-height: 1.9; }
+  .start-tips b { color: #05f8ab; font-weight: 600; }
+  #start-ar-button {
+    min-width: min(78vw, 340px); padding: 17px 26px; border-radius: 999px;
+    border: 1.5px solid rgba(5, 248, 171, .75);
+    background: linear-gradient(180deg, rgba(5, 248, 171, .16), rgba(5, 248, 171, .05));
+    color: #05f8ab; font-size: 17px; font-weight: 700; letter-spacing: .1em;
+    font-family: inherit; cursor: pointer;
+    box-shadow: inset 0 0 0 1px rgba(5, 248, 171, .12), 0 10px 34px rgba(5, 248, 171, .10);
+    transition: transform .18s ease, box-shadow .25s ease, opacity .2s ease, color .2s ease;
+  }
+  #start-ar-button:active { transform: scale(.97); }
+  #start-ar-button[disabled] {
+    opacity: .5; border-color: rgba(159, 179, 169, .45); color: #9fb3a9; box-shadow: none; cursor: default;
+  }
+  .start-note { color: #6d7f77; font-size: 12px; }
+
   /* 只有 iOS / 微信这种"必须先有用户手势"的环境才会出现 */
   #tap-gate {
     position: absolute; inset: 0; display: none; flex-direction: column;
@@ -90,6 +123,7 @@
   .db-status { margin: 8px 0 4px; color: #8b98a9; font-size: 11px; line-height: 1.6; }
   .db-hint { margin-top: 6px; color: #5d6b7d; font-size: 11px; text-align: center; }
   #tap-gate { display: none !important; }
+  .start-overlay { display: none !important; }
 </style>
 <!-- 子路径部署（GitHub Pages /aoyuar/）时保证 assets、.patt 相对当前目录解析 -->
 <script>
@@ -102,6 +136,34 @@
   var base = document.createElement('base');
   base.href = location.origin + path;
   document.head.appendChild(base);
+})();
+</script>
+<!-- 跟踪模式开关：默认走 AR.js pattern；带 ?tracker=image 时改用图像特征跟踪（js/image-tracker.js）
+     必须在 A-Frame 解析 <a-scene> 之前改写标记，否则 arjs system 会先接管 -->
+<script>
+(function () {
+  var useImageTracker = /(?:^|[?&])tracker=image(?:&|$)/.test(location.search);
+  window.AOYU_USE_IMAGE_TRACKER = useImageTracker;
+  window.AOYU_SKIP_CAMERA = useImageTracker;      // 相机由 image-tracker 自己开
+  // 图像跟踪用的卡片参考图（默认值写死在 image-tracker.js 里，这里跟随 pattern 一起换）
+  window.AOYU_TRACKER_CARD = 'assets/patterns/pattern-card-v3-track.png';
+  if (!useImageTracker) return;
+  document.addEventListener('DOMContentLoaded', function () {});
+  var rewrite = function () {
+    var marker = document.querySelector('a-marker');
+    var scene = document.querySelector('a-scene');
+    if (!marker || !scene) return false;
+    var node = document.createElement('a-entity');
+    node.id = 'ar-marker';
+    while (marker.firstChild) node.appendChild(marker.firstChild);
+    marker.parentNode.replaceChild(node, marker);
+    scene.removeAttribute('arjs');
+    console.log('AOYU_TRACKER_MODE image');
+    return true;
+  };
+  // DOMContentLoaded 之前也试一次（脚本在 head 里，scene 可能还没解析）
+  document.addEventListener('DOMContentLoaded', rewrite);
+  window.__aoyuRewriteMarker = rewrite;
 })();
 </script>
 <!-- A-Frame 和 AR.js 必须在 <a-scene> 之前加载：A-Frame 解析 scene 时要找已注册的 arjs system -->
@@ -152,10 +214,18 @@
 </a-scene>
 
 <div id="ui">
+  <!-- 启动页（还原老版本）-->
+  <div id="start-overlay" class="start-overlay">
+    <img id="start-poster" src="../assets/ui/title-ink.png" alt="水墨與絲竹的對話 · 沉浸式国乐剧场">
+    <div class="start-tips">扫描<b>鳌鱼二维码</b>，在二维码上方查看<b>鳌鱼</b><br>首次进入请点击「允许/Allow」授权摄像头</div>
+    <button id="start-ar-button" type="button" disabled>资源准备中…</button>
+    <div class="start-note"> </div>
+  </div>
+
   <div id="hint">正在打开相机…</div>
   <div id="tap-gate">
-    <div class="pill">点一下开启相机</div>
-    <div class="note">浏览器要求先有一次点击，才允许网页使用摄像头</div>
+    <div class="pill">点击此处开启相机</div>
+    <div class="note">请允许网页使用摄像头</div>
   </div>
   <div id="ar-error"></div>
 
@@ -216,7 +286,25 @@
   </div>
 </div>
 
-<script src="../js/fish-motion.js?v=9"></script>
+<script src="../js/fish-motion.js?v=10"></script>
+<script>
+  // image 模式下再加载跟踪器（它自己开相机、算位姿、写锚点矩阵，并派发 markerFound/markerLost）
+  if (window.AOYU_USE_IMAGE_TRACKER) {
+    // 先加载 OpenCV.js（跟踪器的全部 CV 原语都来自它），再加载跟踪器
+    var o = document.createElement('script');
+    o.src = 'https://docs.opencv.org/4.x/opencv.js';
+    o.onload = function () {
+      var t = document.createElement('script');
+      t.src = 'js/image-tracker.js';
+      document.body.appendChild(t);
+      console.log('AOYU_TRACKER_MODE opencv 加载完成，跟踪器就绪');
+    };
+    o.onerror = function () { console.error('AOYU_TRACKER_MODE opencv 加载失败'); };
+    document.body.appendChild(o);
+  } else if (window.__aoyuRewriteMarker) {
+    window.__aoyuRewriteMarker();   // AR.js 模式下不需要改写，保持原样
+  }
+</script>
 <script>
   window.addEventListener('markerFound', function () {
     console.log('TEST_MARKER_FOUND');
@@ -224,8 +312,7 @@
     if (h) { h.textContent = '识别成功'; h.classList.remove('hidden'); }
   });
   window.addEventListener('markerLost', function () { console.log('TEST_MARKER_LOST'); });
-  setTimeout(function () { console.log('TEST_DONE'); }, 12000);
 </script>
-<script src="../js/aoyu-ar.js?v=9"></script>
+<script src="../js/aoyu-ar.js?v=14"></script>
 </body>
 </html>
