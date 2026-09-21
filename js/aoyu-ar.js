@@ -324,6 +324,12 @@
       if (navigator.audioSession) {
         try { navigator.audioSession.type = 'playback'; } catch (e) { /* 不支持就算了 */ }
       }
+      // 播放走 Web Audio：<audio>.play() 有解码+管线启动延迟（iOS 上尤其明显，
+      // 每个文件第一次播放最严重），听起来就是"点了之后才响"。
+      // 这里启动时把 5 个 mp3 全部解码成 AudioBuffer，点的时候直接 start()。
+      this.noteBuffers = [];
+      this.initWebAudio();
+      // 兜底：万一浏览器没有 Web Audio，仍然用 <audio>
       this.players = CONFIG.notes.map(function (src) {
         var audio = new Audio(src);
         audio.preload = 'auto';
@@ -412,6 +418,7 @@
       button.addEventListener('click', function () {
         if (button.disabled) return;
         overlay.classList.add('hidden');
+        self.resumeAudio();
         console.log('AOYU_START_TAP');
         if (window.AOYU_USE_IMAGE_TRACKER) {
           // 相机交给 image-tracker；它开不起来时会把提示写在 #ar-error 上，
@@ -443,6 +450,34 @@
         }
       }
       setTimeout(enable, 6000);   // 模型就绪得慢也别一直卡在"资源准备中"
+    },
+
+    /** 预解码五声音阶：解码完成前点击会自动退回 <audio> */
+    initWebAudio: function () {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      var self = this;
+      this.audioCtx = new Ctx();
+      this.noteGain = this.audioCtx.createGain();
+      this.noteGain.gain.value = CONFIG.noteVolume;
+      this.noteGain.connect(this.audioCtx.destination);
+      CONFIG.notes.forEach(function (src, index) {
+        fetch(src)
+          .then(function (res) { return res.arrayBuffer(); })
+          .then(function (buf) { return self.audioCtx.decodeAudioData(buf); })
+          .then(function (decoded) {
+            self.noteBuffers[index] = decoded;
+            console.log('AOYU_NOTE_DECODED', index, decoded.duration.toFixed(2) + 's');
+          })
+          .catch(function (error) { console.error('AOYU_NOTE_DECODE_ERROR', index, error); });
+      });
+    },
+
+    /** 用户手势里必须把 AudioContext 唤醒（iOS/微信要），否则 start() 不出声 */
+    resumeAudio: function () {
+      if (this.audioCtx && this.audioCtx.state === 'suspended') {
+        this.audioCtx.resume().catch(function () {});
+      }
     },
 
     /* ---------- 相机 ---------- */
@@ -673,6 +708,7 @@
     },
 
     handleTap: function (x, y) {
+      this.resumeAudio();
       if (!this.markerActive || this.fishHidden) return;
       var fish = this.activeFish();
       if (!fish) return;
@@ -715,8 +751,13 @@
 
       if (raycaster.intersectObject(mesh, true).length) return true;
 
-      var bones = [];
-      mesh.traverse(function (node) { if (node.isBone) bones.push(node); });
+      var bones = this._bones;
+      if (!bones || bones.el !== mesh) {
+        bones = [];
+        mesh.traverse(function (node) { if (node.isBone) bones.push(node); });
+        bones.el = mesh;
+        this._bones = bones;
+      }
       if (!bones.length) {
         var fallback = new THREE.Box3().setFromObject(mesh);
         if (fallback.isEmpty()) return false;
@@ -746,6 +787,17 @@
       var index = Math.floor(Math.random() * total);
       if (index === this.lastNoteIndex) index = (index + 1) % total;
       this.lastNoteIndex = index;
+      var buffer = this.noteBuffers && this.noteBuffers[index];
+      if (this.audioCtx && buffer) {
+        this.resumeAudio();
+        var source = this.audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(this.noteGain);
+        source.start();                       // 立即出声，无解码等待
+        console.log('AOYU_NOTE_PLAY', index, CONFIG.notes[index], 'web-audio');
+        return;
+      }
+      // 兜底路径
       var player = this.players[index];
       try {
         player.currentTime = 0;
@@ -754,7 +806,7 @@
       } catch (error) {
         console.error('AOYU_NOTE_PLAY_ERROR', error);
       }
-      console.log('AOYU_NOTE_PLAY', index, CONFIG.notes[index]);
+      console.log('AOYU_NOTE_PLAY', index, CONFIG.notes[index], 'audio-element');
     },
 
     /* ---------- 卡片在不在画面里 ---------- */
