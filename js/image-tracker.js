@@ -25,7 +25,9 @@
     grid: 8,                      // 跟踪种子 8×8 = 64 点
     lostGrace: 2,
     // One-Euro（扫参得到的参数：静止重滤波、运动自动放开）
-    oneEuro: { minCutoff: 0.2, beta: 0.2, dCutoff: 1.0, dt: 1 / 30 },
+    // 实验台扫参（tracker-lab-results.md）：0.2/0.05 比 0.2/0.2 在同样"延迟 +0 帧"下
+    // 抖动降幅 71% → 88%，对真值 RMS 0.092 → 0.081，故取 beta 0.05
+    oneEuro: { minCutoff: 0.2, beta: 0.05, dCutoff: 1.0, dt: 1 / 30 },
     // 自适应质量：按实测每帧耗时升降处理分辨率与跟踪点数，让不同性能的手机都能守住 30fps
     adaptive: { targetMs: 28, window: 30, minScale: 0.45, maxScale: 1.0, minGrid: 5, maxGrid: 8 }
   };
@@ -82,15 +84,18 @@
   /* ---------------- One-Euro 滤波（三个平移分量各一路，旋转用球面插值近似） ---------------- */
   function makeOneEuro(cfg) {
     var st = [null, null, null], dx = [0, 0, 0];
-    function alpha(cutoff) { var tau = 1 / (2 * Math.PI * cutoff); return 1 / (1 + tau / cfg.dt); }
-    return function (xyz) {
+    function alpha(cutoff, dt) { var tau = 1 / (2 * Math.PI * cutoff); return 1 / (1 + tau / dt); }
+    return function (xyz, dtMs) {
+      // 用实测帧间隔：帧率 30/60fps 来回变（还有自适应降档引起的抖动）时，
+      // 固定 dt=1/30 会让滤波时间常数跟着帧率漂
+      var dt = (dtMs && dtMs > 4 && dtMs < 200) ? dtMs / 1000 : cfg.dt;
       var out = [];
       for (var i = 0; i < 3; i++) {
         if (st[i] === null) { st[i] = xyz[i]; out[i] = xyz[i]; continue; }
-        var d = (xyz[i] - st[i]) / cfg.dt;
-        var aD = alpha(cfg.dCutoff);
+        var d = (xyz[i] - st[i]) / dt;
+        var aD = alpha(cfg.dCutoff, dt);
         dx[i] = aD * d + (1 - aD) * dx[i];
-        var a = alpha(cfg.minCutoff + cfg.beta * Math.abs(dx[i]));
+        var a = alpha(cfg.minCutoff + cfg.beta * Math.abs(dx[i]), dt);
         st[i] = a * xyz[i] + (1 - a) * st[i];
         out[i] = st[i];
       }
@@ -370,7 +375,7 @@
     var rr = R.data64F, tt = tvec.data64F;
     // One-Euro 只作用在平移上（旋转靠 solvePnP 输出 + 低频刷新）
     if (!S.oneEuro) S.oneEuro = makeOneEuro(CONFIG.oneEuro);
-    var t2 = S.oneEuro([tt[0], tt[1], tt[2]]);
+    var t2 = S.oneEuro([tt[0], tt[1], tt[2]], S.stats.frameMs);
     var inCv = new THREE.Matrix4().set(
       rr[0], rr[1], rr[2], t2[0],
       rr[3], rr[4], rr[5], t2[1],
@@ -480,7 +485,9 @@
     var st = S.stats;
     var secs = st.startedAt ? ((performance.now() - st.startedAt) / 1000).toFixed(1) : '0';
     return [
-      '【图像跟踪实测】时长 ' + secs + 's  帧 ' + st.frames + '  FPS≈' + st.fps.toFixed(1),
+      '【图像跟踪实测】时长 ' + secs + 's  帧 ' + st.frames +
+        '  FPS 平均 ' + (st.startedAt ? (st.frames / ((performance.now() - st.startedAt) / 1000)).toFixed(1) : '—') +
+        '（近1秒 ' + st.fps.toFixed(1) + '）',
       '锁定率 ' + (st.frames ? (st.posed / st.frames * 100).toFixed(0) : 0) + '%（出位姿 ' + st.posed + '/' + st.frames + '）',
       '检测 平均 ' + avg(st.detect).toFixed(0) + 'ms（p95 ' + pct(st.detect).toFixed(0) + 'ms，' + st.detect.length + ' 次）',
       '跟踪 平均 ' + avg(st.track).toFixed(1) + 'ms（p95 ' + pct(st.track).toFixed(1) + 'ms）',
