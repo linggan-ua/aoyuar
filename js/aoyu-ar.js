@@ -361,6 +361,8 @@
      *      video 元素，接上流就正常识别，不需要重载页面。
      */
     initCamera: function () {
+      // 用图像特征跟踪时，相机和画面由 js/image-tracker.js 负责，这里不要抢
+      if (window.AOYU_SKIP_CAMERA) return;
       var self = this;
       this.cameraReady = false;
       this.pendingStream = null;

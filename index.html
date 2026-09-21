@@ -103,6 +103,32 @@
   document.head.appendChild(base);
 })();
 </script>
+<!-- 跟踪模式开关：默认走 AR.js pattern；带 ?tracker=image 时改用图像特征跟踪（js/image-tracker.js）
+     必须在 A-Frame 解析 <a-scene> 之前改写标记，否则 arjs system 会先接管 -->
+<script>
+(function () {
+  var useImageTracker = /(?:^|[?&])tracker=image(?:&|$)/.test(location.search);
+  window.AOYU_USE_IMAGE_TRACKER = useImageTracker;
+  window.AOYU_SKIP_CAMERA = useImageTracker;      // 相机由 image-tracker 自己开
+  if (!useImageTracker) return;
+  document.addEventListener('DOMContentLoaded', function () {});
+  var rewrite = function () {
+    var marker = document.querySelector('a-marker');
+    var scene = document.querySelector('a-scene');
+    if (!marker || !scene) return false;
+    var node = document.createElement('a-entity');
+    node.id = 'ar-marker';
+    while (marker.firstChild) node.appendChild(marker.firstChild);
+    marker.parentNode.replaceChild(node, marker);
+    scene.removeAttribute('arjs');
+    console.log('AOYU_TRACKER_MODE image');
+    return true;
+  };
+  // DOMContentLoaded 之前也试一次（脚本在 head 里，scene 可能还没解析）
+  document.addEventListener('DOMContentLoaded', rewrite);
+  window.__aoyuRewriteMarker = rewrite;
+})();
+</script>
 <!-- A-Frame 和 AR.js 必须在 <a-scene> 之前加载：A-Frame 解析 scene 时要找已注册的 arjs system -->
 <script src="aframe.min.js"></script>
 <script src="aframe-ar.js"></script>
@@ -216,6 +242,24 @@
 </div>
 
 <script src="js/fish-motion.js?v=9"></script>
+<script>
+  // image 模式下再加载跟踪器（它自己开相机、算位姿、写锚点矩阵，并派发 markerFound/markerLost）
+  if (window.AOYU_USE_IMAGE_TRACKER) {
+    // 先加载 OpenCV.js（跟踪器的全部 CV 原语都来自它），再加载跟踪器
+    var o = document.createElement('script');
+    o.src = 'https://docs.opencv.org/4.x/opencv.js';
+    o.onload = function () {
+      var t = document.createElement('script');
+      t.src = 'js/image-tracker.js';
+      document.body.appendChild(t);
+      console.log('AOYU_TRACKER_MODE opencv 加载完成，跟踪器就绪');
+    };
+    o.onerror = function () { console.error('AOYU_TRACKER_MODE opencv 加载失败'); };
+    document.body.appendChild(o);
+  } else if (window.__aoyuRewriteMarker) {
+    window.__aoyuRewriteMarker();   // AR.js 模式下不需要改写，保持原样
+  }
+</script>
 <script src="js/aoyu-ar.js?v=9"></script>
 </body>
 </html>
