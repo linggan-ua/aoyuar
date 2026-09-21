@@ -27,7 +27,7 @@
     // One-Euro（扫参得到的参数：静止重滤波、运动自动放开）
     oneEuro: { minCutoff: 0.2, beta: 0.2, dCutoff: 1.0, dt: 1 / 30 },
     // 自适应质量：按实测每帧耗时升降处理分辨率与跟踪点数，让不同性能的手机都能守住 30fps
-    adaptive: { targetMs: 28, window: 30, minScale: 0.6, maxScale: 1.0, minGrid: 6, maxGrid: 8 }
+    adaptive: { targetMs: 28, window: 30, minScale: 0.45, maxScale: 1.0, minGrid: 5, maxGrid: 8 }
   };
 
   var S = {
@@ -37,7 +37,7 @@
     prevGray: null, trackPts: null, refPts: null, lastH: null, lastCorners: null,
     frame: 0, found: false, miss: 0, forceDetect: true, rejLog: 0, cardErr: false, coarsePass: false,
     oneEuro: null, pose: null, lastDetectMs: 0, lastTrackMs: 0, poses: 0,
-    stats: { frames: 0, posed: 0, detect: [], track: [], inliers: [], gaps: [], lastPoseT: 0, lastT: 0, fps: 0, startedAt: 0, costMs: 0 },
+    stats: { frames: 0, posed: 0, detect: [], track: [], inliers: [], gaps: [], lastPoseT: 0, lastT: 0, fps: 0, startedAt: 0, costMs: 0, frameMs: 0, lastTickT: 0 },
     quality: { scale: 1.0, grid: 8 }
   };
 
@@ -67,10 +67,13 @@
     var cost = (trk.length ? trk.reduce(function (a, b) { return a + b; }, 0) / trk.length : 0) +
                (det.length ? det.reduce(function (a, b) { return a + b; }, 0) / det.length / CONFIG.detectIntervalFrames : 0);
     st.costMs = cost;
-    if (cost > A.targetMs) {
+    // 实测帧间隔就是"稳态 30fps"这条验收线。只看跟踪成本会漏掉渲染开销：
+    // CPU 节流 ×4 实测跟踪只报 19ms，真实帧间隔却是 42ms（<30fps），档位当时就不再降了。
+    var frameMs = st.frameMs || 0;
+    if (cost > A.targetMs || frameMs > 33) {
       if (S.quality.grid > A.minGrid) setQuality(S.quality.scale, S.quality.grid - 1);
       else setQuality(S.quality.scale - 0.15, S.quality.grid);
-    } else if (cost < A.targetMs * 0.5) {
+    } else if (cost < A.targetMs * 0.5 && (!frameMs || frameMs < 25)) {
       if (S.quality.scale < A.maxScale) setQuality(S.quality.scale + 0.15, S.quality.grid);
       else if (S.quality.grid < A.maxGrid) setQuality(S.quality.scale, S.quality.grid + 1);
     }
@@ -399,6 +402,9 @@
     if (!S.cv || !S.source || !S.card || !S.anchor || !S.anchor.object3D) return;
     S.frame++;
     var st = S.stats;
+    var nowTick = performance.now();
+    if (st.lastTickT) { var dt = nowTick - st.lastTickT; st.frameMs = st.frameMs ? st.frameMs * 0.9 + dt * 0.1 : dt; }
+    st.lastTickT = nowTick;
     if (!st.startedAt) st.startedAt = performance.now();
     st.frames++;
     st.lastT = performance.now();
@@ -484,7 +490,8 @@
       // 判断要不要上 IMU 帧间预测：位姿率明显低于渲染帧率时，陀螺仪插值才有意义
       (st.fps > 0 && avg(st.gaps) > 0 && st.fps < 1000 / avg(st.gaps) * 0.8)
         ? '→ 位姿率明显低于渲染帧率，IMU 帧间预测会有帮助' : '→ 位姿率已跟得上渲染帧率，暂不需要 IMU',
-      '质量档位 处理 ' + (S.canvas ? S.canvas.width + '×' + S.canvas.height : '—') + '，点 ' + S.quality.grid + '²，每帧成本≈' + st.costMs.toFixed(1) + 'ms' + (S.qualityLocked ? '（手动锁定）' : '（自适应）'),
+      '质量档位 处理 ' + (S.canvas ? S.canvas.width + '×' + S.canvas.height : '—') + '，点 ' + S.quality.grid + '²，每帧成本≈' + st.costMs.toFixed(1) +
+        'ms，实测帧间隔≈' + (st.frameMs ? st.frameMs.toFixed(1) : '—') + 'ms' + (S.qualityLocked ? '（手动锁定）' : '（自适应）'),
       '设备 DPR ' + window.devicePixelRatio
     ].join('\n');
   }
