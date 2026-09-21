@@ -115,29 +115,53 @@
    * 可控得多：鱼始终在卡片附近，不会突然跑远、也不会自己立起来。
    * 摆尾交给 GLB 自带的骨骼动画，这里只按受惊状态给它提速。
    */
+  /**
+   * 鱼的游动：自己写的「有界漫游」。
+   *
+   * 目标：像鱼，但**永远不越界**。不照搬小程序那套状态机，也不用纯椭圆轨迹。
+   *
+   *   1) 活动范围 = 卡片平面内的椭圆 + 高度区间，两个都是硬约束
+   *   2) 目标点只在椭圆内部 0.72 半径内随机取（留出余量，不贴边）
+   *   3) 朝目标游 + 限速转向（鱼不会原地拐弯），转弯时轻微侧倾
+   *   4) 越靠近边界，"向内"的修正越强（软约束，避免贴着边撞）
+   *   5) 速度有快有慢（滑行/巡游/冲刺随机切换），摆尾速度跟游速联动
+   *   6) 每帧积分之后再做一次硬投影：出椭圆就按比例拉回、高度夹到区间内
+   *      —— 所以无论受惊冲刺、掉帧、改范围、改大小，都不可能游出范围
+   */
   AFRAME.registerComponent('fish-swim', {
     schema: {
       key: { type: 'string' },
       anim: { type: 'selector' },
-      radiusX: { type: 'number', default: 1.20 },   // 左右各几张卡宽（卡片 = 1 单位）
-      radiusZ: { type: 'number', default: 0.90 },
-      centerY: { type: 'number', default: 0.65 },   // 悬浮高度
-      speed: { type: 'number', default: 0.00055 },  // 弧度/毫秒
-      bob: { type: 'number', default: 0.10 },       // 上下起伏
-      yawOffset: { type: 'number', default: 0 },
-      turnLerp: { type: 'number', default: 0.06 },  // 朝向跟随切线的快慢
-      phase: { type: 'number', default: -1 }
+      radiusX: { type: 'number', default: 0.70 },   // 椭圆半轴（卡片 = 1 单位）
+      radiusZ: { type: 'number', default: 0.50 },
+      yMin: { type: 'number', default: 0.32 },      // 悬浮高度区间
+      yMax: { type: 'number', default: 0.72 },
+      speed: { type: 'number', default: 0.30 },     // 基准速度（单位/秒）
+      turnRate: { type: 'number', default: 2.2 },   // 最大转向角速度（弧度/秒）
+      maxBank: { type: 'number', default: 10 * Math.PI / 180 },
+      bobSpeed: { type: 'number', default: 0.5 }    // 上下起伏的快慢
     },
     init: function () {
-      this.phase = this.data.phase >= 0 ? this.data.phase : Math.random() * Math.PI * 2;
-      this.currentYaw = this.data.yawOffset;
-      this.t = 0;
+      var self = this;
+      this.rng = Math.random;
+      this.pos = { x: 0, y: (this.data.yMin + this.data.yMax) / 2, z: 0 };
+      this.head = { x: 0, z: 1 };
+      this.target = { x: 0, z: 0 };
+      this.targetTime = 0;
+      this.targetDuration = 3;
+      this.heightPhase = this.rng() * Math.PI * 2;
+      this.speed = this.data.speed * 0.6;
+      this.speedTarget = this.data.speed;
+      this.stateTime = 0;
+      this.stateDuration = 0;
+      this.bank = 0;
       this.startleUntil = 0;
       this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 1, animSpeedMax: 1, modelScale: 1 };
       this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 锦鲤 0.55）
       this.appliedScale = 1;
       this.hidden = true;
       this.el.object3D.visible = false;
+      this.pickTarget();
       instances[this.data.key] = this;
     },
     remove: function () {
@@ -147,39 +171,101 @@
       var el = this.data.anim;
       return el && el.components['fish-anim'];
     },
-    getCurvePoint: function (t) {
-      var rx = this.data.radiusX * this.tuning.rangeScale;
-      var rz = this.data.radiusZ * this.tuning.rangeScale;
+    radii: function () {
       return {
-        x: Math.cos(t) * rx,
-        y: this.data.centerY + Math.sin(t * 0.55 + 0.7) * this.data.bob,
-        z: Math.sin(t) * rz
+        x: this.data.radiusX * this.tuning.rangeScale,
+        z: this.data.radiusZ * this.tuning.rangeScale
       };
     },
+    /** 只在椭圆内部 0.72 半径处取点，并给一个到达时限（免得卡在某个目标上） */
+    pickTarget: function () {
+      var r = this.radii();
+      var a = this.rng() * Math.PI * 2;
+      var k = Math.sqrt(this.rng()) * 0.72;
+      this.target.x = Math.cos(a) * r.x * k;
+      this.target.z = Math.sin(a) * r.z * k;
+      this.targetTime = 0;
+      this.targetDuration = 2 + this.rng() * 4;
+    },
     tick: function (time, delta) {
-      var d = Math.min(50, delta || 16);
+      var d = Math.min(0.05, (delta || 16) / 1000);   // 秒，单帧最多推进 50ms
+      if (!d) return;
+      var r = this.radii();
+      var dx = this.target.x - this.pos.x;
+      var dz = this.target.z - this.pos.z;
+      var dist = Math.sqrt(dx * dx + dz * dz);
+      this.targetTime += d;
+      if (dist < 0.12 || this.targetTime > this.targetDuration) this.pickTarget();
+
+      // 期望方向：朝目标 + 越靠边越强的向内修正
+      var dirX = dist > 1e-4 ? dx / dist : this.head.x;
+      var dirZ = dist > 1e-4 ? dz / dist : this.head.z;
+      var rn = Math.sqrt((this.pos.x / r.x) * (this.pos.x / r.x) +
+                         (this.pos.z / r.z) * (this.pos.z / r.z));   // 0=中心 1=边界
+      if (rn > 0.75) {
+        var back = Math.min(1, (rn - 0.75) / 0.25) * 2.0;
+        var len = Math.sqrt(this.pos.x * this.pos.x + this.pos.z * this.pos.z) || 1;
+        dirX -= (this.pos.x / len) * back;
+        dirZ -= (this.pos.z / len) * back;
+      }
+      var dl = Math.sqrt(dirX * dirX + dirZ * dirZ) || 1;
+      dirX /= dl; dirZ /= dl;
+
+      // 限速转向 + 侧倾
+      var cur = Math.atan2(this.head.x, this.head.z);
+      var want = Math.atan2(dirX, dirZ);
+      var diff = ((want - cur + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      var maxTurn = this.data.turnRate * this.tuning.turnScale * d;
+      var turn = Math.max(-maxTurn, Math.min(maxTurn, diff));
+      var ang = cur + turn;
+      this.head.x = Math.sin(ang);
+      this.head.z = Math.cos(ang);
+      var bankTarget = maxTurn > 1e-6 ? (turn / maxTurn) * this.data.maxBank : 0;
+      this.bank += (bankTarget - this.bank) * Math.min(1, d / 0.25);
+
+      // 速度：滑行/巡游/冲刺随机切换；受惊时整体加速
+      this.stateTime += d;
+      if (this.stateTime >= this.stateDuration) {
+        this.stateTime = 0;
+        this.stateDuration = 1.2 + this.rng() * 2.5;
+        this.speedTarget = this.data.speed * (0.45 + this.rng() * 1.1);
+      }
       var boosting = this.startleUntil > time;
-      var boost = boosting ? 4.5 : 1;
-      this.t += d * this.data.speed * this.tuning.speedScale * boost;
-      var t0 = this.t + this.phase;
-      var p = this.getCurvePoint(t0);
-      var next = this.getCurvePoint(t0 + 0.02);
+      var want_speed = this.speedTarget * this.tuning.speedScale * (boosting ? 3.2 : 1);
+      var accel = want_speed > this.speed ? (boosting ? 4.5 : 1.2) : 0.9;
+      this.speed += Math.max(-accel * d, Math.min(accel * d, want_speed - this.speed));
+      if (this.speed < 0) this.speed = 0;
 
-      // 朝向跟着轨道切线，转向用插值，避免拐角处硬折
-      var targetYaw = THREE.Math.radToDeg(Math.atan2(next.x - p.x, next.z - p.z)) + this.data.yawOffset;
-      var yawDiff = (((targetYaw - this.currentYaw) + 540) % 360) - 180;
-      this.currentYaw += yawDiff * Math.min(1, this.data.turnLerp * this.tuning.turnScale);
+      // 积分 + 高度起伏
+      this.pos.x += this.head.x * this.speed * d;
+      this.pos.z += this.head.z * this.speed * d;
+      this.heightPhase += d * this.data.bobSpeed;
+      var mid = (this.data.yMin + this.data.yMax) / 2;
+      var amp = (this.data.yMax - this.data.yMin) / 2 * 0.8;
+      this.pos.y = mid + Math.sin(this.heightPhase) * amp;
 
+      // 硬约束：出椭圆按比例拉回，高度夹进区间（最后一道保险）
+      var out = Math.sqrt((this.pos.x / r.x) * (this.pos.x / r.x) +
+                          (this.pos.z / r.z) * (this.pos.z / r.z));
+      if (out > 1) { this.pos.x /= out; this.pos.z /= out; }
+      this.pos.y = Math.max(this.data.yMin, Math.min(this.data.yMax, this.pos.y));
+
+      // 写进场景：朝向 = 航向，侧倾 = 转弯
       if (this.appliedScale !== this.tuning.modelScale) {
         this.appliedScale = this.tuning.modelScale;
         this.el.object3D.scale.setScalar(this.baseScale * this.tuning.modelScale);
       }
-      this.el.object3D.position.set(p.x, p.y, p.z);
-      this.el.object3D.rotation.set(0, THREE.Math.degToRad(this.currentYaw), 0);
+      this.el.object3D.position.set(this.pos.x, this.pos.y, this.pos.z);
+      this.el.object3D.quaternion.setFromEuler(new THREE.Euler(0, ang, this.bank, 'YXZ'));
 
+      // 摆尾跟游速联动
       var animator = this.animator();
-      if (animator) animator.data.speed = this.tuning.animSpeedMax * (boosting ? 2.6 : 1);
+      var ratio = this.speed / (this.data.speed || 1);
+      var tail = Math.max(0.5, Math.min(2.2, ratio)) * this.tuning.animSpeedMax;
+      if (animator) animator.data.speed = tail * (boosting ? 1.6 : 1);
+
       this.boosting = boosting;
+      this.moving = this.speed > 0.02;
     },
     show: function () {
       this.hidden = false;
@@ -194,23 +280,21 @@
       if (animator) animator.pause();
     },
     enter: function () { this.show(); },
-    exit: function () { /* 椭圆轨道没有"游走"过渡，丢卡后由 hide 收尾 */ },
-    /** 点屏幕吓一跳：轨道上突然加速 + 摆尾加快 */
+    exit: function () { /* 游动是连续的，丢卡时直接由 hide 收尾 */ },
+    /** 点屏幕吓一跳：短时间内大幅提速（依旧被硬约束限制在范围内） */
     startle: function () {
       this.startleUntil = performance.now() + 900;
     },
     status: function () {
-      var rx = (this.data.radiusX * this.tuning.rangeScale).toFixed(2);
-      var rz = (this.data.radiusZ * this.tuning.rangeScale).toFixed(2);
+      var r = this.radii();
       return {
-        posture: { name: '贴卡平面（椭圆轨道）', tiltDeg: 0 },
+        posture: { name: '贴卡平面（有界漫游）', tiltDeg: 0 },
         tuning: this.tuning,
-        state: this.boosting ? '受惊加速' : '巡游',
-        radius: { x: rx, z: rz },
-        // 轨道相位与当前位置：真机上一眼看得出"到底动没动"
-        t: this.t.toFixed(1),
-        pos: this.el.object3D.position,
-        centerY: this.data.centerY.toFixed(2)
+        state: this.boosting ? '受惊加速' : (this.moving ? '巡游' : '悬停'),
+        radius: { x: r.x.toFixed(2), z: r.z.toFixed(2) },
+        height: this.data.yMin.toFixed(2) + '~' + this.data.yMax.toFixed(2),
+        t: this.speed.toFixed(2),
+        pos: this.el.object3D.position
       };
     }
   });
@@ -781,14 +865,14 @@
         var status = fish.status();
         statusText.textContent = 'FPS ' + (self.fps || '--') +
           '（渲染×' + (self.pixelRatio ? self.pixelRatio.toFixed(2) : '--') + '）　' +
-          '游动：椭圆轨道　半径 ' + status.radius.x + '×' + status.radius.z + ' 张卡宽' +
-          '　高 ' + status.centerY + '　' + status.state + '　' +
+          '游动：有界漫游　半径 ' + status.radius.x + '×' + status.radius.z + ' 张卡宽' +
+          '　高 ' + status.height + '　' + status.state + '　' +
           '速度×' + status.tuning.speedScale.toFixed(2) +
           ' 转向×' + status.tuning.turnScale.toFixed(2) +
           ' 范围×' + status.tuning.rangeScale.toFixed(2) +
           ' 摆尾×' + status.tuning.animSpeedMax.toFixed(2) +
           ' 大小×' + status.tuning.modelScale.toFixed(2) +
-          '　t=' + status.t + ' 位置 ' + status.pos.x.toFixed(2) + ',' +
+          '　当前速度 ' + status.t + ' 位置 ' + status.pos.x.toFixed(2) + ',' +
           status.pos.y.toFixed(2) + ',' + status.pos.z.toFixed(2);
       };
 
