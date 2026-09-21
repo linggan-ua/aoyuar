@@ -293,6 +293,7 @@
       this.limitPixelRatio();
       this.bindTap();
       this.initCamera();
+      this.bindStartOverlay();
       this.bindDebugPanel();
       this.startFpsCounter();
       this.applySavedTuning();
@@ -348,6 +349,46 @@
         requestAnimationFrame(loop);
       };
       requestAnimationFrame(loop);
+    },
+
+    /**
+     * 启动页（还原老版本的流程）：按钮本身就是"用户手势"，点完才开相机。
+     * iOS / 微信 WebView 里 getUserMedia 必须有手势，走这条路最稳。
+     * 资源（两个 GLB）没加载完按钮不可点，免得点进去空等。
+     */
+    bindStartOverlay: function () {
+      var self = this;
+      var overlay = document.getElementById('start-overlay');
+      var button = document.getElementById('start-ar-button');
+      if (!overlay || !button) return;
+
+      button.addEventListener('click', function () {
+        if (button.disabled) return;
+        overlay.classList.add('hidden');
+        console.log('AOYU_START_TAP');
+        var video = self.findArVideo();
+        if (video && video.srcObject) {
+          self.attachStream(video, video.srcObject);   // 回调里已经有流了：播起来就行
+        } else {
+          self.openCameraByGesture();
+        }
+      });
+
+      var assets = document.querySelector('a-assets');
+      var enable = function () {
+        if (!button.disabled) return;
+        button.disabled = false;
+        button.textContent = '进入鳌鱼增强现实体验';
+        console.log('AOYU_START_READY');
+      };
+      if (assets) {
+        if (assets.hasLoaded) enable();
+        else {
+          assets.addEventListener('loaded', enable);
+          assets.addEventListener('timeout', enable);
+        }
+      }
+      setTimeout(enable, 6000);   // 模型就绪得慢也别一直卡在"资源准备中"
     },
 
     /* ---------- 相机 ---------- */
