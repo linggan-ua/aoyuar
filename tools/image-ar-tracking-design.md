@@ -135,7 +135,10 @@ LOST ──检测成功(内点≥20 且过三层质检)──▶ TRACKING
 SyntaxError，表现就是"相机出来了、一直没有鱼"。加载器按顺序试
 `jsDelivr(@techstark/opencv-js 4.12)` → `docs.opencv.org`，每个源等 15 秒看 `window.cv` 有没有
 就绪，没好就换下一个；跟踪器自己轮询 `window.cv`，所以只要有一个源成功就能起来。
-（本机无外网，无法在无头浏览器里验证真 CDN 可达性，但单源与"首源失败→回退"两条路径都实测过。）
+（本机无外网，无法在无头浏览器里验证真 CDN 可达性，但单源与"首源失败→回退"两条路径都实测过；
+另外把跟踪器用到的 OpenCV 调用在 jsDelivr 那份构建上逐个跑过：ORB / BFMatcher.knnMatch /
+findHomography(RANSAC) / solvePnP(IPPE_SQUARE)+RefineLM / calcOpticalFlowPyrLK 全部正常，
+只缺 `imreadMulti` 与 `createCLAHE`——线上都没用到。探针脚本：副本仓库 `opencv-api-probe.js`。）
 
 `index.html` / `tracker-prototype/index.html` 里的脚本都带版本串（`?v=N`）。GitHub Pages 会给
 JS 发缓存头，**改了 `js/image-tracker.js` 必须同时把这几个 `?v=` 加一**，否则手机拉到的还是旧算法
