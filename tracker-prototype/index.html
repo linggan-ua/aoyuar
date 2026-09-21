@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>图像特征跟踪 · 实验页（真机可测）</title>
+<style>
+  /* 黑底只能放在 html 上！放到 body 上会盖住 AR.js 那个 z-index:-2 的相机画面，
+     表现就是"相机其实在播、界面也正常，但屏幕全黑"（老版本页面的 body 就没有背景色）*/
+  html { background: #000; }
+  body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden;
+    font: 14px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* AR 画面铺满：AR.js 的 video 自己会定位，这里保证 scene/canvas 跟着走 */
+  a-scene { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: block; }
+  .a-canvas { width: 100% !important; height: 100% !important; }
+  /* AR.js 失败时自己会往 body 塞一个没样式的 #error-popup，统一走我们自己的提示卡 */
+  #error-popup { display: none !important; }
+
+  #ui { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
+
+  /* 原型：把画面做成 4:3 的舞台（相机画面 + 透明 canvas 叠在一起），省掉一大堆宽高比问题 */
+  #stage {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(100vw, 133.33vh); height: min(75vw, 100vh);
+    background: #000; overflow: hidden;
+  }
+  #stage .a-canvas { position: absolute !important; inset: 0; width: 100% !important; height: 100% !important; z-index: 1; }
+  #stage a-scene { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #qr-status {
+    position: absolute; left: 10px; bottom: 10px; z-index: 2;
+    color: #7fd1ff; font: 12px/1.5 ui-monospace, Menlo, monospace;
+    background: rgba(0,0,0,.45); padding: 4px 8px; border-radius: 6px;
+  }
+  #tap-gate { display: none !important; }   /* 原型自己管相机，不要那个手势层 */
+
+  #hint {
+    position: absolute; left: 50%; top: calc(18px + env(safe-area-inset-top));
+    transform: translateX(-50%);
+    padding: 8px 16px; border-radius: 999px;
+    background: rgba(8, 11, 16, .62); color: #f4f7f8; font-size: 13px;
+    white-space: nowrap; transition: opacity .5s ease;
+  }
+  #hint.hidden { opacity: 0; }
+
+  /* 相机没起来／出错时的提示卡；空的时候不占位（AR.js 会往里写错误信息） */
+  #ar-error:empty { display: none; }
+  #ar-error {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    max-width: 82vw; padding: 18px 20px; border-radius: 14px;
+    background: rgba(8, 11, 16, .9); border: 1px solid rgba(245, 194, 67, .5);
+    color: #f4f7f8; font-size: 14px; line-height: 1.7; text-align: center;
+    pointer-events: auto; white-space: pre-wrap;
+  }
+
+  /* 只有 iOS / 微信这种"必须先有用户手势"的环境才会出现 */
+  #tap-gate {
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px;
+    background: rgba(0, 0, 0, .55); pointer-events: auto;
+  }
+  #tap-gate.show { display: flex; }
+  #tap-gate .pill {
+    padding: 15px 30px; border-radius: 999px;
+    background: rgba(245, 194, 67, .94); color: #1a1206;
+    font-size: 17px; font-weight: 700;
+  }
+  #tap-gate .note { color: rgba(244, 247, 248, .78); font-size: 12px; }
+
+  #debug-toggle {
+    position: absolute; right: calc(14px + env(safe-area-inset-right));
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    padding: 7px 12px; border-radius: 10px;
+    border: 1px solid rgba(245, 194, 67, .5); background: rgba(8, 11, 16, .6);
+    color: #f5c243; font-size: 12px; font-weight: 700;
+    pointer-events: auto; opacity: .78;
+  }
+  #debug-panel {
+    display: none;
+    position: absolute; right: calc(14px + env(safe-area-inset-right));
+    bottom: calc(58px + env(safe-area-inset-bottom));
+    width: min(320px, 82vw); padding: 12px; border-radius: 14px;
+    background: rgba(8, 11, 16, .88); border: 1px solid rgba(245, 194, 67, .5);
+    color: #f4f7f8; pointer-events: auto;
+  }
+  #debug-panel.open { display: block; }
+  .db-head { display: flex; align-items: center; justify-content: space-between; }
+  .db-title { color: #f5c243; font-size: 13px; font-weight: 800; letter-spacing: .5px; }
+  #debug-close { color: #25d7e8; font-size: 22px; line-height: 1; padding: 0 6px; }
+  .db-time { color: #f5c243; font-size: 14px; font-weight: 700; text-align: center; margin-top: 4px; }
+  .db-mode { color: #25d7e8; font-size: 12px; text-align: center; margin-bottom: 8px; }
+  .db-row { display: flex; gap: 6px; margin: 6px 0; }
+  .db-row button {
+    flex: 1; padding: 7px 4px; border-radius: 8px; cursor: pointer;
+    border: 1px solid rgba(244, 247, 248, .22); background: rgba(29, 38, 50, .9);
+    color: #f4f7f8; font-size: 12px; font-family: inherit;
+  }
+  .db-row button.on { border-color: #f5c243; color: #f5c243; }
+  .db-status { margin: 8px 0 4px; color: #8b98a9; font-size: 11px; line-height: 1.6; }
+  .db-hint { margin-top: 6px; color: #5d6b7d; font-size: 11px; text-align: center; }
+</style>
+<!-- 子路径部署（GitHub Pages /aoyuar/）时保证 assets、.patt 相对当前目录解析 -->
+<script>
+(function () {
+  var path = location.pathname;
+  if (!path.endsWith('/')) {
+    if (/\.[^/.]+$/.test(path)) path = path.replace(/[^/]+$/, '');
+    else path += '/';
+  }
+  var base = document.createElement('base');
+  base.href = location.origin + path;
+  document.head.appendChild(base);
+})();
+</script>
+<!-- A-Frame 和 AR.js 必须在 <a-scene> 之前加载：A-Frame 解析 scene 时要找已注册的 arjs system -->
+<script src="../aframe.min.js"></script>
+</head>
+<body>
+
+
+<div id="stage">
+<a-scene id="ar-scene"
+         embedded
+         vr-mode-ui="enabled: false"
+         renderer="colorManagement: true;">
+
+  <a-assets timeout="30000">
+    <a-asset-item id="aoyu-model" src="../assets/models/aoyu_ink.glb"></a-asset-item>
+    <a-asset-item id="koi-model" src="../assets/models/koi_ink.glb"></a-asset-item>
+  </a-assets>
+
+  <!-- 性能：不要开 logarithmicDepthBuffer（会关掉早期深度测试优化）。
+       识别频率和采集分辨率都用 AR.js 默认值，不人为限制。 -->
+  <!-- renderer 必须带 colorManagement：A-Frame 1.3 默认不做 sRGB 输出，
+       glTF 贴图会被当线性值写出去，整体明显偏暗（小程序那边是正常的色彩管理） -->
+  <!-- 鳌鱼是 unlit 材质（水墨质感全靠贴图），锦鲤是普通材质，需要一点光 -->
+  <a-entity light="type: ambient; color: #ffffff; intensity: 0.9"></a-entity>
+  <a-entity light="type: directional; color: #fff5d6; intensity: 0.7" position="1.5 2 1"></a-entity>
+
+  <!-- 纯二维码锚点原型：不再用 .patt，锚点位姿由 js/qr-anchor.js 解出来 -->
+  <!-- 原 .patt 说明：同名 .png 是要打印的卡片（黑方块占 80%、内图占黑方块 50%，
+       所以 arjs 的 patternRatio 必须是 0.5；换卡就换这两个文件 + 下面这一行） -->
+  <a-entity id="ar-marker" qr-anchor>
+
+    <!-- 游动节点：位置和朝向每帧由 fish-swim 直接写 object3D，
+         模型挂在下面，rotation="0 90 0" 让小程序的朝向约定（头朝局部 +Z）成立 -->
+    <a-entity id="aoyu-swim" fish-swim="key: aoyu; anim: #aoyu-anim" scale="0.64 0.64 0.64">
+      <a-entity id="aoyu-anim" fish-anim="clip: Ao_Swim_Loop_3.2s"
+                gltf-model="#aoyu-model" rotation="0 90 0"></a-entity>
+    </a-entity>
+
+    <a-entity id="koi-swim" fish-swim="key: koi; anim: #koi-anim" scale="0.55 0.55 0.55">
+      <a-entity id="koi-anim" fish-anim="clip: Swim_Loop_2.4s"
+                gltf-model="#koi-model" rotation="0 90 0"></a-entity>
+    </a-entity>
+
+  </a-entity>
+
+  <a-entity camera></a-entity>
+</a-scene>
+</div>
+<div id="qr-status">等待 OpenCV…</div>
+<div id="ui">
+  <div id="hint">正在打开相机…</div>
+  <div id="tap-gate">
+    <div class="pill">点一下开启相机</div>
+    <div class="note">浏览器要求先有一次点击，才允许网页使用摄像头</div>
+  </div>
+  <div id="ar-error"></div>
+
+  <div id="debug-toggle">调试</div>
+  <div id="debug-panel">
+    <div class="db-head">
+      <span class="db-title">系统时间调试</span>
+      <span id="debug-close">×</span>
+    </div>
+    <div id="debug-time" class="db-time"></div>
+    <div id="debug-mode" class="db-mode"></div>
+
+    <div class="db-row">
+      <button id="db-m60">-1h</button>
+      <button id="db-m10">-10m</button>
+      <button id="db-m1">-1m</button>
+      <button id="db-real">真实</button>
+      <button id="db-p1">+1m</button>
+      <button id="db-p10">+10m</button>
+      <button id="db-p60">+1h</button>
+    </div>
+    <div class="db-row">
+      <button id="db-1959">19:59:55</button>
+      <button id="db-2001">20:01</button>
+    </div>
+    <div class="db-row">
+      <button id="db-koi">强制锦鲤</button>
+      <button id="db-aoyu">强制鳌鱼</button>
+    </div>
+    <div class="db-row">
+      <button id="db-follow">跟随真实时间</button>
+    </div>
+
+    <div id="debug-anim" class="db-status"></div>
+    <div id="debug-camera" class="db-status"></div>
+    <div id="debug-status" class="db-status"></div>
+
+    <div class="db-row">
+      <button id="db-speed-m">速度-</button>
+      <button id="db-speed-p">速度+</button>
+      <button id="db-turn-m">转向-</button>
+      <button id="db-turn-p">转向+</button>
+    </div>
+    <div class="db-row">
+      <button id="db-range-m">范围-</button>
+      <button id="db-range-p">范围+</button>
+      <button id="db-tail-m">摆尾-</button>
+      <button id="db-tail-p">摆尾+</button>
+    </div>
+    <div class="db-row">
+      <button id="db-size-m">鱼小一点</button>
+      <button id="db-size-p">鱼大一点</button>
+      <button id="db-material">材质：标准</button>
+      <button id="db-reset">恢复默认</button>
+    </div>
+
+    <div class="db-hint">只改页面内部的时间，不动手机系统时间</div>
+  </div>
+</div>
+
+<script src="https://docs.opencv.org/4.x/opencv.js"></script>
+<script src="js/fish-motion.js"></script>
+<script>window.AOYU_TRACKER_CARD = "../assets/patterns/pattern-card-v2.png";</script>
+<script src="js/image-tracker.js"></script>
+<script src="js/aoyu-ar.js"></script>
+</body>
+</html>
+
+<script>
+  setInterval(function () {
+    var s = window.AOYU_TRACKER && window.AOYU_TRACKER.state;
+    var el = document.getElementById('qr-status');
+    if (!el || !s) return;
+    el.textContent = 'source=' + (s.staticMode ? '静态图' : '相机') +
+      ' | cv=' + (s.cv ? 'ok' : '…') +
+      ' | 卡片=' + (s.cardSize ? s.cardSize.join('×') : '…') +
+      ' | 参考=' + (s.refs ? s.refs.length : 0) + '层' +
+      ' | 锁定=' + (s.found ? '是' : '否') +
+      ' | 位姿=' + (s.poses || 0) +
+      ' | 检测 ' + Math.round(s.lastDetectMs || 0) + 'ms' +
+      ' | 跟踪 ' + Math.round(s.lastTrackMs || 0) + 'ms' +
+      ' | 内点 ' + (s.lastInliers === undefined ? '--' : s.lastInliers);
+  }, 1000);
+</script>
