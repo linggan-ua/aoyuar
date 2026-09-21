@@ -298,11 +298,11 @@
   if (window.AOYU_USE_IMAGE_TRACKER) {
     // OpenCV.js 走多源加载器（官方 CDN 会间歇性给 Cloudflare 挑战页，见 js/opencv-loader.js）
     var l = document.createElement('script');
-    l.src = 'js/opencv-loader.js?v=1';
+    l.src = 'js/opencv-loader.js?v=2';
     l.onload = function () {
       window.AOYU_LOAD_OPENCV(function (ok) { console.log('AOYU_TRACKER_MODE opencv 就绪=' + ok); });
       var t = document.createElement('script');
-      t.src = 'js/image-tracker.js?v=21';   // 改 js/image-tracker.js 时这个数字要 +1：否则手机会用缓存里的旧算法
+      t.src = 'js/image-tracker.js?v=22';   // 改 js/image-tracker.js 时这个数字要 +1：否则手机会用缓存里的旧算法
       document.body.appendChild(t);
     };
     l.onerror = function () { console.error('AOYU_TRACKER_MODE opencv-loader 没加载出来'); };

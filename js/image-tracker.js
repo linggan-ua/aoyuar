@@ -617,7 +617,7 @@
         img.src = CONFIG.cardImage;
         return;
       }
-      if (n === 120) showNotice('跟踪模块（OpenCV 10MB）还在下载…网络慢的话要等一会儿');
+      if (n === 120 && !window.AOYU_OPENCV_ACTIVE) showNotice('跟踪模块（OpenCV 10MB）还在下载…网络慢的话要等一会儿');
       if (n > 600) { log('opencv 加载超时'); showNotice('跟踪模块下载失败（网络），刷新页面再试一次'); return; }
       setTimeout(function () { waitCv(n + 1); }, 100);
     })(0);
