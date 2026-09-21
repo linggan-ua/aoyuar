@@ -37,7 +37,7 @@
     anchor: null, sceneEl: null, staticMode: false, source: null,
     refs: [], card: null, cardSize: [0, 0],
     prevGray: null, trackPts: null, refPts: null, lastH: null, lastCorners: null,
-    frame: 0, found: false, miss: 0, forceDetect: true, rejLog: 0, cardErr: false, coarsePass: false, diag: null, lastPoseFrame: 0,
+    frame: 0, found: false, miss: 0, forceDetect: true, rejLog: 0, cardErr: false, coarsePass: false, diag: null, lastPoseFrame: 0, noticeText: '',
     oneEuro: null, pose: null, lastDetectMs: 0, lastTrackMs: 0, poses: 0,
     stats: { frames: 0, posed: 0, detect: [], track: [], inliers: [], gaps: [], lastPoseT: 0, lastT: 0, fps: 0, startedAt: 0, costMs: 0, frameMs: 0, lastTickT: 0 },
     quality: { scale: 1.0, grid: 8 }
@@ -132,6 +132,21 @@
         if (hint) hint.classList.add('hidden');
       })
       .catch(function (e) { ok = true; clearTimeout(timer); showRetry('相机打不开（' + (e && e.name) + '）点这里重试'); });
+  }
+
+  /** 给用户看的"为什么还没出来"提示（复用 #ar-error 那个框）。
+      只清自己写进去的那条，别把相机的重试提示冲掉。 */
+  function showNotice(msg) {
+    var box = document.getElementById('ar-error');
+    if (!box) return;
+    if (box.textContent && box.textContent !== S.noticeText) return;   // 框里已有别人的信息，不动
+    S.noticeText = msg;
+    box.textContent = msg;
+  }
+  function clearNotice() {
+    var box = document.getElementById('ar-error');
+    if (box && S.noticeText && box.textContent === S.noticeText) box.textContent = '';
+    S.noticeText = '';
   }
 
   function useStaticImage(url) {
@@ -591,13 +606,19 @@
           c.getContext('2d').drawImage(img, 0, 0, cw, ch);
           S.card = S.cv.imread(c); S.cardSize = [cw, ch];
           buildReferences(S.cv);
+          clearNotice();
           log('卡片参考就绪', cw + '×' + ch);
         };
-        img.onerror = function () { S.cardErr = true; log('卡片图加载失败（检查 AOYU_TRACKER_CARD 路径）', CONFIG.cardImage); };
+        img.onerror = function () {
+          S.cardErr = true;
+          log('卡片图加载失败（检查 AOYU_TRACKER_CARD 路径）', CONFIG.cardImage);
+          showNotice('卡片参考图没加载出来（网络慢或路径不对），刷新页面再试一次');
+        };
         img.src = CONFIG.cardImage;
         return;
       }
-      if (n > 600) { log('opencv 加载超时'); return; }
+      if (n === 120) showNotice('跟踪模块（OpenCV 10MB）还在下载…网络慢的话要等一会儿');
+      if (n > 600) { log('opencv 加载超时'); showNotice('跟踪模块下载失败（网络），刷新页面再试一次'); return; }
       setTimeout(function () { waitCv(n + 1); }, 100);
     })(0);
   });
