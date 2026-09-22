@@ -176,7 +176,7 @@
     },
     /** 量一次鱼的身长（卡宽）：取模型包围盒的水平最长边。模型没加载好返回一个保守值 */
     measureBodyLength: function () {
-      if (this._bodyLen) return this._bodyLen;
+      // 不缓存：模型加载前后、换模型、改缩放都会变，缓存住的旧值会误导调试
       var el = this.data.anim;
       var root = el && el.getObject3D('mesh');
       // 模型还没加载完时不要缓存兜底值，否则会永久停在 1.00
@@ -187,8 +187,7 @@
       var size = box.getSize(new THREE.Vector3());
       var len = Math.max(size.x, size.z);
       if (!(len > 0.05) || !isFinite(len)) return 1;
-      console.log('AOYU_BODY_LENGTH', len.toFixed(2));
-      return (this._bodyLen = len);
+      return len;
     },
 
     radii: function () {
@@ -245,9 +244,14 @@
       // 之前半径固定 0.63 卡宽，而这条鱼放大后身长 2.9 卡宽——一条 2.9 长的鱼在
       // 半径 0.63 的圈里掉头，看着就是"原地 180°"。
       var bodyLen = this.measureBodyLength();          // 卡宽
-      var turnRadiusFactor = 1.25;                     // 半径 ≈ 身长 × 1.25
-      var maxTurnWanted = (speedNow / (bodyLen * turnRadiusFactor)) * this.data.turnRate / 1.6;
-      var maxTurn = Math.max(0.12, maxTurnWanted) * this.tuning.turnScale * d;
+      // 半径两头都要顾：
+      //   上限：身长 × 1.25（鱼越大转弯半径越大，才不像原地掉头）
+      //   下限：场地短半轴 × 0.6（场地小的时候必须能在里面转弯，
+      //         否则半径超过场地，鱼就只会绕着码转圈——实测半径 4.07 > 场地 2.5 就是这样）
+      var turnRadius = Math.min(bodyLen * 1.25, Math.min(r.x, r.z) * 0.6);
+      if (!(turnRadius > 0.05) || !isFinite(turnRadius)) turnRadius = 0.6;
+      this.turnRadius = turnRadius;                    // 调试面板显示真实值
+      var maxTurn = Math.max(0.12, speedNow / turnRadius) * this.tuning.turnScale * d;
       var turn = Math.max(-maxTurn, Math.min(maxTurn, diff));
       var ang = cur + turn;
       this.head.x = Math.sin(ang);
@@ -332,7 +336,7 @@
         state: this.boosting ? '受惊加速' : (this.moving ? '巡游' : '悬停'),
         radius: { x: r.x.toFixed(2), z: r.z.toFixed(2) },
         bodyLen: this.measureBodyLength(),
-        turnRadius: (this.measureBodyLength() * 1.25) / Math.max(0.2, this.tuning.turnScale),
+        turnRadius: (this.turnRadius || 0) / Math.max(0.2, this.tuning.turnScale),
         height: this.data.yMin.toFixed(2) + '~' + this.data.yMax.toFixed(2),
         t: this.speed.toFixed(2),
         pos: this.el.object3D.position
@@ -1027,15 +1031,12 @@
           status.pos.y.toFixed(2) + ',' + status.pos.z.toFixed(2);
       };
 
+      // 常驻刷新：以前只在面板打开时刷新，没打开时那行是旧快照，容易被误当成"鱼不动了"
+      if (self.debugClock) clearInterval(self.debugClock);
+      self.debugClock = setInterval(self.refreshDebug, 1000);
       toggle.addEventListener('click', function () {
-        var open = panel.classList.toggle('open');
-        if (open) {
-          self.refreshDebug();
-          self.debugClock = setInterval(self.refreshDebug, 1000);
-        } else if (self.debugClock) {
-          clearInterval(self.debugClock);
-          self.debugClock = null;
-        }
+        panel.classList.toggle('open');
+        self.refreshDebug();
       });
       document.getElementById('debug-close').addEventListener('click', function () {
         toggle.click();
