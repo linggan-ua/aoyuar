@@ -204,12 +204,12 @@
 
     <!-- 游动节点：位置和朝向每帧由 fish-swim 直接写 object3D，
          模型挂在下面，rotation="0 90 0" 让小程序的朝向约定（头朝局部 +Z）成立 -->
-    <a-entity id="aoyu-swim" fish-swim="key: aoyu; anim: #aoyu-anim" scale="0.64 0.64 0.64">
+    <a-entity id="aoyu-swim" fish-swim="key: aoyu; anim: #aoyu-anim" scale="3.84 3.84 3.84">
       <a-entity id="aoyu-anim" fish-anim="clip: Ao_Swim_Loop_3.2s"
                 gltf-model="#aoyu-model" rotation="0 90 0"></a-entity>
     </a-entity>
 
-    <a-entity id="koi-swim" fish-swim="key: koi; anim: #koi-anim" scale="0.55 0.55 0.55">
+    <a-entity id="koi-swim" fish-swim="key: koi; anim: #koi-anim" scale="3.30 3.30 3.30">
       <a-entity id="koi-anim" fish-anim="clip: Swim_Loop_2.4s"
                 gltf-model="#koi-model" rotation="0 90 0"></a-entity>
     </a-entity>
@@ -311,6 +311,6 @@
     window.__aoyuRewriteMarker();   // AR.js 模式下不需要改写，保持原样
   }
 </script>
-<script src="js/aoyu-ar.js?v=24"></script>
+<script src="js/aoyu-ar.js?v=25"></script>
 </body>
 </html>

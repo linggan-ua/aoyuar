@@ -27,7 +27,7 @@
       turnScale: [0.5, 1.7],
       rangeScale: [0.5, 3.0],     // 活动范围：1 = 原来的值（±0.95 卡宽），最大可以放大到 3 倍
       animSpeedMax: [0.5, 2.5],   // 摆尾倍率（椭圆轨道下它就是骨骼动画的速度倍率）
-      modelScale: [0.4, 2.0]      // 鱼的大小
+      modelScale: [0.05, 2.0]     // 鱼的大小（默认基准已是 6 倍，所以下限放到 0.05 方便往回收）
     }
   };
 
@@ -258,10 +258,12 @@
       this.el.object3D.position.set(this.pos.x, this.pos.y, this.pos.z);
       this.el.object3D.quaternion.setFromEuler(new THREE.Euler(0, ang, this.bank, 'YXZ'));
 
-      // 摆尾跟游速联动
+      // 摆尾：以游速为主，但别再压到半速——之前是 ratio(下限 0.5)×倍率，
+      // 鱼在滑行时只有基准速度的 0.45 倍，看起来就是"尾巴慢吞吞"。
+      // 现在改成 0.9 + ratio×0.8（滑行也至少 1.2 倍），上限放到 3.4。
       var animator = this.animator();
       var ratio = this.speed / (this.data.speed || 1);
-      var tail = Math.max(0.5, Math.min(2.2, ratio)) * this.tuning.animSpeedMax;
+      var tail = Math.max(1.2, Math.min(3.4, 0.9 + ratio * 0.8)) * this.tuning.animSpeedMax;
       if (animator) animator.data.speed = tail * (boosting ? 1.6 : 1);
 
       this.boosting = boosting;
