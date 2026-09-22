@@ -25,7 +25,7 @@
     tuningLimits: {
       speedScale: [0.5, 2.0],
       turnScale: [0.5, 1.7],
-      rangeScale: [0.5, 3.0],     // 活动范围：1 = 原来的值（±0.95 卡宽），最大可以放大到 3 倍
+      rangeScale: [0.5, 8.0],     // 活动范围：1 = 椭圆半径 0.70×0.50 卡宽；小卡片（印在节目单上）要放大很多才游得开
       animSpeedMax: [0.5, 2.5],   // 摆尾倍率（椭圆轨道下它就是骨骼动画的速度倍率）
       modelScale: [0.05, 2.0]     // 鱼的大小（默认基准已是 6 倍，所以下限放到 0.05 方便往回收）
     }
@@ -137,7 +137,7 @@
       yMin: { type: 'number', default: 0.32 },      // 悬浮高度区间
       yMax: { type: 'number', default: 0.72 },
       speed: { type: 'number', default: 0.30 },     // 基准速度（单位/秒）
-      turnRate: { type: 'number', default: 2.2 },   // 最大转向角速度（弧度/秒）
+      turnRate: { type: 'number', default: 1.6 },   // 转弯系数：弧度/单位位移；1.6 ≈ 转弯半径 0.63 卡宽
       maxBank: { type: 'number', default: 10 * Math.PI / 180 },
       bobSpeed: { type: 'number', default: 0.5 }    // 上下起伏的快慢
     },
@@ -211,11 +211,14 @@
       var dl = Math.sqrt(dirX * dirX + dirZ * dirZ) || 1;
       dirX /= dl; dirZ /= dl;
 
-      // 限速转向 + 侧倾
+      // 限速转向 + 侧倾。
+      // 关键：最大转向角速度**跟游速挂钩**（≈ 恒定转弯半径），不再用固定角速度——
+      // 固定角速度的毛病是鱼慢下来时也能原地掉头，像死鱼；真实鱼速度越低转得越缓。
       var cur = Math.atan2(this.head.x, this.head.z);
       var want = Math.atan2(dirX, dirZ);
       var diff = ((want - cur + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-      var maxTurn = this.data.turnRate * this.tuning.turnScale * d;
+      var speedNow = Math.max(this.speed, 0.04);
+      var maxTurn = Math.max(0.25, speedNow * this.data.turnRate) * this.tuning.turnScale * d;
       var turn = Math.max(-maxTurn, Math.min(maxTurn, diff));
       var ang = cur + turn;
       this.head.x = Math.sin(ang);
@@ -1026,7 +1029,7 @@
       };
       var knobs = [['speedScale', -0.25, 'db-speed-m'], ['speedScale', 0.25, 'db-speed-p'],
         ['turnScale', -0.2, 'db-turn-m'], ['turnScale', 0.2, 'db-turn-p'],
-        ['rangeScale', -0.25, 'db-range-m'], ['rangeScale', 0.25, 'db-range-p'],
+        ['rangeScale', -0.5, 'db-range-m'], ['rangeScale', 0.5, 'db-range-p'],
         ['animSpeedMax', -0.2, 'db-tail-m'], ['animSpeedMax', 0.2, 'db-tail-p'],
         ['modelScale', -0.1, 'db-size-m'], ['modelScale', 0.1, 'db-size-p']];
       knobs.forEach(function (item) {
