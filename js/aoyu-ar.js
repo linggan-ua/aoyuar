@@ -21,9 +21,9 @@
     notes: ['note-c6', 'note-d6', 'note-e6', 'note-g6', 'note-a6'].map(function (name) {
       return 'assets/audio/' + name + '.mp3';
     }),
-    storageKey: 'aoyu-tuning-v2',   // v1 的『摆尾上限』语义已变成『摆尾倍率』，换键避免旧值生效
+    storageKey: 'aoyu-tuning-v3',   // v1 的『摆尾上限』语义已变成『摆尾倍率』，换键避免旧值生效
     tuningLimits: {
-      speedScale: [0.5, 2.0],
+      speedScale: [0.5, 4.0],
       turnScale: [0.5, 1.7],
       rangeScale: [0.5, 8.0],     // 活动范围：1 = 椭圆半径 0.70×0.50 卡宽；小卡片（印在节目单上）要放大很多才游得开
       animSpeedMax: [0.5, 2.5],   // 摆尾倍率（椭圆轨道下它就是骨骼动画的速度倍率）
@@ -185,7 +185,10 @@
       this.target.x = Math.cos(a) * r.x * k;
       this.target.z = Math.sin(a) * r.z * k;
       this.targetTime = 0;
-      this.targetDuration = 2 + this.rng() * 4;
+      // 时限按"游到那儿要多久"来定，另给 2.5 倍余量；范围放大后不再半路换目标。
+      var speedNow0 = Math.max(0.05, this.speed);
+      var far = Math.sqrt(this.target.x * this.target.x + this.target.z * this.target.z);
+      this.targetDuration = Math.max(3, (far / speedNow0) * 2.5);
     },
     tick: function (time, delta) {
       var d = Math.min(0.05, (delta || 16) / 1000);   // 秒，单帧最多推进 50ms
@@ -234,8 +237,12 @@
         this.speedTarget = this.data.speed * (0.45 + this.rng() * 1.1);
       }
       var boosting = this.startleUntil > time;
-      var want_speed = this.speedTarget * this.tuning.speedScale * (boosting ? 3.2 : 1);
-      var accel = want_speed > this.speed ? (boosting ? 4.5 : 1.2) : 0.9;
+      // 速度跟着范围一起放大：范围是按卡片宽度算的，卡片印小、范围调到 8 倍时，
+      // 若速度不变，鱼要花 8 倍时间才能游完一圈——看着就是"卡在原地游不起来"。
+      // 这里按 rangeScale 线性放大，保证"游完一圈的时间"与范围无关。
+      var rangeBoost = Math.max(0.25, this.tuning.rangeScale);
+      var want_speed = this.speedTarget * this.tuning.speedScale * rangeBoost * (boosting ? 3.2 : 1);
+      var accel = (want_speed > this.speed ? (boosting ? 4.5 : 1.2) : 0.9) * Math.max(1, rangeBoost * 0.6);
       this.speed += Math.max(-accel * d, Math.min(accel * d, want_speed - this.speed));
       if (this.speed < 0) this.speed = 0;
 
