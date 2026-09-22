@@ -526,7 +526,7 @@
       var enable = function () {
         if (!button.disabled) return;
         button.disabled = false;
-        button.textContent = '进入鳌鱼增强现实体验';
+        button.textContent = '进入鳌鱼世界';
         console.log('AOYU_START_READY');
       };
       if (assets) {
