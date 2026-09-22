@@ -74,30 +74,53 @@
       var self = this;
       this.mixer = null;
       this.action = null;
+      this.wantPaused = false;        // 隐藏时的期望状态；动作创建后再补上
       this.el.addEventListener('model-loaded', function (event) {
-        var model = event.detail.model;
-        var clips = (model && model.animations) || [];
-        var clip = THREE.AnimationClip.findByName(clips, self.data.clip) || clips[0];
-        if (!clip) {
-          console.warn('AOYU_ANIM_NO_CLIP', self.data.clip, clips.map(function (c) { return c.name; }));
-          return;
-        }
-        self.mixer = new THREE.AnimationMixer(model);
-        self.action = self.mixer.clipAction(clip);
-        self.action.setLoop(THREE.LoopRepeat, Infinity);
-        self.action.play();
-        console.log('AOYU_ANIM_READY', clip.name, clip.duration.toFixed(1) + 's');
+        self.setup(event.detail.model);
       });
+      // 事件与初始化顺序不保证：模型可能在监听器挂上之前就加载完了，那样事件会被永久错过，
+      // 表现就是"摆尾一直不动"（而且是时有时无的竞态）。这里先补一次。
+      var mesh = this.el.getObject3D('mesh');
+      if (mesh) this.setup(mesh);
+    },
+    /** 创建混音器与动作；重复调用安全 */
+    setup: function (model) {
+      if (this.mixer || !model) return;
+      var clips = (model && model.animations) || [];
+      var clip = THREE.AnimationClip.findByName(clips, this.data.clip) || clips[0];
+      if (!clip) {
+        console.warn('AOYU_ANIM_NO_CLIP', this.data.clip, clips.map(function (c) { return c.name; }));
+        return;
+      }
+      this.mixer = new THREE.AnimationMixer(model);
+      this.action = this.mixer.clipAction(clip);
+      this.action.setLoop(THREE.LoopRepeat, Infinity);
+      this.action.play();
+      this.action.paused = !!this.wantPaused;   // 已经隐藏的鱼，创建后立刻保持暂停
+      console.log('AOYU_ANIM_READY', clip.name, clip.duration.toFixed(1) + 's',
+        'paused=' + this.action.paused);
     },
     tick: function (time, delta) {
-      if (!this.mixer) return;
+      // 万一事件还是漏了（或其他组件先跑完初始化），这里自己补
+      if (!this.mixer) {
+        var mesh = this.el.getObject3D('mesh');
+        if (!mesh) return;
+        this.setup(mesh);
+        if (!this.mixer) return;
+      }
       var dt = (delta / 1000) * this.data.speed;
       // 混音器时间一旦被 NaN 污染就再也回不来（表现：鱼永远不摆尾），这里必须挡住
       if (!isFinite(dt) || dt <= 0) return;
       this.mixer.update(dt);
     },
-    pause: function () { if (this.action) this.action.paused = true; },
-    resume: function () { if (this.action) this.action.paused = false; },
+    pause: function () {
+      this.wantPaused = true;
+      if (this.action) this.action.paused = true;
+    },
+    resume: function () {
+      this.wantPaused = false;
+      if (this.action) this.action.paused = false;
+    },
     status: function () {
       if (!this.action) return '摆尾：还没加载';
       return '摆尾：' + this.action.getClip().name +
@@ -163,7 +186,10 @@
       this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 锦鲤 0.55）
       this.appliedScale = 1;
       this.hidden = true;
-      this.el.object3D.visible = false;
+      // 隐藏**不能**用 object3D.visible：A-Frame 在运行时把 visible 设成 false 会把该实体的
+      // tick 从行为列表里摘掉，再设回 true 也不会恢复（实测丢卡后摆尾永久停住就是这个原因）。
+      // 改成停到很远的地方，tick 照常跑，动画也就一直在。
+      this.el.object3D.position.set(0, -50, 0);
       this.pickTarget();
       instances[this.data.key] = this;
     },
@@ -212,6 +238,10 @@
     tick: function (time, delta) {
       var d = Math.min(0.05, (delta || 16) / 1000);   // 秒，单帧最多推进 50ms
       if (!d) return;
+      if (this.hidden) {
+        this.el.object3D.position.set(0, -50, 0);     // 停到远处＝隐藏，但 tick 不中断
+        return;
+      }
       var r = this.radii();
       var dx = this.target.x - this.pos.x;
       var dz = this.target.z - this.pos.z;
@@ -311,16 +341,11 @@
       this.moving = this.speed > 0.02;
     },
     show: function () {
+      // 摆尾动画一直跑着，不暂停也不恢复——少一个依赖就少一个"回来之后不动"的机会
       this.hidden = false;
-      this.el.object3D.visible = true;
-      var animator = this.animator();
-      if (animator) animator.resume();
     },
     hide: function () {
-      this.hidden = true;
-      this.el.object3D.visible = false;
-      var animator = this.animator();
-      if (animator) animator.pause();
+      this.hidden = true;   // 下一帧 tick 把鱼停到远处（不动 visible，动画也就不会停）
     },
     enter: function () { this.show(); },
     exit: function () { /* 游动是连续的，丢卡时直接由 hide 收尾 */ },

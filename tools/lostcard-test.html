@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<title>鳌鱼 AR</title>
+<title>丢卡回归测试</title>
 <style>
   /* 黑底只能放在 html 上！放到 body 上会盖住 AR.js 那个 z-index:-2 的相机画面，
      表现就是"相机其实在播、界面也正常，但屏幕全黑"（老版本页面的 body 就没有背景色）*/
@@ -130,6 +130,8 @@
   .db-row button.on { border-color: #f5c243; color: #f5c243; }
   .db-status { margin: 8px 0 4px; color: #8b98a9; font-size: 11px; line-height: 1.6; }
   .db-hint { margin-top: 6px; color: #5d6b7d; font-size: 11px; text-align: center; }
+  #tap-gate { display: none !important; }
+  .start-overlay { display: none !important; }
 </style>
 <!-- 子路径部署（GitHub Pages /aoyuar/）时保证 assets、.patt 相对当前目录解析 -->
 <script>
@@ -173,8 +175,8 @@
 })();
 </script>
 <!-- A-Frame 和 AR.js 必须在 <a-scene> 之前加载：A-Frame 解析 scene 时要找已注册的 arjs system -->
-<script src="aframe.min.js"></script>
-<script src="aframe-ar.js"></script>
+<script src="../aframe.min.js"></script>
+<script src="../aframe-ar.js"></script>
 </head>
 <body>
 
@@ -182,11 +184,11 @@
          embedded
          vr-mode-ui="enabled: false"
          renderer="colorManagement: true;"
-         arjs="sourceType: webcam; debugUIEnabled: false; patternRatio: 0.5; errorPopup: ar-error; sourceWidth: 1920; sourceHeight: 1080">
+         arjs="sourceType: image; sourceUrl: ../assets/patterns/pattern-card-v3.png; debugUIEnabled: false; patternRatio: 0.5; errorPopup: ar-error; sourceWidth: 1920; sourceHeight: 1080">
 
   <a-assets timeout="30000">
-    <a-asset-item id="aoyu-model" src="assets/models/aoyu_ink.glb"></a-asset-item>
-    <a-asset-item id="koi-model" src="assets/models/koi_ink.glb"></a-asset-item>
+    <a-asset-item id="aoyu-model" src="../assets/models/aoyu_ink.glb"></a-asset-item>
+    <a-asset-item id="koi-model" src="../assets/models/koi_ink.glb"></a-asset-item>
   </a-assets>
 
   <!-- 性能：不要开 logarithmicDepthBuffer（会关掉早期深度测试优化）。
@@ -199,7 +201,7 @@
 
   <!-- 识别用的 .patt：同名 .png 是要打印的卡片（黑方块占 80%、内图占黑方块 50%，
        所以 arjs 的 patternRatio 必须是 0.5；换卡就换这两个文件 + 下面这一行） -->
-  <a-marker id="ar-marker" type="pattern" url="assets/patterns/pattern-card-v3.patt"
+  <a-marker id="ar-marker" type="pattern" url="../assets/patterns/pattern-card-v3.patt"
             emitevents="true" size="1">
 
     <!-- 游动节点：位置和朝向每帧由 fish-swim 直接写 object3D，
@@ -222,7 +224,7 @@
 <div id="ui">
   <!-- 启动页（还原老版本）-->
   <div id="start-overlay" class="start-overlay">
-    <img id="start-poster" src="assets/ui/title-ink.png" alt="水墨與絲竹的對話 · 沉浸式国乐剧场">
+    <img id="start-poster" src="../assets/ui/title-ink.png" alt="水墨與絲竹的對話 · 沉浸式国乐剧场">
     <div class="start-tips">扫描<b>鳌鱼二维码</b>，在二维码上方查看<b>鳌鱼</b><br>首次进入请点击「允许/Allow」授权摄像头</div>
     <button id="start-ar-button" type="button" disabled>资源准备中…</button>
     <div class="start-note"> </div>
@@ -292,7 +294,7 @@
   </div>
 </div>
 
-<script src="js/fish-motion.js?v=10"></script>
+<script src="../js/fish-motion.js?v=10"></script>
 <script>
   // image 模式下再加载跟踪器（它自己开相机、算位姿、写锚点矩阵，并派发 markerFound/markerLost）
   if (window.AOYU_USE_IMAGE_TRACKER) {
@@ -311,6 +313,23 @@
     window.__aoyuRewriteMarker();   // AR.js 模式下不需要改写，保持原样
   }
 </script>
-<script src="js/aoyu-ar.js?v=32"></script>
+<script>
+  // 丢卡回归测试探针：同时看两条鱼
+  function probe(tag) {
+    var out = [];
+    ['aoyu', 'koi'].forEach(function (k) {
+      var el = document.getElementById(k + '-anim');
+      var c = el && el.components['fish-anim'];
+      out.push(k + (c && c.action
+        ? '(t=' + c.action.time.toFixed(2) + ' paused=' + c.action.paused + ')'
+        : '(无动作)'));
+    });
+    console.log('PROBE', tag, out.join(' '));
+  }
+  setInterval(function () { probe('tick'); }, 1500);
+  setTimeout(function () { console.log('PROBE >>> 模拟丢卡'); window.dispatchEvent(new CustomEvent('markerLost')); }, 6000);
+  setTimeout(function () { console.log('PROBE >>> 模拟重新找到卡'); window.dispatchEvent(new CustomEvent('markerFound', { detail: document.getElementById('ar-marker') })); }, 12000);
+</script>
+<script src="../js/aoyu-ar.js?v=30"></script>
 </body>
 </html>
