@@ -71,7 +71,7 @@
   .start-tips { color: #9fb3a9; font-size: 13px; line-height: 1.9; }
   .start-tips b { color: #05f8ab; font-weight: 600; }
   #start-ar-button {
-    min-width: min(78vw, 340px); padding: 17px 26px; border-radius: 999px;
+    min-width: min(58vw, 250px); padding: 17px 22px; border-radius: 999px;
     border: 1.5px solid rgba(5, 248, 171, .75);
     background: linear-gradient(180deg, rgba(5, 248, 171, .16), rgba(5, 248, 171, .05));
     color: #05f8ab; font-size: 17px; font-weight: 700; letter-spacing: .1em;
@@ -206,12 +206,12 @@
 
     <!-- 游动节点：位置和朝向每帧由 fish-swim 直接写 object3D，
          模型挂在下面，rotation="0 90 0" 让小程序的朝向约定（头朝局部 +Z）成立 -->
-    <a-entity id="aoyu-swim" fish-swim="key: aoyu; anim: #aoyu-anim" scale="3.84 3.84 3.84">
+    <a-entity id="aoyu-swim" fish-swim="key: aoyu; anim: #aoyu-anim" scale="2.88 2.88 2.88">
       <a-entity id="aoyu-anim" fish-anim="clip: Ao_Swim_Loop_3.2s"
                 gltf-model="#aoyu-model" rotation="0 90 0"></a-entity>
     </a-entity>
 
-    <a-entity id="koi-swim" fish-swim="key: koi; anim: #koi-anim" scale="3.30 3.30 3.30">
+    <a-entity id="koi-swim" fish-swim="key: koi; anim: #koi-anim" scale="2.475 2.475 2.475">
       <a-entity id="koi-anim" fish-anim="clip: Swim_Loop_2.4s"
                 gltf-model="#koi-model" rotation="0 90 0"></a-entity>
     </a-entity>
@@ -315,11 +315,10 @@
 </script>
 <script>
   window.addEventListener('markerFound', function () {
-    console.log('TEST_MARKER_FOUND');
     var h = document.getElementById('hint');
     if (h) { h.textContent = '识别成功'; h.classList.remove('hidden'); }
   });
 </script>
-<script src="../js/aoyu-ar.js?v=25"></script>
+<script src="../js/aoyu-ar.js?v=34"></script>
 </body>
 </html>

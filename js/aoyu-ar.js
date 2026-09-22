@@ -829,17 +829,14 @@
     },
 
     /**
-     * 命中判定：用**骨骼的世界坐标**做包围盒（骨骼才是当前姿势）。
+     * 命中判定。三层，任意一层中就算点到鱼：
+     *   ① 模型网格射线（对非蒙皮模型精准）
+     *   ② **整个模型的本地包围盒 + 25% 手指容差**（含鱼鳍、尾巴；射线转到模型坐标系里判，
+     *      所以盒子跟着鱼的朝向走，不会因为旋转而虚胖）—— 这是主力层
+     *   ③ 骨骼包围盒兜底（绑定姿势与动画差很多时的保险）
      *
-     * 试过的坑：
-     *   1) mesh.raycast / Box3.setFromObject → 用绑定姿势几何体，和摆过尾的鱼对不上（命中 0 次）
-     *   2) 模型本地包围盒（OBB）→ 绑定姿势的几何体尺寸和实际渲染差得多，盒子虚胖（84 点中 56）
-     *   3) 只按骨骼算 → 尺寸对（11%），但骨骼沿脊椎是一条细线，横截面太薄，鱼鳍尾部点不中
-     *
-     * 现在＝骨骼包围盒 + 手指容差：
-     *   - 骨骼世界坐标 → 当前姿势的准确位置与长度
-     *   - 每边外扩 0.07（卡片宽度的 7%）
-     *   - 每个轴至少 0.22 厚，避免脊椎塌成一条细线时判定区过小
+     * 走过的弯路：只用骨骼算 → 骨骼沿脊椎是一条细线，鱼鳍尾部点不中；只用世界 AABB →
+     * 鱼一转就虚胖。本地包围盒（OBB）+ 容差才是又准又好点的做法。
      */
     hitFish: function (fish, clientX, clientY) {
       var sceneEl = this.sceneEl;
@@ -854,9 +851,20 @@
               -((clientY - rect.top) / rect.height) * 2 + 1);
       raycaster.setFromCamera(ndc, camera);
 
-      // 非蒙皮模型这一层就够精准
+      // ① 网格射线
       if (raycaster.intersectObject(mesh, true).length) return true;
 
+      mesh.updateWorldMatrix(true, true);
+      var inverse = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
+
+      // ② 模型本地包围盒 + 容差
+      var box = this.fishLocalBox(mesh);
+      if (box) {
+        var localRay = raycaster.ray.clone().applyMatrix4(inverse);
+        if (localRay.intersectsBox(box)) return true;
+      }
+
+      // ③ 骨骼包围盒兜底
       var bones = this._bones;
       if (!bones || bones.el !== mesh) {
         bones = [];
@@ -864,23 +872,44 @@
         bones.el = mesh;
         this._bones = bones;
       }
-      if (!bones.length) {
-        var fallback = new THREE.Box3().setFromObject(mesh);
-        if (fallback.isEmpty()) return false;
-        fallback.expandByScalar(0.07);
-        return raycaster.ray.intersectsBox(fallback);
-      }
-      var box = new THREE.Box3();
+      if (!bones.length) return false;
+      var boneBox = new THREE.Box3();
       var v = new THREE.Vector3();
       for (var i = 0; i < bones.length; i++) {
-        box.expandByPoint(bones[i].getWorldPosition(v));
+        boneBox.expandByPoint(bones[i].getWorldPosition(v));
       }
-      box.expandByScalar(0.07);                    // 手指容差
-      var size = box.getSize(new THREE.Vector3());
+      var localBoneBox = boneBox.clone().applyMatrix4(inverse);
+      var size = localBoneBox.getSize(new THREE.Vector3());
+      var center = localBoneBox.getCenter(new THREE.Vector3());
+      size.set(Math.max(size.x, 0.10), Math.max(size.y, 0.10), Math.max(size.z, 0.10));
+      localBoneBox.setFromCenterAndSize(center, size);
+      return localRay.intersectsBox(localBoneBox);
+    },
+
+    /** 模型本地坐标系里的整体包围盒（含所有子网格），整体放大 25% 当手指容差 */
+    fishLocalBox: function (mesh) {
+      if (this._localBox && this._localBox.mesh === mesh) return this._localBox.box;
+      mesh.updateWorldMatrix(true, true);
+      var inverse = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
+      var box = new THREE.Box3();
+      var tmp = new THREE.Matrix4();
+      var valid = false;
+      mesh.traverse(function (node) {
+        if (!node.isMesh || !node.geometry) return;
+        if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
+        if (!node.geometry.boundingBox) return;
+        tmp.copy(inverse).multiply(node.matrixWorld);
+        box.union(node.geometry.boundingBox.clone().applyMatrix4(tmp));
+        valid = true;
+      });
+      if (!valid || box.isEmpty()) return null;
+      var size = box.getSize(new THREE.Vector3()).multiplyScalar(1.25);
       var center = box.getCenter(new THREE.Vector3());
-      size.set(Math.max(size.x, 0.22), Math.max(size.y, 0.22), Math.max(size.z, 0.22));
       box.setFromCenterAndSize(center, size);
-      return raycaster.ray.intersectsBox(box);
+      console.log('AOYU_HITBOX', '本地尺寸',
+        size.x.toFixed(2) + '×' + size.y.toFixed(2) + '×' + size.z.toFixed(2));
+      this._localBox = { mesh: mesh, box: box };
+      return box;
     },
 
     /** 随机播一个五声音阶单音，避免连着两次同一个音；不做"掐最早声部"，硬切本身就是爆音 */
