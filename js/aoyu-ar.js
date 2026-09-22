@@ -21,7 +21,11 @@
     notes: ['note-c6', 'note-d6', 'note-e6', 'note-g6', 'note-a6'].map(function (name) {
       return 'assets/audio/' + name + '.mp3';
     }),
-    storageKey: 'aoyu-tuning-v4',   // v1 的『摆尾上限』语义已变成『摆尾倍率』，换键避免旧值生效
+    storageKey: 'aoyu-tuning-v4',   // v1/v2 的『摆尾上限』语义已变成『摆尾倍率』，换键避免旧值生效
+    // 惊吓（点空白让鱼窜出去）：暂时禁用。原因是惊吓把速度乘 3.2，而转弯半径是固定的
+    // （身长×1.25，被场地封顶），速度变快时角速度也跟着快 3.2 倍，在那个偏小的圈里
+    // 快速打转，看起来就是"原地转圈"。想恢复就把这里改回 true。
+    startleEnabled: false,
     tuningLimits: {
       speedScale: [0.5, 4.0],
       turnScale: [0.5, 1.7],
@@ -817,7 +821,9 @@
         this.playRandomNote();
         return;
       }
-      // 点空白：拿点击位置在卡面上的落点当威胁点，鱼朝反方向窜出去
+      // 点空白：原本是拿点击落点当威胁点让鱼窜出去。现在 CONFIG.startleEnabled = false，
+      // 暂时什么都不做（避免"原地快速打转"）。
+      if (!CONFIG.startleEnabled) return;
       var local = cardPointFromScreen(x, y);
       var threat = local ? { x: local.x, z: local.z } : null;
       fish.startle(threat);
