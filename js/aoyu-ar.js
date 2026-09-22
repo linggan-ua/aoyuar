@@ -21,7 +21,7 @@
     notes: ['note-c6', 'note-d6', 'note-e6', 'note-g6', 'note-a6'].map(function (name) {
       return 'assets/audio/' + name + '.mp3';
     }),
-    storageKey: 'aoyu-tuning-v3',   // v1 的『摆尾上限』语义已变成『摆尾倍率』，换键避免旧值生效
+    storageKey: 'aoyu-tuning-v4',   // v1 的『摆尾上限』语义已变成『摆尾倍率』，换键避免旧值生效
     tuningLimits: {
       speedScale: [0.5, 4.0],
       turnScale: [0.5, 1.7],
@@ -91,7 +91,10 @@
     },
     tick: function (time, delta) {
       if (!this.mixer) return;
-      this.mixer.update((delta / 1000) * this.data.speed);
+      var dt = (delta / 1000) * this.data.speed;
+      // 混音器时间一旦被 NaN 污染就再也回不来（表现：鱼永远不摆尾），这里必须挡住
+      if (!isFinite(dt) || dt <= 0) return;
+      this.mixer.update(dt);
     },
     pause: function () { if (this.action) this.action.paused = true; },
     resume: function () { if (this.action) this.action.paused = false; },
@@ -156,7 +159,7 @@
       this.stateDuration = 0;
       this.bank = 0;
       this.startleUntil = 0;
-      this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 1, animSpeedMax: 1, modelScale: 1 };
+      this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1 };
       this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 锦鲤 0.55）
       this.appliedScale = 1;
       this.hidden = true;
@@ -171,6 +174,23 @@
       var el = this.data.anim;
       return el && el.components['fish-anim'];
     },
+    /** 量一次鱼的身长（卡宽）：取模型包围盒的水平最长边。模型没加载好返回一个保守值 */
+    measureBodyLength: function () {
+      if (this._bodyLen) return this._bodyLen;
+      var el = this.data.anim;
+      var root = el && el.getObject3D('mesh');
+      // 模型还没加载完时不要缓存兜底值，否则会永久停在 1.00
+      if (!root) return 1;
+      root.updateWorldMatrix(true, true);
+      var box = new THREE.Box3().setFromObject(root);
+      if (box.isEmpty()) return 1;
+      var size = box.getSize(new THREE.Vector3());
+      var len = Math.max(size.x, size.z);
+      if (!(len > 0.05) || !isFinite(len)) return 1;
+      console.log('AOYU_BODY_LENGTH', len.toFixed(2));
+      return (this._bodyLen = len);
+    },
+
     radii: function () {
       return {
         x: this.data.radiusX * this.tuning.rangeScale,
@@ -221,7 +241,13 @@
       var want = Math.atan2(dirX, dirZ);
       var diff = ((want - cur + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
       var speedNow = Math.max(this.speed, 0.04);
-      var maxTurn = Math.max(0.25, speedNow * this.data.turnRate) * this.tuning.turnScale * d;
+      // 转弯半径跟**鱼自己的身长**挂钩：鱼有多大，转弯半径就该有多大。
+      // 之前半径固定 0.63 卡宽，而这条鱼放大后身长 2.9 卡宽——一条 2.9 长的鱼在
+      // 半径 0.63 的圈里掉头，看着就是"原地 180°"。
+      var bodyLen = this.measureBodyLength();          // 卡宽
+      var turnRadiusFactor = 1.25;                     // 半径 ≈ 身长 × 1.25
+      var maxTurnWanted = (speedNow / (bodyLen * turnRadiusFactor)) * this.data.turnRate / 1.6;
+      var maxTurn = Math.max(0.12, maxTurnWanted) * this.tuning.turnScale * d;
       var turn = Math.max(-maxTurn, Math.min(maxTurn, diff));
       var ang = cur + turn;
       this.head.x = Math.sin(ang);
@@ -244,7 +270,7 @@
       var want_speed = this.speedTarget * this.tuning.speedScale * rangeBoost * (boosting ? 3.2 : 1);
       var accel = (want_speed > this.speed ? (boosting ? 4.5 : 1.2) : 0.9) * Math.max(1, rangeBoost * 0.6);
       this.speed += Math.max(-accel * d, Math.min(accel * d, want_speed - this.speed));
-      if (this.speed < 0) this.speed = 0;
+      if (!(this.speed > 0)) this.speed = 0;            // 同时挡住 NaN 与负数
 
       // 积分 + 高度起伏
       this.pos.x += this.head.x * this.speed * d;
@@ -274,6 +300,7 @@
       var animator = this.animator();
       var ratio = this.speed / (this.data.speed || 1);
       var tail = Math.max(1.2, Math.min(3.4, 0.9 + ratio * 0.8)) * this.tuning.animSpeedMax;
+      if (!(tail > 0) || !isFinite(tail)) tail = 1;      // 摆尾倍率绝不能是 NaN/0：混音器时间一旦变 NaN 就永久停住
       if (animator) animator.data.speed = tail * (boosting ? 1.6 : 1);
 
       this.boosting = boosting;
@@ -304,6 +331,8 @@
         tuning: this.tuning,
         state: this.boosting ? '受惊加速' : (this.moving ? '巡游' : '悬停'),
         radius: { x: r.x.toFixed(2), z: r.z.toFixed(2) },
+        bodyLen: this.measureBodyLength(),
+        turnRadius: (this.measureBodyLength() * 1.25) / Math.max(0.2, this.tuning.turnScale),
         height: this.data.yMin.toFixed(2) + '~' + this.data.yMax.toFixed(2),
         t: this.speed.toFixed(2),
         pos: this.el.object3D.position
@@ -993,6 +1022,7 @@
           ' 范围×' + status.tuning.rangeScale.toFixed(2) +
           ' 摆尾×' + status.tuning.animSpeedMax.toFixed(2) +
           ' 大小×' + status.tuning.modelScale.toFixed(2) +
+          '　身长 ' + status.bodyLen.toFixed(2) + ' 转弯半径 ' + status.turnRadius.toFixed(2) + ' 卡宽' +
           '　当前速度 ' + status.t + ' 位置 ' + status.pos.x.toFixed(2) + ',' +
           status.pos.y.toFixed(2) + ',' + status.pos.z.toFixed(2);
       };
@@ -1029,7 +1059,10 @@
         var fish = self.activeFish();
         if (!fish) return;
         var limits = CONFIG.tuningLimits[key];
-        var next = clamp(fish.tuning[key] + delta, limits[0], limits[1]);
+        // 防御 NaN：clamp 的实现对 NaN 会把 NaN 原样传下去，一旦存进去就永久坏掉
+        var base = fish.tuning[key];
+        if (typeof base !== 'number' || !isFinite(base)) base = 1;
+        var next = clamp(base + delta, limits[0], limits[1]);
         fish.tuning[key] = Math.round(next * 100) / 100;
         self.saveTuning();
         self.refreshDebug();
@@ -1045,7 +1078,7 @@
       document.getElementById('db-material').addEventListener('click', function () { self.toggleLightweight(); });
       document.getElementById('db-reset').addEventListener('click', function () {
         var fish = self.activeFish();
-        if (fish) fish.tuning = { speedScale: 1, turnScale: 1, rangeScale: 1, animSpeedMax: 1, modelScale: 1 };
+        if (fish) fish.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1 };
         self.saveTuning();
         self.refreshDebug();
       });
@@ -1084,7 +1117,7 @@
         var fish = instances[key];
         if (!fish) return;
         Object.keys(saved.tuning).forEach(function (k) {
-          if (typeof saved.tuning[k] === 'number') fish.tuning[k] = saved.tuning[k];
+          if (typeof saved.tuning[k] === 'number' && isFinite(saved.tuning[k])) fish.tuning[k] = saved.tuning[k];
         });
       });
       if (saved.lightweight) {
