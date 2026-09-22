@@ -287,6 +287,8 @@
       <button id="db-size-m">鱼小一点</button>
       <button id="db-size-p">鱼大一点</button>
       <button id="db-material">材质：标准</button>
+      <button id="db-adaptive">自适应：关</button>
+      <button id="db-anchor">锚点环</button>
       <button id="db-reset">恢复默认</button>
     </div>
 
@@ -318,7 +320,48 @@
     var h = document.getElementById('hint');
     if (h) { h.textContent = '识别成功'; h.classList.remove('hidden'); }
   });
+  // 探针：读两条鱼的真实缩放、位置、模型可见性、混音器时间
+  // 期望：非当前模式的那条 meshVisible=false（画面上完全看不到），
+  //       两条鱼的 mixerTime 都在涨（隐藏期间摆尾不能停）
+  setInterval(function () {
+    ['aoyu', 'koi'].forEach(function (k) {
+      var el = document.getElementById(k + '-swim');
+      var anim = document.getElementById(k + '-anim');
+      if (!el || !el.object3D) return;
+      var p = el.object3D.position, s = el.object3D.scale;
+      var root = anim && anim.getObject3D('mesh');
+      var fa = anim && anim.components['fish-anim'];
+      var comp = el.components['fish-swim'];
+      var fit = comp ? comp.fit : null;
+      // 椭圆有多少比例的点落在画面内（1.0 = 整圈都在画面里）
+      var inView = 'n/a';
+      if (comp && window.AFRAME) {
+        var V = AFRAME.THREE.Vector3;
+        var r = comp.radii();
+        var sceneEl = document.querySelector('a-scene');
+        var cam = sceneEl && sceneEl.camera;
+        if (cam) {
+          var n = 0, hit = 0;
+          for (var i = 0; i < 36; i++) {
+            var ang = i / 36 * Math.PI * 2;
+            var v = new V(Math.cos(ang) * r.x, (comp.data.yMin + comp.data.yMax) / 2, Math.sin(ang) * r.z);
+            el.object3D.localToWorld(v);
+            v.project(cam);
+            n++;
+            if (Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1) hit++;
+          }
+          inView = (hit / n).toFixed(2);
+        }
+      }
+      console.log('PROBE', k, 'scale=' + s.x.toFixed(5),
+        'pos=' + p.x.toFixed(2) + ',' + p.y.toFixed(2) + ',' + p.z.toFixed(2),
+        'meshVisible=' + (root ? root.visible : 'no-mesh'),
+        'mixerTime=' + (fa && fa.action ? fa.action.time.toFixed(2) : 'n/a'),
+        'fit=' + (fit === null ? 'n/a' : fit.toFixed(2)),
+        'ellipseInView=' + inView);
+    });
+  }, 2500);
 </script>
-<script src="../js/aoyu-ar.js?v=35"></script>
+<script src="../js/aoyu-ar.js?v=40"></script>
 </body>
 </html>

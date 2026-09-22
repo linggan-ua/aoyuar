@@ -13,6 +13,10 @@
 
   var THREE = AFRAME.THREE;
 
+  // 自适应缩放允许椭圆碰到画面的这个边界（0.8 = 四周各留 10% 余量），以及最小倍率
+  var SCREEN_FIT_LIMIT = 0.8;
+  var SCREEN_FIT_MIN = 0.1;
+
   var CONFIG = {
     switchHour: 20,            // 20:00 之后显示鳌鱼，之前显示锦鲤
     hideDelayMs: 1000,         // 丢卡后让鱼游走再隐藏
@@ -41,6 +45,7 @@
   var ndc = new THREE.Vector2();
   var plane = new THREE.Plane();
   var tmpVec = new THREE.Vector3();
+  var tmpVec2 = new THREE.Vector3();
   var tmpQuat = new THREE.Quaternion();
 
   function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
@@ -188,12 +193,18 @@
       this.startleUntil = 0;
       this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1 };
       this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 锦鲤 0.55）
-      this.appliedScale = 1;
+      this.appliedScale = 0;   // 0 表示还没写过缩放，第一帧一定会写一次
       this.hidden = true;
-      // 隐藏**不能**用 object3D.visible：A-Frame 在运行时把 visible 设成 false 会把该实体的
-      // tick 从行为列表里摘掉，再设回 true 也不会恢复（实测丢卡后摆尾永久停住就是这个原因）。
-      // 改成停到很远的地方，tick 照常跑，动画也就一直在。
-      this.el.object3D.position.set(0, -50, 0);
+      // 隐藏这条鱼有两个坑，都不能踩：
+      //   1) 不能动 A-Frame 的 visible —— 运行时把实体设成不可见，它的 tick 会被摘掉，
+      //      再设回可见也不恢复（丢卡后摆尾永久停住就是这么来的）。
+      //   2) 不能"停到远处"——卡片坐标系里没有任何遮挡物，停在 y=-50 卡宽的位置照样落在
+      //      相机视锥里，画面上就是"另一条小鱼远远地在飘"。
+      // 正确做法：只关掉 gltf 那一层（three 的 mesh）的渲染。渲染器不画它，tick 和骨骼
+      // 动画照常跑，重新找到卡时一开就接着游。
+      this.wantModelVisible = false;
+      this.fit = 1;          // 自适应缩放倍率（见 screenFit），只有打开自适应开关才会 < 1
+      this.adaptive = false;  // 「自适应：整幅构图一定留在画面内」，调试面板里开关
       this.pickTarget();
       instances[this.data.key] = this;
     },
@@ -220,11 +231,71 @@
       return len;
     },
 
-    radii: function () {
+    /** 用户调出来的活动椭圆（不含自适应缩放），单位＝卡宽 */
+    rawRadii: function () {
       return {
         x: this.data.radiusX * this.tuning.rangeScale,
         z: this.data.radiusZ * this.tuning.rangeScale
       };
+    },
+
+    /** 这一帧真正用的椭圆：用户设的范围 × 自适应缩放 */
+    radii: function () {
+      var r = this.rawRadii();
+      return { x: r.x * this.fit, z: r.z * this.fit };
+    },
+
+    /** 悬浮高度区间 × 自适应缩放（构图整体等比缩放，比例不变） */
+    yMin: function () { return this.data.yMin * this.fit; },
+    yMax: function () { return this.data.yMax * this.fit; },
+
+    /** 模型最终缩放 = HTML 基准 × 手调大小 × 自适应缩放 */
+    applyModelScale: function () {
+      var want = this.baseScale * this.tuning.modelScale * this.fit;
+      if (Math.abs(want - this.appliedScale) > 1e-4) {
+        this.appliedScale = want;
+        this.el.object3D.scale.setScalar(want);
+      }
+    },
+
+    /**
+     * 以 k 倍画活动椭圆（连同悬浮高度），检查整圈是不是都在镜头前方并且留在画面内。
+     * 采样 24 个点：任何一点跑到镜头后面或者出画面都算装不下。
+     */
+    fitsAt: function (k, camera) {
+      var r = this.rawRadii();
+      var y = (this.data.yMin + this.data.yMax) / 2 * k;
+      for (var i = 0; i < 24; i++) {
+        var a = (i / 24) * Math.PI * 2;
+        tmpVec.set(Math.cos(a) * r.x * k, y, Math.sin(a) * r.z * k);
+        this.el.object3D.localToWorld(tmpVec);
+        // 镜头后面（相机空间 z >= 0）的点投影会翻号，不能拿来算
+        if (tmpVec2.copy(tmpVec).applyMatrix4(camera.matrixWorldInverse).z > -0.01) return false;
+        tmpVec.project(camera);
+        if (Math.abs(tmpVec.x) > SCREEN_FIT_LIMIT || Math.abs(tmpVec.y) > SCREEN_FIT_LIMIT) return false;
+      }
+      return true;
+    },
+
+    /**
+     * 自适应缩放：活动椭圆是按**卡宽**定义的，卡在画面里占满的时候
+     * （大卡片／手机凑得很近），7×5 卡宽的范围早就跑到画面外了，鱼大半时间在镜头外面游，
+     * 看起来就像"空间算错了""鱼游丢了"。这里量出"整幅构图刚好留在画面内"的倍率，
+     * 鱼的大小、活动范围、悬浮高度一起等比缩。
+     *
+     * 卡小的时候倍率恒为 1，一点也不会改手调好的观感；只有画面装不下时才缩。
+     */
+    screenFit: function () {
+      var sceneEl = document.querySelector('a-scene');
+      var camera = sceneEl && sceneEl.camera;
+      if (!camera) return 1;
+      if (this.fitsAt(1, camera)) return 1;
+      var lo = SCREEN_FIT_MIN, hi = 1;
+      for (var i = 0; i < 8; i++) {
+        var mid = (lo + hi) / 2;
+        if (this.fitsAt(mid, camera)) lo = mid; else hi = mid;
+      }
+      return lo;
     },
     /** 只在椭圆内部 0.72 半径处取点，并给一个到达时限（免得卡在某个目标上） */
     pickTarget: function () {
@@ -240,12 +311,26 @@
       this.targetDuration = Math.max(3, (far / speedNow0) * 2.5);
     },
     tick: function (time, delta) {
+      // 每帧对齐一次"这条鱼要不要画"。必须放在最前面：隐藏期间也要跑，
+      // 因为模型是异步加载的，加载完成时这一行才能把它立刻关掉。
+      var modelEl = this.data.anim;
+      var modelRoot = modelEl && modelEl.getObject3D('mesh');
+      if (modelRoot && modelRoot.visible !== this.wantModelVisible) {
+        modelRoot.visible = this.wantModelVisible;
+      }
       var d = Math.min(0.05, (delta || 16) / 1000);   // 秒，单帧最多推进 50ms
       if (!d) return;
-      if (this.hidden) {
-        this.el.object3D.position.set(0, -50, 0);     // 停到远处＝隐藏，但 tick 不中断
-        return;
+      if (this.hidden) return;    // 位置保持不动，重新找到卡时接着往下游
+
+      if (this.adaptive) {
+        // 装不下就较快地收（约 0.3 秒），装得下就慢慢放回去——放太快会看到范围忽大忽小
+        var fitWant = this.screenFit();
+        this.fit += (fitWant - this.fit) * Math.min(1, d * (fitWant < this.fit ? 6 : 1));
+        if (!(this.fit > 0.05) || !isFinite(this.fit)) this.fit = fitWant;
+      } else if (this.fit !== 1) {
+        this.fit = 1;
       }
+
       var r = this.radii();
       var dx = this.target.x - this.pos.x;
       var dz = this.target.z - this.pos.z;
@@ -301,10 +386,11 @@
         this.speedTarget = this.data.speed * (0.45 + this.rng() * 1.1);
       }
       var boosting = this.startleUntil > time;
-      // 速度跟着范围一起放大：范围是按卡片宽度算的，卡片印小、范围调到 8 倍时，
-      // 若速度不变，鱼要花 8 倍时间才能游完一圈——看着就是"卡在原地游不起来"。
-      // 这里按 rangeScale 线性放大，保证"游完一圈的时间"与范围无关。
-      var rangeBoost = Math.max(0.25, this.tuning.rangeScale);
+      // 速度按"实际能游的范围"线性放大：范围是按卡片宽度算的，卡片印小、范围调到 8 倍时，
+      // 若速度不变，鱼要花 8 倍时间才能游完一圈——看着就是"卡在原地游不起来"；
+      // 反过来，自适应把范围缩小之后速度也要跟着缩，否则鱼会在缩小的圈里狂转。
+      // 两种情况都靠这一个系数，保证"游完一圈的时间"与范围无关。
+      var rangeBoost = Math.max(0.25, this.tuning.rangeScale * this.fit);
       var want_speed = this.speedTarget * this.tuning.speedScale * rangeBoost * (boosting ? 3.2 : 1);
       var accel = (want_speed > this.speed ? (boosting ? 4.5 : 1.2) : 0.9) * Math.max(1, rangeBoost * 0.6);
       this.speed += Math.max(-accel * d, Math.min(accel * d, want_speed - this.speed));
@@ -314,21 +400,18 @@
       this.pos.x += this.head.x * this.speed * d;
       this.pos.z += this.head.z * this.speed * d;
       this.heightPhase += d * this.data.bobSpeed;
-      var mid = (this.data.yMin + this.data.yMax) / 2;
-      var amp = (this.data.yMax - this.data.yMin) / 2 * 0.8;
+      var mid = (this.yMin() + this.yMax()) / 2;
+      var amp = (this.yMax() - this.yMin()) / 2 * 0.8;
       this.pos.y = mid + Math.sin(this.heightPhase) * amp;
 
       // 硬约束：出椭圆按比例拉回，高度夹进区间（最后一道保险）
       var out = Math.sqrt((this.pos.x / r.x) * (this.pos.x / r.x) +
                           (this.pos.z / r.z) * (this.pos.z / r.z));
       if (out > 1) { this.pos.x /= out; this.pos.z /= out; }
-      this.pos.y = Math.max(this.data.yMin, Math.min(this.data.yMax, this.pos.y));
+      this.pos.y = Math.max(this.yMin(), Math.min(this.yMax(), this.pos.y));
 
       // 写进场景：朝向 = 航向，侧倾 = 转弯
-      if (this.appliedScale !== this.tuning.modelScale) {
-        this.appliedScale = this.tuning.modelScale;
-        this.el.object3D.scale.setScalar(this.baseScale * this.tuning.modelScale);
-      }
+      this.applyModelScale();
       this.el.object3D.position.set(this.pos.x, this.pos.y, this.pos.z);
       this.el.object3D.quaternion.setFromEuler(new THREE.Euler(0, ang, this.bank, 'YXZ'));
 
@@ -345,11 +428,14 @@
       this.moving = this.speed > 0.02;
     },
     show: function () {
-      // 摆尾动画一直跑着，不暂停也不恢复——少一个依赖就少一个"回来之后不动"的机会
+      // 只切"画不画模型"这一个开关：不碰实体 visible（tick 会被摘掉），
+      // 也不重置位置，摆尾动画从头到尾没停过。
       this.hidden = false;
+      this.wantModelVisible = true;
     },
     hide: function () {
-      this.hidden = true;   // 下一帧 tick 把鱼停到远处（不动 visible，动画也就不会停）
+      this.hidden = true;
+      this.wantModelVisible = false;
     },
     enter: function () { this.show(); },
     exit: function () { /* 游动是连续的，丢卡时直接由 hide 收尾 */ },
@@ -364,9 +450,10 @@
         tuning: this.tuning,
         state: this.boosting ? '受惊加速' : (this.moving ? '巡游' : '悬停'),
         radius: { x: r.x.toFixed(2), z: r.z.toFixed(2) },
+        fit: this.fit,
         bodyLen: this.measureBodyLength(),
         turnRadius: (this.turnRadius || 0) / Math.max(0.2, this.tuning.turnScale),
-        height: this.data.yMin.toFixed(2) + '~' + this.data.yMax.toFixed(2),
+        height: this.yMin().toFixed(2) + '~' + this.yMax().toFixed(2),
         t: this.speed.toFixed(2),
         pos: this.el.object3D.position
       };
@@ -382,6 +469,7 @@
     targetMode: null,     // 'aoyu' | 'koi'
     forceMode: null,      // 调试强制
     offsetMs: 0,          // 调试时间偏移
+    adaptive: false,      // 自适应：整幅构图一定留在画面内（默认关，保持按卡宽的固定比例）
     hideTimer: null,
     transitionTimer: null,
     switchTimer: null,
@@ -1077,6 +1165,7 @@
         var fish = self.activeFish();
         if (!fish) return;
         var status = fish.status();
+        self.syncAnchorRing(fish);
         statusText.textContent = 'FPS ' + (self.fps || '--') +
           '（渲染×' + (self.pixelRatio ? self.pixelRatio.toFixed(2) : '--') + '）　' +
           '游动：有界漫游　半径 ' + status.radius.x + '×' + status.radius.z + ' 张卡宽' +
@@ -1084,6 +1173,7 @@
           '速度×' + status.tuning.speedScale.toFixed(2) +
           ' 转向×' + status.tuning.turnScale.toFixed(2) +
           ' 范围×' + status.tuning.rangeScale.toFixed(2) +
+          (fish.adaptive ? ' 自适×' + status.fit.toFixed(2) : '') +
           ' 摆尾×' + status.tuning.animSpeedMax.toFixed(2) +
           ' 大小×' + status.tuning.modelScale.toFixed(2) +
           '　身长 ' + status.bodyLen.toFixed(2) + ' 转弯半径 ' + status.turnRadius.toFixed(2) + ' 卡宽' +
@@ -1137,6 +1227,8 @@
         document.getElementById(item[2]).addEventListener('click', function () { knob(item[0], item[1]); });
       });
       document.getElementById('db-material').addEventListener('click', function () { self.toggleLightweight(); });
+      document.getElementById('db-adaptive').addEventListener('click', function () { self.toggleAdaptive(); });
+      document.getElementById('db-anchor').addEventListener('click', function () { self.toggleAnchorRing(); });
       document.getElementById('db-reset').addEventListener('click', function () {
         var fish = self.activeFish();
         if (fish) fish.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1 };
@@ -1164,7 +1256,8 @@
       try {
         localStorage.setItem(CONFIG.storageKey, JSON.stringify({
           tuning: fish.tuning,
-          lightweight: !!this.lightweight
+          lightweight: !!this.lightweight,
+          adaptive: !!this.adaptive
         }));
       } catch (error) {
         /* 隐私模式之类写不了就算了 */
@@ -1181,6 +1274,9 @@
           if (typeof saved.tuning[k] === 'number' && isFinite(saved.tuning[k])) fish.tuning[k] = saved.tuning[k];
         });
       });
+      if (saved.adaptive) {
+        this.toggleAdaptive();
+      }
       if (saved.lightweight) {
         this.lightweight = true;
         var fish = this.activeFish();
@@ -1189,6 +1285,64 @@
         if (btn) btn.textContent = '材质：轻量';
       }
       console.log('AOYU_TUNING_RESTORED', JSON.stringify(saved.tuning));
+    },
+
+    /**
+     * 调试用锚点环：在卡片坐标系里画一个与活动椭圆等大的环，和鱼同高。
+     * 用途：一眼看出"鱼的活动空间到底有没有锚在码上"——环应该稳稳套在码上，
+     * 鱼一直在环内游；如果环本身就跑偏了，那是跟踪/标定的问题，不是鱼的逻辑。
+     */
+    /** 锚点环跟着当前范围（含自适应缩放）走，调试面板刷新时同步一次 */
+    syncAnchorRing: function (fish) {
+      var ring = document.getElementById('anchor-ring');
+      if (!ring || !fish) return;
+      var r = fish.radii();
+      var y = (fish.yMin() + fish.yMax()) / 2;
+      ring.setAttribute('scale', r.x + ' ' + r.z + ' 1');
+      ring.setAttribute('position', '0 ' + y + ' 0');
+    },
+
+    toggleAnchorRing: function () {
+      var existing = document.getElementById('anchor-ring');
+      if (existing) {
+        existing.parentNode.removeChild(existing);
+        console.log('AOYU_ANCHOR_RING off');
+        return;
+      }
+      var marker = document.getElementById('ar-marker');
+      if (!marker) return;
+      var fish = this.activeFish();
+      var r = fish ? fish.radii() : { x: 3.5, z: 2.5 };
+      var h = fish && fish.data.centerY != null ? fish.data.centerY : 0.5;
+      var el = document.createElement('a-entity');
+      el.id = 'anchor-ring';
+      el.setAttribute('geometry', 'primitive: torus; radius: 1; radiusTubular: 0.012; segmentsTubular: 96; segmentsRadial: 4');
+      el.setAttribute('rotation', '-90 0 0');
+      el.setAttribute('material', 'color: #05f8ab; shader: flat; opacity: 0.8; transparent: true');
+      el.setAttribute('scale', r.x + ' ' + r.z + ' 1');   // 圆环在实体局部 XY 平面，旋转后才落到卡面
+      el.setAttribute('position', '0 ' + h + ' 0');
+      marker.appendChild(el);
+      console.log('AOYU_ANCHOR_RING on', r.x + '×' + r.z);
+    },
+
+    /**
+     * 自适应开关：打开后，卡片在画面里占得太满时，鱼的大小／活动范围／悬浮高度
+     * 一起等比缩小，保证整幅构图留在画面内；卡片在画面里本来就不大时倍率是 1，
+     * 和自己调好的参数完全一样。关掉就是纯粹按卡宽算（默认）。
+     */
+    toggleAdaptive: function () {
+      this.adaptive = !this.adaptive;
+      Object.keys(instances).forEach(function (key) {
+        if (instances[key]) instances[key].adaptive = this.adaptive;
+      }, this);
+      var btn = document.getElementById('db-adaptive');
+      if (btn) {
+        btn.classList.toggle('on', this.adaptive);
+        btn.textContent = this.adaptive ? '自适应：开' : '自适应：关';
+      }
+      this.saveTuning();
+      this.refreshDebug();
+      console.log('AOYU_ADAPTIVE', this.adaptive ? 'on' : 'off');
     },
 
     toggleLightweight: function () {

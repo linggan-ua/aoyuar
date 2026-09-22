@@ -287,6 +287,7 @@
       <button id="db-size-m">鱼小一点</button>
       <button id="db-size-p">鱼大一点</button>
       <button id="db-material">材质：标准</button>
+      <button id="db-adaptive">自适应：关</button>
       <button id="db-reset">恢复默认</button>
     </div>
 
@@ -330,6 +331,6 @@
   setTimeout(function () { console.log('PROBE >>> 模拟丢卡'); window.dispatchEvent(new CustomEvent('markerLost')); }, 6000);
   setTimeout(function () { console.log('PROBE >>> 模拟重新找到卡'); window.dispatchEvent(new CustomEvent('markerFound', { detail: document.getElementById('ar-marker') })); }, 12000);
 </script>
-<script src="../js/aoyu-ar.js?v=30"></script>
+<script src="../js/aoyu-ar.js?v=40"></script>
 </body>
 </html>
