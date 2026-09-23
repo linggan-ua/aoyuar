@@ -99,7 +99,9 @@
   }
   #tap-gate .note { color: rgba(244, 247, 248, .78); font-size: 12px; }
 
+  /* 调试入口默认隐藏：只有带 ?debug=1 的链接（或页面自己声明 window.AOYU_DEBUG）才显示 */
   #debug-toggle {
+    display: none;
     position: absolute; right: calc(14px + env(safe-area-inset-right));
     bottom: calc(16px + env(safe-area-inset-bottom));
     padding: 7px 12px; border-radius: 10px;
@@ -107,6 +109,7 @@
     color: #f5c243; font-size: 12px; font-weight: 700;
     pointer-events: auto; opacity: .78;
   }
+  body.aoyu-debug #debug-toggle { display: block; }
   #debug-panel {
     display: none;
     position: absolute; right: calc(14px + env(safe-area-inset-right));
@@ -321,6 +324,7 @@
     window.__aoyuRewriteMarker();   // AR.js 模式下不需要改写，保持原样
   }
 </script>
-<script src="../js/aoyu-ar.js?v=47"></script>
+<script>window.AOYU_DEBUG = true;   // 工具页始终显示调试入口</script>
+<script src="../js/aoyu-ar.js?v=48"></script>
 </body>
 </html>

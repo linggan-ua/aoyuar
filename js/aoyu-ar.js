@@ -13,6 +13,29 @@
 
   var THREE = AFRAME.THREE;
 
+  /**
+   * 调试入口（右下角「调试」按钮 + 面板）默认隐藏，只有这两种情况才显示：
+   *   1) 链接带调试参数，例如 https://…/aoyuar/?debug=1
+   *   2) 页面自己声明 window.AOYU_DEBUG = true（tools/ 下的调试页用这个）
+   * ?debug=0 / false / off 视为关闭。
+   */
+  function debugUiRequested() {
+    if (window.AOYU_DEBUG === true) return true;
+    var m = /(?:^|[?&])debug(?:=([^&]*))?(?:&|$)/.exec(window.location.search);
+    if (!m) return false;
+    var v = (m[1] || '1').toLowerCase();
+    return !(v === '0' || v === 'false' || v === 'off' || v === 'no');
+  }
+
+  if (debugUiRequested()) {
+    var markDebugUi = function () {
+      if (document.body) document.body.classList.add('aoyu-debug');
+      console.log('AOYU_DEBUG_UI on（链接带了调试参数）');
+    };
+    if (document.body) markDebugUi();
+    else document.addEventListener('DOMContentLoaded', markDebugUi);
+  }
+
   // 屏幕空间手指容差（像素）：葫芦丝那个项目用的是 34px，鱼身子细，取 26px
   var HIT_PADDING_PX = 26;
   // 算轮廓/包围盒时每个网格抽多少个顶点
