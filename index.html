@@ -183,6 +183,7 @@
 
 <a-scene id="ar-scene"
          embedded
+         device-orientation-permission-ui="enabled: false"
          vr-mode-ui="enabled: false"
          renderer="colorManagement: true;"
          arjs="sourceType: webcam; debugUIEnabled: false; patternRatio: 0.5; cameraParametersUrl: assets/arjs/camera_para.dat; errorPopup: ar-error; sourceWidth: 1920; sourceHeight: 1080">
@@ -323,6 +324,6 @@
     window.__aoyuRewriteMarker();   // AR.js 模式下不需要改写，保持原样
   }
 </script>
-<script src="js/aoyu-ar.js?v=56"></script>
+<script src="js/aoyu-ar.js?v=57"></script>
 </body>
 </html>

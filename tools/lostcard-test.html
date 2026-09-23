@@ -185,6 +185,7 @@
 
 <a-scene id="ar-scene"
          embedded
+         device-orientation-permission-ui="enabled: false"
          vr-mode-ui="enabled: false"
          renderer="colorManagement: true;"
          arjs="sourceType: image; sourceUrl: ../assets/patterns/pattern-card-v3.png; debugUIEnabled: false; patternRatio: 0.5; cameraParametersUrl: ../assets/arjs/camera_para.dat; errorPopup: ar-error; sourceWidth: 1920; sourceHeight: 1080">
@@ -343,6 +344,6 @@
   setTimeout(function () { console.log('PROBE >>> 模拟重新找到卡'); window.dispatchEvent(new CustomEvent('markerFound', { detail: document.getElementById('ar-marker') })); }, 12000);
 </script>
 <script>window.AOYU_DEBUG = true;   // 工具页始终显示调试入口</script>
-<script src="../js/aoyu-ar.js?v=56"></script>
+<script src="../js/aoyu-ar.js?v=57"></script>
 </body>
 </html>
