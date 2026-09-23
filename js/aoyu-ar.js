@@ -56,7 +56,6 @@
 
   var CONFIG = {
     switchHour: 20,            // 20:00 之后显示鳌鱼，之前显示锦鲤
-    hideDelayMs: 1000,         // 丢卡后让鱼游走再隐藏
     noteVolume: 0.75,          // 和小程序一致
     clips: { aoyu: 'Ao_Swim_Loop_3.2s', koi: 'Swim_Loop_2.4s' },
     notes: ['note-c6', 'note-d6', 'note-e6', 'note-g6', 'note-a6'].map(function (name) {
@@ -854,13 +853,11 @@
    * ========================================================================= */
   app = {
     markerActive: false,
-    fishHidden: true,
     targetMode: null,     // 'aoyu' | 'koi'
     forceMode: null,      // 调试强制
     offsetMs: 0,          // 调试时间偏移
     adaptive: false,      // 自适应：整幅构图一定留在画面内（默认关，保持按卡宽的固定比例）
     hitBoxVisible: false, // 调试：把命中包围盒画出来
-    hideTimer: null,
     transitionTimer: null,
     switchTimer: null,
     lastNoteIndex: -1,
@@ -1096,9 +1093,6 @@
       });
       this.gateEl.addEventListener('click', function () { self.openCameraByGesture(); });
 
-      // 每 0.5 秒对齐一次状态（相机切镜头导致事件漏发时能自愈）
-      setInterval(function () { self.syncWithMarkerState(); }, 500);
-
       // 记录视频尺寸变化：iPhone 靠近时系统自动切镜头会走这里，日志里能直接看出来
       window.addEventListener('arjs-video-loaded', function (event) {
         var video = (event.detail && event.detail.component) || document.querySelector('#arjs-video');
@@ -1331,9 +1325,10 @@
     /** 手指按下：按这一瞬间的位置判定，点中就立刻出声 */
     handleTapDown: function (x, y) {
       this.resumeAudio();
-      if (!this.markerActive || this.fishHidden) {
-        // 卡片刚好丢了的时候点屏幕是不会有反应的，记一笔省得下次又当成"点不中鱼"
-        console.log('AOYU_TAP_SKIP markerActive=' + this.markerActive + ' fishHidden=' + this.fishHidden);
+      // 卡片不在画面里就没有鱼可点：直接看 AR.js 的 marker 可见性（事件可能漏发）
+      var markerVisible = !!(this.marker && this.marker.object3D && this.marker.object3D.visible);
+      if (!markerVisible) {
+        console.log('AOYU_TAP_SKIP 卡片不在画面里（marker.visible=false）');
         return false;
       }
       var fish = this.activeFish();
@@ -1556,62 +1551,15 @@
       console.log('AOYU_NOTE_PLAY', index, CONFIG.notes[index], 'audio-element');
     },
 
-    /**
-     * 看门狗：把"我们的显示状态"和"AR.js 实际检测到的状态"每隔一会儿对齐一次。
-     *
-     * 为什么需要：相机切换镜头（主摄↔广角）时画面会卡一下，AR.js 可能漏发/错发一次
-     * markerFound/markerLost，我们的隐藏-显示状态机就会卡在"鱼藏着"上——现象就是
-     * 卡片明明清清楚楚，鱼却再也不出来。官方示例里内容直接挂在 marker 下、由 AR.js 的
-     * object3D.visible 控制，没有第二套状态，所以不会卡；我们这套状态机就得自己兜。
-     */
-    syncWithMarkerState: function () {
-      var marker = this.marker;
-      if (!marker || !marker.object3D) return;
-      var visible = !!marker.object3D.visible;
-      // 连续两次采样都是"检测到"才强制恢复，避免撞上 AR.js 每帧先置 false 再置 true 的时序
-      if (visible) this.markerVisibleStreak = (this.markerVisibleStreak || 0) + 1;
-      else this.markerVisibleStreak = 0;
-      if (this.markerVisibleStreak >= 2 && (this.fishHidden || !this.markerActive)) {
-        console.log('AOYU_MARKER_RESYNC 卡片在画面里但鱼还藏着 → 强制恢复显示');
-        this.markerActive = true;
-        this.fishHidden = false;
-        if (this.hideTimer) { clearTimeout(this.hideTimer); this.hideTimer = null; }
-        var fish = this.activeFish();
-        if (fish) fish.enter();
-      }
-    },
-
-    /* ---------- 卡片在不在画面里 ---------- */
     setMarkerActive: function (active) {
       if (this.markerActive === active) return;
       this.markerActive = active;
-      var key = this.targetMode === 'koi' ? 'koi' : 'aoyu';
-      var fish = instances[key];
       var hint = document.getElementById('hint');
-      if (active) {
-        if (hint) hint.classList.add('hidden');
-        if (this.hideTimer) {
-          // 只是短暂丢失：鱼还没隐藏，取消隐藏，位置不重置（避免瞬移）
-          clearTimeout(this.hideTimer);
-          this.hideTimer = null;
-        }
-        if (fish && fish.hidden) {
-          this.fishHidden = false;
-          fish.enter();          // 真的隐藏过了，重新从边缘游进来
-        } else if (fish) {
-          var animator = fish.animator();
-          if (animator) animator.resume();
-        }
-      } else {
-        if (fish) fish.exit();
-        if (this.hideTimer) clearTimeout(this.hideTimer);
-        var self = this;
-        this.hideTimer = setTimeout(function () {
-          self.hideTimer = null;
-          if (self.markerActive) return;
-          if (fish) fish.hide();
-          self.fishHidden = true;
-        }, CONFIG.hideDelayMs);
+      if (!hint) return;
+      if (active) hint.classList.add('hidden');
+      else {
+        hint.textContent = '把整张鳌鱼二维码放进画面';
+        hint.classList.remove('hidden');
       }
     },
 
@@ -1650,12 +1598,9 @@
       console.log('AOYU_TIME_MODE', next);
 
       if (!prev) {
-        // 第一次定模式：直接显示（如果卡片已经在画面里，鱼立刻入场）
+        // 第一次定模式：直接让对应那条鱼可见（卡片在不在由 AR.js 的 marker 可见性决定）
         this.resetFish();
-        if (this.markerActive) {
-          this.fishHidden = false;
-          if (instances[next]) instances[next].enter();
-        }
+        if (instances[next]) instances[next].enter();
         this.syncModeButtons();
         return;
       }
@@ -1665,10 +1610,8 @@
       //   同框那 0.9 秒看起来就是"两条鱼同时冒出来"，所以这里不保留交叉过渡。
       //   另外原来这里调 FishMotion.startExiting(instances[prev].motion)，
       //   换掉状态机之后 .motion 不存在，会抛异常把整个切换流程打断——那才是切换失效的原因。）
-      if (this.markerActive) {
-        instances[next].enter();
-        this.fishHidden = false;
-      }
+      // 换鱼：新的显示、旧的隐藏（这是"选哪条鱼"，和卡片丢没丢无关）
+      if (instances[next]) instances[next].enter();
       if (instances[prev]) instances[prev].hide();
       this.syncModeButtons();
     },
