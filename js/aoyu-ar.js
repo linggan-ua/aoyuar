@@ -331,6 +331,7 @@
       this.startleUntil = 0;
       this.startleBurstUntil = 0;
       this.edgeTime = 0;        // 贴在边界上多久了（超过阈值就掉头，不让它一直磨边）
+      this.edgeHit = false;     // 上一帧是不是被硬约束按回边界了（= 这一帧刚到边）
       this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1, startleSpeed: 4 };
       this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 锦鲤 0.55）
       this.appliedScale = 0;   // 0 表示还没写过缩放，第一帧一定会写一次
@@ -497,6 +498,9 @@
       var rn = Math.sqrt((this.pos.x / r.x) * (this.pos.x / r.x) +
                          (this.pos.z / r.z) * (this.pos.z / r.z));   // 0=中心 1=边界
       if (rn > 0.97) this.edgeTime += d; else this.edgeTime = 0;
+      // 上一帧被硬约束按回边界 = 真的撞到范围边了（比只看 rn 更准，尤其是自适应在缩放时）
+      var hitEdge = this.edgeHit || rn > 0.95;
+      this.edgeHit = false;
       var snapTurn = false;      // true = 这一帧原地掉头（不走"转弯半径"限制）
       var dx = this.target.x - this.pos.x;
       var dz = this.target.z - this.pos.z;
@@ -507,9 +511,11 @@
         // 冲刺：不追目标点，朝逃跑方向直着窜；窜到活动边界的 95% 就收
         dirX = this.startleDir.x;
         dirZ = this.startleDir.z;
-        // 受惊期间撞到边界：立刻原地掉头，换一个朝内的随机方向接着窜。
-        // （爆冲那 180ms 内不判，免得刚窜出去就掉头）
-        if (rn > 0.97 && time > this.startleBurstUntil) {
+        // 受惊期间撞到边界：**马上**原地掉头，换一个朝内的随机方向接着窜。
+        // 不再等爆冲结束——之前要等 180ms 才掉头，看着就是贴着边磨一小会儿。
+        // 加一个"当前方向朝外"的判断：掉头之后方向已经朝内，就不会在边上反复翻。
+        var outNX = this.pos.x / (r.x * r.x), outNZ = this.pos.z / (r.z * r.z);
+        if (hitEdge && (this.startleDir.x * outNX + this.startleDir.z * outNZ) > 0) {
           var bounce = this.bounceDirection();
           this.startleDir = { x: bounce.x, z: bounce.z };
           dirX = bounce.x;
@@ -626,7 +632,7 @@
       // 硬约束：出圈按比例拉回，高度夹进区间（最后一道保险）
       var out = Math.sqrt((this.pos.x / r.x) * (this.pos.x / r.x) +
                           (this.pos.z / r.z) * (this.pos.z / r.z));
-      if (out > 1) { this.pos.x /= out; this.pos.z /= out; }
+      if (out > 1) { this.pos.x /= out; this.pos.z /= out; this.edgeHit = true; }
       this.pos.y = Math.max(this.yMin(), Math.min(this.yMax(), this.pos.y));
 
       // 写进场景：朝向 = 航向，侧倾 = 转弯
