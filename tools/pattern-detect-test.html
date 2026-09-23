@@ -88,6 +88,9 @@
     opacity: .5; border-color: rgba(159, 179, 169, .45); color: #9fb3a9; box-shadow: none; cursor: default;
   }
   .start-note { color: #6d7f77; font-size: 12px; }
+  .start-note b { color: #05f8ab; font-weight: 700; }
+  /* 只有接鼠标/键盘的设备才提"按 F 全屏"（手机没有 F 键） */
+  @media (pointer: coarse) { .start-note { display: none; } }
 
   /* 只有 iOS / 微信这种"必须先有用户手势"的环境才会出现 */
   #tap-gate {
@@ -236,7 +239,7 @@
     <img id="start-poster" src="../assets/ui/start-poster-v2.png" alt="水墨與絲竹的對話 · 沉浸式国乐剧场">
     <div class="start-tips">扫描<b>鳌鱼二维码</b>，在二维码上方查看<b>鳌鱼</b><br>首次进入请点击「允许/Allow」授权摄像头</div>
     <button id="start-ar-button" type="button" disabled>资源准备中…</button>
-    <div class="start-note"> </div>
+    <div class="start-note">电脑上按 <b>F</b> 键可全屏 / 再按一次退出</div>
   </div>
 
   <div id="hint">正在打开相机…</div>
@@ -380,6 +383,6 @@
 </script>
 <script>window.AOYU_DEBUG = true;   // 工具页始终显示调试入口</script>
 <script src="../js/note-synth.js?v=1"></script>
-<script src="../js/aoyu-ar.js?v=73"></script>
+<script src="../js/aoyu-ar.js?v=75"></script>
 </body>
 </html>

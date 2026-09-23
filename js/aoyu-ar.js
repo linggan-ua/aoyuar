@@ -894,6 +894,7 @@
 
       this.limitPixelRatio();
       this.bindTap();
+      this.bindFullscreenKey();
       this.initCamera();
       this.bindStartOverlay();
       this.bindDebugPanel();
@@ -1465,6 +1466,45 @@
       };
       window.addEventListener('pointerdown', start, { passive: true });
       window.addEventListener('pointerup', end, { passive: true });
+    },
+
+    /**
+     * 按 F 切换全屏（Esc 退出交给浏览器）。
+     * 带 ⌘/Ctrl/Alt 的组合键不拦（⌘⇧F 之类交给系统/浏览器），输入框里打字也不触发。
+     */
+    bindFullscreenKey: function () {
+      var self = this;
+      window.addEventListener('keydown', function (event) {
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        if (event.key !== 'f' && event.key !== 'F') return;
+        var el = event.target;
+        if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName || ''))) return;
+        event.preventDefault();
+        self.toggleFullscreen();
+      });
+    },
+
+    toggleFullscreen: function () {
+      var doc = document;
+      var root = doc.documentElement;
+      var fsEl = doc.fullscreenElement || doc.webkitFullscreenElement;
+      if (fsEl) {
+        var exit = doc.exitFullscreen || doc.webkitExitFullscreen;
+        if (!exit) return;
+        Promise.resolve(exit.call(doc)).then(function () {
+          console.log('AOYU_FULLSCREEN_KEY off');
+        }).catch(function (e) { console.warn('AOYU_FULLSCREEN_KEY off 失败', e); });
+        return;
+      }
+      var req = root.requestFullscreen || root.webkitRequestFullscreen;
+      if (!req) {
+        console.log('AOYU_FULLSCREEN_KEY 不支持（这个浏览器没有全屏 API）');
+        return;
+      }
+      console.log('AOYU_FULLSCREEN_KEY on');
+      Promise.resolve(req.call(root)).catch(function (e) {
+        console.warn('AOYU_FULLSCREEN_KEY on 失败', e);
+      });
     },
 
     isUi: function (event) {
