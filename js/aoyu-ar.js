@@ -330,6 +330,7 @@
       this.bank = 0;
       this.startleUntil = 0;
       this.startleBurstUntil = 0;
+      this.edgeTime = 0;        // 贴在边界上多久了（超过阈值就掉头，不让它一直磨边）
       this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1, startleSpeed: 4 };
       this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 锦鲤 0.55）
       this.appliedScale = 0;   // 0 表示还没写过缩放，第一帧一定会写一次
@@ -495,6 +496,8 @@
       var boosting = this.startleUntil > time;
       var rn = Math.sqrt((this.pos.x / r.x) * (this.pos.x / r.x) +
                          (this.pos.z / r.z) * (this.pos.z / r.z));   // 0=中心 1=边界
+      if (rn > 0.97) this.edgeTime += d; else this.edgeTime = 0;
+      var snapTurn = false;      // true = 这一帧原地掉头（不走"转弯半径"限制）
       var dx = this.target.x - this.pos.x;
       var dz = this.target.z - this.pos.z;
       var dist = Math.sqrt(dx * dx + dz * dz);
@@ -504,8 +507,18 @@
         // 冲刺：不追目标点，朝逃跑方向直着窜；窜到活动边界的 95% 就收
         dirX = this.startleDir.x;
         dirZ = this.startleDir.z;
-        // 爆冲那 180ms 内不判边界，免得刚窜出去就结束（后面那段快速游动会被吃掉）
-        if (rn > 0.95 && time > this.startleBurstUntil) { boosting = false; this.startleUntil = 0; }
+        // 受惊期间撞到边界：立刻原地掉头，换一个朝内的随机方向接着窜。
+        // （爆冲那 180ms 内不判，免得刚窜出去就掉头）
+        if (rn > 0.97 && time > this.startleBurstUntil) {
+          var bounce = this.bounceDirection();
+          this.startleDir = { x: bounce.x, z: bounce.z };
+          dirX = bounce.x;
+          dirZ = bounce.z;
+          snapTurn = true;
+          this.edgeTime = 0;
+          this.startleBurstUntil = time + 120;   // 掉头后再给一小下爆冲，像弹开一样
+          console.log('AOYU_BOUNCE 受惊撞边界掉头');
+        }
       } else {
         // 正常巡游：朝目标 + 越靠边越强的向内修正
         if (dist < 0.12 || this.targetTime > this.targetDuration) {
@@ -521,6 +534,15 @@
           var len = Math.sqrt(this.pos.x * this.pos.x + this.pos.z * this.pos.z) || 1;
           dirX -= (this.pos.x / len) * back;
           dirZ -= (this.pos.z / len) * back;
+        }
+        if (this.edgeTime > 0.35) {
+          // 贴边磨了 0.35 秒还出不来：直接原地掉头游回中间（受惊时同理，只是更快）
+          var bounce2 = this.bounceDirection();
+          dirX = bounce2.x;
+          dirZ = bounce2.z;
+          snapTurn = true;
+          this.edgeTime = 0;
+          console.log('AOYU_BOUNCE 贴边掉头');
         }
       }
       if (this.boosting && !boosting) this.pickTarget();   // 冲刺刚结束：挑个新目标继续巡游
@@ -556,6 +578,7 @@
         if (edgeTurn > maxTurn) maxTurn = edgeTurn;
       }
       var turn = Math.max(-maxTurn, Math.min(maxTurn, diff));
+      if (snapTurn) { turn = diff; this.bank = 0; }   // 原地掉头：这一帧直接转过去
       var ang = cur + turn;
       this.head.x = Math.sin(ang);
       this.head.z = Math.cos(ang);
@@ -681,6 +704,21 @@
         ' 爆冲速度=' + this.burstSpeed().toFixed(2) +
         ' 持续冲刺=' + this.dashSpeed().toFixed(2) +
         ' 当前速度=' + this.speed.toFixed(2));
+    },
+
+    /**
+     * 撞到边界时的掉头方向：朝圆心，再随机偏 ±46°。
+     * 每次角度都不一样，所以受惊期间连着撞几次，看起来就是四处乱窜。
+     */
+    bounceDirection: function () {
+      var r = this.radii();
+      var nx = this.pos.x / (r.x * r.x), nz = this.pos.z / (r.z * r.z);   // 向外法线
+      var nl = Math.sqrt(nx * nx + nz * nz) || 1;
+      nx /= nl; nz /= nl;
+      var ix = -nx, iz = -nz;                                            // 朝内
+      var a = (this.rng() - 0.5) * 1.6;
+      var ca = Math.cos(a), sa = Math.sin(a);
+      return { x: ix * ca - iz * sa, z: ix * sa + iz * ca };
     },
 
     /** 从 (px,pz) 沿 (dx,dz) 走到半径 k·R 的圆边界要走多远（解一元二次） */
