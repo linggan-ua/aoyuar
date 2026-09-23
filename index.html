@@ -18,15 +18,18 @@
     -webkit-tap-highlight-color: transparent;
   }
   /* AR 画面铺满：AR.js 的 video 自己会定位，这里保证 scene/canvas 跟着走 */
-  a-scene { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: block; }
+  a-scene { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: block; z-index: 1; }
   .a-canvas { width: 100% !important; height: 100% !important; }
   /* 相机画面铺满屏幕。AR.js 自己也会做（按 videoWidth/Height 算出 cover 尺寸），但它依赖
      视频元数据，元数据没就绪时那套算出来是 NaN，画面就只占一块。这里用同样的 cover 语义
      直接写死，等价且不会失效。 */
+  /* 相机画面层：用显式正层级（0），AR 画面（a-scene）在它上面（1）。
+     以前这里用 z-index:-2 + 依赖"根背景先画"的顺序，PC Chrome 全屏（top layer）下
+     这个顺序会变，相机会掉到黑色 backdrop 后面，表现就是全屏后整页黑。 */
   #arjs-video {
     position: fixed !important; top: 0 !important; left: 0 !important;
     width: 100% !important; height: 100% !important;
-    margin: 0 !important; object-fit: cover; z-index: -2 !important;
+    margin: 0 !important; object-fit: cover; z-index: 0 !important;
   }
   /* AR.js 失败时自己会往 body 塞一个没样式的 #error-popup，统一走我们自己的提示卡 */
   #error-popup { display: none !important; }
@@ -326,6 +329,6 @@
   }
 </script>
 <script src="js/note-synth.js?v=1"></script>
-<script src="js/aoyu-ar.js?v=65"></script>
+<script src="js/aoyu-ar.js?v=67"></script>
 </body>
 </html>

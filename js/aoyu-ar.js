@@ -1110,6 +1110,16 @@
         });
       });
 
+      // 全屏切换（PC Chrome 按 F11 / 全屏按钮）：记录尺寸，并让 A-Frame 重新量一次画布
+      ['fullscreenchange', 'webkitfullscreenchange'].forEach(function (name) {
+        document.addEventListener(name, function () {
+          var fs = document.fullscreenElement || document.webkitFullscreenElement;
+          console.log('AOYU_FULLSCREEN ' + (fs ? 'on' : 'off') + ' ' +
+            window.innerWidth + '×' + window.innerHeight);
+          self.reassertLayout();
+        });
+      });
+
       // 兜底：2 秒后还没画面就弹手势层；已经出画面了就补一次"相机就绪"
       setTimeout(function () {
         if (self.isVideoLive(self.findArVideo())) self.onCameraLive();
@@ -1184,6 +1194,36 @@
       if (source) source.ready = true;
       window.dispatchEvent(new CustomEvent('arjs-video-loaded', { detail: { component: video } }));
       console.log('AOYU_CAMERA_SOURCE_RECOVERED');
+    },
+
+    /**
+     * 全屏/尺寸变化后重新贴一次画面尺寸，并让 A-Frame 重新量画布。
+     * 全屏时浏览器给的 resize 时机有时早于布局稳定，画布会停在旧尺寸（表现是黑屏或只占一块），
+     * 这里隔一小会儿再补一次 resize 事件。
+     */
+    reassertLayout: function () {
+      var video = this.findArVideo();
+      if (video) {
+        video.style.setProperty('position', 'fixed', 'important');
+        video.style.setProperty('top', '0', 'important');
+        video.style.setProperty('left', '0', 'important');
+        video.style.setProperty('width', '100%', 'important');
+        video.style.setProperty('height', '100%', 'important');
+        video.style.setProperty('margin', '0', 'important');
+        video.style.setProperty('object-fit', 'cover', 'important');
+        video.style.setProperty('z-index', '0', 'important');
+        if (video.tagName === 'VIDEO') {
+          video.setAttribute('playsinline', '');
+          video.setAttribute('webkit-playsinline', '');
+          video.muted = true;
+          var p = video.play();
+          if (p && p.catch) p.catch(function () {});
+        }
+      }
+      var refire = function () { window.dispatchEvent(new Event('resize')); };
+      setTimeout(refire, 60);
+      setTimeout(refire, 300);
+      if (video) console.log('AOYU_LAYOUT_REASSERT ' + video.tagName + ' ' + (video.videoWidth || 0) + '×' + (video.videoHeight || 0));
     },
 
     isVideoLive: function (video) {
