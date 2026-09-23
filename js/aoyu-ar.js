@@ -13,7 +13,7 @@
 
   var THREE = AFRAME.THREE;
 
-  // 自适应缩放允许椭圆碰到画面的这个边界（0.8 = 四周各留 10% 余量），以及最小倍率
+  // 自适应缩放允许游动范围碰到画面的这个边界（0.8 = 四周各留 10% 余量），以及最小倍率
   var SCREEN_FIT_LIMIT = 0.8;
   var SCREEN_FIT_MIN = 0.1;
 
@@ -34,8 +34,8 @@
     tuningLimits: {
       speedScale: [0.5, 4.0],
       turnScale: [0.5, 1.7],
-      rangeScale: [0.5, 8.0],     // 活动范围：1 = 椭圆半径 0.70×0.50 卡宽；小卡片（印在节目单上）要放大很多才游得开
-      animSpeedMax: [0.5, 2.5],   // 摆尾倍率（椭圆轨道下它就是骨骼动画的速度倍率）
+      rangeScale: [0.5, 8.0],     // 活动范围：1 = 圆形半径 0.50 卡宽；小卡片（印在节目单上）要放大很多才游得开
+      animSpeedMax: [0.5, 2.5],   // 摆尾倍率（游动时它就是骨骼动画的速度倍率）
       startleSpeed: [1.5, 8.0],   // 惊吓冲刺速度倍率（相对巡航速度）
       modelScale: [0.05, 2.0]     // 鱼的大小（默认基准已是 6 倍，所以下限放到 0.05 方便往回收）
     }
@@ -217,22 +217,22 @@
   /**
    * 鱼的游动：自己写的「有界漫游」。
    *
-   * 目标：像鱼，但**永远不越界**。不照搬小程序那套状态机，也不用纯椭圆轨迹。
+   * 目标：像鱼，但**永远不越界**。不照搬小程序那套状态机，也不用固定轨道。
    *
-   *   1) 活动范围 = 卡片平面内的椭圆 + 高度区间，两个都是硬约束
-   *   2) 目标点只在椭圆内部 0.72 半径内随机取（留出余量，不贴边）
+   *   1) 活动范围 = 卡片平面内的一个圆 + 高度区间，两个都是硬约束
+   *      （原来是 0.70×0.50 的椭圆，宽了以后横向容易顶出画面，所以改成圆）
+   *   2) 目标点只在圆内部 0.72 半径内随机取（留出余量，不贴边）
    *   3) 朝目标游 + 限速转向（鱼不会原地拐弯），转弯时轻微侧倾
    *   4) 越靠近边界，"向内"的修正越强（软约束，避免贴着边撞）
    *   5) 速度有快有慢（滑行/巡游/冲刺随机切换），摆尾速度跟游速联动
-   *   6) 每帧积分之后再做一次硬投影：出椭圆就按比例拉回、高度夹到区间内
+   *   6) 每帧积分之后再做一次硬投影：出圈就按比例拉回、高度夹到区间内
    *      —— 所以无论受惊冲刺、掉帧、改范围、改大小，都不可能游出范围
    */
   AFRAME.registerComponent('fish-swim', {
     schema: {
       key: { type: 'string' },
       anim: { type: 'selector' },
-      radiusX: { type: 'number', default: 0.70 },   // 椭圆半轴（卡片 = 1 单位）
-      radiusZ: { type: 'number', default: 0.50 },
+      radius: { type: 'number', default: 0.50 },    // 游动范围半径（卡片 = 1 单位；圆形）
       yMin: { type: 'number', default: 0.32 },      // 悬浮高度区间
       yMax: { type: 'number', default: 0.72 },
       speed: { type: 'number', default: 0.30 },     // 基准速度（单位/秒）
@@ -309,15 +309,16 @@
       return this.data.speed * this.tuning.startleSpeed * this.tuning.speedScale * rangeBoost;
     },
 
-    /** 用户调出来的活动椭圆（不含自适应缩放），单位＝卡宽 */
+    /**
+     * 用户调出来的活动半径（不含自适应缩放），单位＝卡宽。
+     * 圆的 x/z 半径相同；这里仍然返回 {x,z}，是为了后面的边界投影、采样那些公式不用改。
+     */
     rawRadii: function () {
-      return {
-        x: this.data.radiusX * this.tuning.rangeScale,
-        z: this.data.radiusZ * this.tuning.rangeScale
-      };
+      var r = this.data.radius * this.tuning.rangeScale;
+      return { x: r, z: r };
     },
 
-    /** 这一帧真正用的椭圆：用户设的范围 × 自适应缩放 */
+    /** 这一帧真正用的半径：用户设的范围 × 自适应缩放 */
     radii: function () {
       var r = this.rawRadii();
       return { x: r.x * this.fit, z: r.z * this.fit };
@@ -337,7 +338,7 @@
     },
 
     /**
-     * 以 k 倍画活动椭圆（连同悬浮高度），检查整圈是不是都在镜头前方并且留在画面内。
+     * 以 k 倍画游动范围（连同悬浮高度），检查整圈是不是都在镜头前方并且留在画面内。
      * 采样 24 个点：任何一点跑到镜头后面或者出画面都算装不下。
      */
     fitsAt: function (k, camera) {
@@ -356,7 +357,7 @@
     },
 
     /**
-     * 自适应缩放：活动椭圆是按**卡宽**定义的，卡在画面里占满的时候
+     * 自适应缩放：游动范围是按**卡宽**定义的，卡在画面里占满的时候
      * （大卡片／手机凑得很近），7×5 卡宽的范围早就跑到画面外了，鱼大半时间在镜头外面游，
      * 看起来就像"空间算错了""鱼游丢了"。这里量出"整幅构图刚好留在画面内"的倍率，
      * 鱼的大小、活动范围、悬浮高度一起等比缩。
@@ -375,7 +376,7 @@
       }
       return lo;
     },
-    /** 只在椭圆内部 0.72 半径处取点，并给一个到达时限（免得卡在某个目标上） */
+    /** 只在圆内部 0.72 半径处取点，并给一个到达时限（免得卡在某个目标上） */
     pickTarget: function () {
       var r = this.radii();
       var a = this.rng() * Math.PI * 2;
@@ -498,7 +499,7 @@
       var amp = (this.yMax() - this.yMin()) / 2 * 0.8;
       this.pos.y = mid + Math.sin(this.heightPhase) * amp;
 
-      // 硬约束：出椭圆按比例拉回，高度夹进区间（最后一道保险）
+      // 硬约束：出圈按比例拉回，高度夹进区间（最后一道保险）
       var out = Math.sqrt((this.pos.x / r.x) * (this.pos.x / r.x) +
                           (this.pos.z / r.z) * (this.pos.z / r.z));
       if (out > 1) { this.pos.x /= out; this.pos.z /= out; }
@@ -562,7 +563,7 @@
       for (var i = -2; i <= 2; i++) {
         var a = base + i * 0.4;
         var cx = Math.cos(a), cz = Math.sin(a);
-        var dist = this.ellipseExitDistance(this.pos.x, this.pos.z, cx, cz, 0.9);
+        var dist = this.exitDistance(this.pos.x, this.pos.z, cx, cz, 0.9);
         if (!best || dist > best.dist) best = { dist: dist, x: cx, z: cz };
       }
       this.startleDir = { x: best.x, z: best.z };
@@ -577,13 +578,12 @@
         ' 冲刺速度=' + this.dashSpeed().toFixed(2) + ' 当前速度=' + this.speed.toFixed(2));
     },
 
-    /** 从 (px,pz) 沿 (dx,dz) 走到椭圆 k 倍边界要走多远（解一元二次） */
-    ellipseExitDistance: function (px, pz, dx, dz, k) {
-      var r = this.radii();
-      var kx = r.x * k, kz = r.z * k;
-      var a = (dx / kx) * (dx / kx) + (dz / kz) * (dz / kz);
-      var b = 2 * (px * dx / (kx * kx) + pz * dz / (kz * kz));
-      var c = (px / kx) * (px / kx) + (pz / kz) * (pz / kz) - 1;
+    /** 从 (px,pz) 沿 (dx,dz) 走到半径 k·R 的圆边界要走多远（解一元二次） */
+    exitDistance: function (px, pz, dx, dz, k) {
+      var R = this.radii().x * k;
+      var a = dx * dx + dz * dz;
+      var b = 2 * (px * dx + pz * dz);
+      var c = px * px + pz * pz - R * R;
       var disc = b * b - 4 * a * c;
       if (!(disc > 0) || !(a > 0)) return 0.2;
       var s = (-b + Math.sqrt(disc)) / (2 * a);
@@ -596,7 +596,7 @@
         posture: { name: '贴卡平面（有界漫游）', tiltDeg: 0 },
         tuning: this.tuning,
         state: this.boosting ? '受惊冲刺' : (this.moving ? '巡游' : '悬停'),
-        radius: { x: r.x.toFixed(2), z: r.z.toFixed(2) },
+        radius: r.x.toFixed(2),
         fit: this.fit,
         bodyLen: this.measureBodyLength(),
         turnRadius: (this.turnRadius || 0) / Math.max(0.2, this.tuning.turnScale),
@@ -1332,7 +1332,7 @@
         self.syncAnchorRing(fish);
         statusText.textContent = 'FPS ' + (self.fps || '--') +
           '（渲染×' + (self.pixelRatio ? self.pixelRatio.toFixed(2) : '--') + '）　' +
-          '游动：有界漫游　半径 ' + status.radius.x + '×' + status.radius.z + ' 张卡宽' +
+          '游动：有界漫游　半径 ' + status.radius + ' 张卡宽（圆）' +
           '　高 ' + status.height + '　' + status.state + '　' +
           '速度×' + status.tuning.speedScale.toFixed(2) +
           ' 转向×' + status.tuning.turnScale.toFixed(2) +
@@ -1459,7 +1459,7 @@
     },
 
     /**
-     * 调试用锚点环：在卡片坐标系里画一个与活动椭圆等大的环，和鱼同高。
+     * 调试用锚点环：在卡片坐标系里画一个与活动范围等大的圆环，和鱼同高。
      * 用途：一眼看出"鱼的活动空间到底有没有锚在码上"——环应该稳稳套在码上，
      * 鱼一直在环内游；如果环本身就跑偏了，那是跟踪/标定的问题，不是鱼的逻辑。
      */
@@ -1483,7 +1483,7 @@
       var marker = document.getElementById('ar-marker');
       if (!marker) return;
       var fish = this.activeFish();
-      var r = fish ? fish.radii() : { x: 3.5, z: 2.5 };
+      var r = fish ? fish.radii() : { x: 2.5, z: 2.5 };
       var h = fish && fish.data.centerY != null ? fish.data.centerY : 0.5;
       var el = document.createElement('a-entity');
       el.id = 'anchor-ring';
