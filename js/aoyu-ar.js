@@ -1110,6 +1110,11 @@
         });
       });
 
+      // 启动后补两次：首帧布局时视口高度可能是 0（画布会卡在 0 高 → 全黑）
+      setTimeout(function () { self.forceCanvasSize(); }, 300);
+      setTimeout(function () { self.forceCanvasSize(); }, 1500);
+      window.addEventListener('resize', function () { self.forceCanvasSize(); });
+
       // 全屏切换（PC Chrome 按 F11 / 全屏按钮）：记录尺寸，并让 A-Frame 重新量一次画布
       ['fullscreenchange', 'webkitfullscreenchange'].forEach(function (name) {
         document.addEventListener(name, function () {
@@ -1197,6 +1202,27 @@
     },
 
     /**
+     * 把画布尺寸强制对齐到视口。
+     * PC Chrome 上首帧布局时 window.innerHeight 可能还是 0，A-Frame 会把 canvas 的
+     * 绘制缓冲设成 0 高（日志里就是 drawingBuffer=1440×0），之后如果没再收到 resize
+     * 事件，画布就永远停在 0 高 —— 表现就是整页全黑（相机层还被这块黑画布盖住）。
+     */
+    forceCanvasSize: function () {
+      var sceneEl = this.sceneEl;
+      var renderer = sceneEl && sceneEl.renderer;
+      if (!renderer) return;
+      var canvas = renderer.domElement;
+      var ratio = renderer.getPixelRatio ? renderer.getPixelRatio() : 1;
+      var w = Math.max(1, window.innerWidth || 0);
+      var h = Math.max(1, window.innerHeight || 0);
+      var wantW = Math.floor(w * ratio);
+      var wantH = Math.floor(h * ratio);
+      if (canvas.width === wantW && canvas.height === wantH) return;
+      renderer.setSize(w, h, false);          // false：CSS 尺寸由样式表控制（100%）
+      console.log('AOYU_CANVAS_SIZE', canvas.width + '×' + canvas.height, '视口=' + w + '×' + h);
+    },
+
+    /**
      * 全屏/尺寸变化后重新贴一次画面尺寸，并让 A-Frame 重新量画布。
      * 全屏时浏览器给的 resize 时机有时早于布局稳定，画布会停在旧尺寸（表现是黑屏或只占一块），
      * 这里隔一小会儿再补一次 resize 事件。
@@ -1220,7 +1246,12 @@
           if (p && p.catch) p.catch(function () {});
         }
       }
-      var refire = function () { window.dispatchEvent(new Event('resize')); };
+      var self2 = this;
+      var refire = function () {
+        window.dispatchEvent(new Event('resize'));
+        self2.forceCanvasSize();              // A-Frame 量完之后再强制对齐一次，双保险
+      };
+      this.forceCanvasSize();
       setTimeout(refire, 60);
       setTimeout(refire, 300);
       if (video) console.log('AOYU_LAYOUT_REASSERT ' + video.tagName + ' ' + (video.videoWidth || 0) + '×' + (video.videoHeight || 0));
