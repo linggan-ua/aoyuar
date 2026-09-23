@@ -954,6 +954,11 @@
       this.noteGain = this.audioCtx.createGain();
       this.noteGain.gain.value = CONFIG.noteVolume;
       this.noteGain.connect(this.audioCtx.destination);
+      // 点击鱼的音色走合成器（调音台定稿的那组参数）：第一次点击前先渲染好，点了立刻响
+      if (window.AOYU_NOTE_SYNTH) {
+        window.AOYU_NOTE_SYNTH.init(this.audioCtx);
+        window.AOYU_NOTE_SYNTH.prewarm();
+      }
       CONFIG.notes.forEach(function (src, index) {
         fetch(src)
           .then(function (res) { return res.arrayBuffer(); })
@@ -1447,6 +1452,12 @@
       var index = Math.floor(Math.random() * total);
       if (index === this.lastNoteIndex) index = (index + 1) % total;
       this.lastNoteIndex = index;
+      // 首选合成器（bell-timbre-lab 定稿音色），没有才退回 mp3
+      if (window.AOYU_NOTE_SYNTH && window.AOYU_NOTE_SYNTH.play(index)) {
+        this.resumeAudio();
+        console.log('AOYU_NOTE_PLAY', index, CONFIG.notes[index], 'synth');
+        return;
+      }
       var buffer = this.noteBuffers && this.noteBuffers[index];
       if (this.audioCtx && buffer) {
         this.resumeAudio();
