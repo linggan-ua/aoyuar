@@ -64,8 +64,9 @@
     transition: opacity .45s ease, visibility .45s ease;
   }
   .start-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+  /* 启动页海报（竖版）：尽量放大到能看清上面的字，同时给下面的说明和按钮留位置 */
   #start-poster {
-    max-height: 48vh; max-width: 76vw; width: auto;
+    max-height: 58vh; max-width: min(86vw, 420px); width: auto;
     filter: drop-shadow(0 12px 44px rgba(5, 248, 171, .16));
   }
   .start-tips { color: #9fb3a9; font-size: 13px; line-height: 1.9; }
@@ -228,7 +229,7 @@
 <div id="ui">
   <!-- 启动页（还原老版本）-->
   <div id="start-overlay" class="start-overlay">
-    <img id="start-poster" src="../assets/ui/title-ink.png" alt="水墨與絲竹的對話 · 沉浸式国乐剧场">
+    <img id="start-poster" src="../assets/ui/start-poster-v2.png" alt="水墨與絲竹的對話 · 沉浸式国乐剧场">
     <div class="start-tips">扫描<b>鳌鱼二维码</b>，在二维码上方查看<b>鳌鱼</b><br>首次进入请点击「允许/Allow」授权摄像头</div>
     <button id="start-ar-button" type="button" disabled>资源准备中…</button>
     <div class="start-note"> </div>
