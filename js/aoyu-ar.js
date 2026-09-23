@@ -13,6 +13,11 @@
 
   var THREE = AFRAME.THREE;
 
+  // 屏幕空间手指容差（像素）：葫芦丝那个项目用的是 34px，鱼身子细，取 26px
+  var HIT_PADDING_PX = 26;
+  // 算轮廓/包围盒时每个网格抽多少个顶点
+  var HIT_SAMPLES = 96;
+
   // 自适应缩放允许游动范围碰到画面的这个边界（0.8 = 四周各留 10% 余量），以及最小倍率
   var SCREEN_FIT_LIMIT = 0.8;
   var SCREEN_FIT_MIN = 0.1;
@@ -31,6 +36,10 @@
     // 不会像旧版那样在原地快速打转。
     startleEnabled: true,
     startleMs: 1100,
+    // 受惊"窜出去"的那一下：瞬间给到 burst 倍（相对持续冲刺速度），
+    // 然后在 startleBurstMs 内按曲线落回持续冲刺速度——开头极快、后面保持快游。
+    startleBurstMul: 2.0,
+    startleBurstMs: 180,
     tuningLimits: {
       speedScale: [0.5, 4.0],
       turnScale: [0.5, 1.7],
@@ -66,6 +75,43 @@
     lastProj.a = m[0];
     lastProj.b = m[5];
     camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+  }
+
+  /** 2D 凸包（Andrew monotone chain），输入/输出都是 [[x,y], ...] */
+  function convexHull(points) {
+    var pts = points.slice().sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+    if (pts.length < 3) return pts;
+    var cross = function (o, a, b) {
+      return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    };
+    var lower = [], upper = [], i;
+    for (i = 0; i < pts.length; i++) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], pts[i]) <= 0) lower.pop();
+      lower.push(pts[i]);
+    }
+    for (i = pts.length - 1; i >= 0; i--) {
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], pts[i]) <= 0) upper.pop();
+      upper.push(pts[i]);
+    }
+    lower.pop(); upper.pop();
+    return lower.concat(upper);
+  }
+
+  /** 点在凸包内，或者离轮廓不超过 pad 像素（手指容差） */
+  function hullHit(hull, px, py, pad) {
+    if (!hull || hull.length < 3) return false;
+    var inside = false, near = false;
+    for (var i = 0, j = hull.length - 1; i < hull.length; j = i++) {
+      var xi = hull[i][0], yi = hull[i][1];
+      var xj = hull[j][0], yj = hull[j][1];
+      if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
+      var dx = xj - xi, dy = yj - yi;
+      var len2 = dx * dx + dy * dy;
+      var t = len2 > 0 ? Math.max(0, Math.min(1, ((px - xi) * dx + (py - yi) * dy) / len2)) : 0;
+      var cx = xi + t * dx - px, cy = yi + t * dy - py;
+      if (cx * cx + cy * cy <= pad * pad) near = true;
+    }
+    return inside || near;
   }
 
   /** 调试用的碰撞盒挂在模型下面，包围盒测量必须跳过它自己，否则会越算越大 */
@@ -255,6 +301,7 @@
       this.stateDuration = 0;
       this.bank = 0;
       this.startleUntil = 0;
+      this.startleBurstUntil = 0;
       this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1, startleSpeed: 4 };
       this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 锦鲤 0.55）
       this.appliedScale = 0;   // 0 表示还没写过缩放，第一帧一定会写一次
@@ -303,10 +350,15 @@
       return len;
     },
 
-    /** 冲刺速度（卡宽/秒）：鱼自己会朝这个速度冲，受惊时用 */
+    /** 持续冲刺速度（卡宽/秒）：受惊后保持的那段快速游动 */
     dashSpeed: function () {
       var rangeBoost = Math.max(0.25, this.tuning.rangeScale * this.fit);
       return this.data.speed * this.tuning.startleSpeed * this.tuning.speedScale * rangeBoost;
+    },
+
+    /** 爆冲速度：受惊那一瞬间的瞬时速度（比持续冲刺快一截，然后很快落回来） */
+    burstSpeed: function () {
+      return this.dashSpeed() * CONFIG.startleBurstMul;
     },
 
     /**
@@ -423,7 +475,8 @@
         // 冲刺：不追目标点，朝逃跑方向直着窜；窜到活动边界的 95% 就收
         dirX = this.startleDir.x;
         dirZ = this.startleDir.z;
-        if (rn > 0.95) { boosting = false; this.startleUntil = 0; }
+        // 爆冲那 180ms 内不判边界，免得刚窜出去就结束（后面那段快速游动会被吃掉）
+        if (rn > 0.95 && time > this.startleBurstUntil) { boosting = false; this.startleUntil = 0; }
       } else {
         // 正常巡游：朝目标 + 越靠边越强的向内修正
         if (dist < 0.12 || this.targetTime > this.targetDuration) this.pickTarget();
@@ -481,14 +534,22 @@
       // 反过来，自适应把范围缩小之后速度也要跟着缩，否则鱼会在缩小的圈里狂转。
       // 两种情况都靠这一个系数，保证"游完一圈的时间"与范围无关。
       var rangeBoost = Math.max(0.25, this.tuning.rangeScale * this.fit);
-      var want_speed = boosting
-        ? Math.max(this.dashSpeed(), this.speedTarget * this.tuning.speedScale * rangeBoost * 1.5)
-        : this.speedTarget * this.tuning.speedScale * rangeBoost;
-      // 冲刺时加速要猛；冲刺结束后速度远高于巡航，收油也要明显，不然会一路滑出去
-      var over = this.speed > want_speed * 1.3;
-      var accel = (want_speed > this.speed ? (boosting ? 9 : 1.2) : (over ? 3.2 : 0.9)) *
-        Math.max(1, rangeBoost * 0.6);
-      this.speed += Math.max(-accel * d, Math.min(accel * d, want_speed - this.speed));
+      var dash = this.dashSpeed();
+      if (boosting && time < this.startleBurstUntil) {
+        // 爆冲阶段：速度按曲线从爆冲值落回持续冲刺值。
+        // 这一段直接写速度、不走加速度积分——积分出来的曲线开头不够陡。
+        var kBurst = (this.startleBurstUntil - time) / CONFIG.startleBurstMs;   // 1 → 0
+        this.speed = dash + (this.burstSpeed() - dash) * Math.max(0, Math.min(1, kBurst));
+      } else {
+        var want_speed = boosting
+          ? Math.max(dash, this.speedTarget * this.tuning.speedScale * rangeBoost * 1.5)
+          : this.speedTarget * this.tuning.speedScale * rangeBoost;
+        // 冲刺时加速要猛；冲刺结束后速度远高于巡航，收油也要明显，不然会一路滑出去
+        var over = this.speed > want_speed * 1.3;
+        var accel = (want_speed > this.speed ? (boosting ? 9 : 1.2) : (over ? 3.2 : 0.9)) *
+          Math.max(1, rangeBoost * 0.6);
+        this.speed += Math.max(-accel * d, Math.min(accel * d, want_speed - this.speed));
+      }
       if (!(this.speed > 0)) this.speed = 0;            // 同时挡住 NaN 与负数
 
       // 积分 + 高度起伏
@@ -572,10 +633,14 @@
       this.targetTime = 0;
       this.targetDuration = 10;                  // 冲刺期间不换目标
       this.startleUntil = now + CONFIG.startleMs;
-      // 起步就窜：直接给到冲刺速度的一半多，剩下的靠加速度补
-      this.speed = Math.max(this.speed, this.dashSpeed() * 0.6);
+      // 受惊的这一下：速度直接顶到爆冲值（不是慢慢加速），然后在 startleBurstMs 内
+      // 沿曲线落回持续冲刺速度——像鱼被吓到突然窜出去，然后保持快游。
+      this.speed = Math.max(this.speed, this.burstSpeed());
+      this.startleBurstUntil = now + CONFIG.startleBurstMs;
       console.log('AOYU_STARTLE_SET 逃脱距离=' + best.dist.toFixed(2) +
-        ' 冲刺速度=' + this.dashSpeed().toFixed(2) + ' 当前速度=' + this.speed.toFixed(2));
+        ' 爆冲速度=' + this.burstSpeed().toFixed(2) +
+        ' 持续冲刺=' + this.dashSpeed().toFixed(2) +
+        ' 当前速度=' + this.speed.toFixed(2));
     },
 
     /** 从 (px,pz) 沿 (dx,dz) 走到半径 k·R 的圆边界要走多远（解一元二次） */
@@ -1024,23 +1089,32 @@
     },
 
     /* ---------- 点击：点鱼身出声，点空白吓一跳 ---------- */
+    /**
+     * 判定放在**手指按下**的那一刻，不是抬手那一刻——
+     * 鱼一直在游，抬手时它已经挪走了，按抬手的坐标判就会"看着点到了却没中"
+     * （葫芦丝那个项目的音孔也是在 pointerdown 判的）。
+     * 抬手只用来确认"这是点击而不是拖拽"：没点中才走惊吓。
+     */
     bindTap: function () {
       var self = this;
-      var down = null;
+      this.down = null;
       var start = function (event) {
         if (self.isUi(event)) return;
-        down = { x: event.clientX, y: event.clientY };
+        var hit = self.handleTapDown(event.clientX, event.clientY);
+        self.down = { x: event.clientX, y: event.clientY, hit: hit };
       };
       var end = function (event) {
         if (self.isUi(event)) return;
+        var down = self.down;
+        self.down = null;
         if (!down) return;
         var moved = Math.abs(event.clientX - down.x) + Math.abs(event.clientY - down.y);
-        down = null;
         if (moved > 20) {                  // 拖着画面/晃手机不算点击
           console.log('AOYU_TAP_SKIP 手指移动了', Math.round(moved), 'px');
           return;
         }
-        self.handleTap(event.clientX, event.clientY);
+        if (down.hit) return;              // 按下的地方是鱼，声音已经出了
+        self.handleTapEmpty(down.x, down.y);
       };
       window.addEventListener('pointerdown', start, { passive: true });
       window.addEventListener('pointerup', end, { passive: true });
@@ -1051,20 +1125,25 @@
       return !!(el && el.closest && el.closest('#ui'));
     },
 
-    handleTap: function (x, y) {
+    /** 手指按下：按这一瞬间的位置判定，点中就立刻出声 */
+    handleTapDown: function (x, y) {
       this.resumeAudio();
       if (!this.markerActive || this.fishHidden) {
         // 卡片刚好丢了的时候点屏幕是不会有反应的，记一笔省得下次又当成"点不中鱼"
         console.log('AOYU_TAP_SKIP markerActive=' + this.markerActive + ' fishHidden=' + this.fishHidden);
-        return;
+        return false;
       }
       var fish = this.activeFish();
+      if (!fish) return false;
+      if (!this.hitFish(fish, x, y)) return false;
+      this.playRandomNote();
+      return true;
+    },
+
+    /** 抬手确认是点击（不是拖拽）、且按下的地方不是鱼 → 吓一跳 */
+    handleTapEmpty: function (x, y) {
+      var fish = this.activeFish();
       if (!fish) return;
-      if (this.hitFish(fish, x, y)) {
-        this.playRandomNote();
-        return;
-      }
-      // 点空白：拿点击落点当威胁点，让鱼朝反方向窜出去
       if (!CONFIG.startleEnabled) return;
       var local = cardPointFromScreen(x, y);
       var threat = local ? { x: local.x, z: local.z } : null;
@@ -1077,14 +1156,18 @@
     },
 
     /**
-     * 命中判定。两层，任意一层中就算点到了鱼：
+     * 命中判定。三层，任意一层中就算点到了鱼（这一套是照葫芦丝那个项目的做法来的）：
      *   ① 模型网格射线：three 的 raycast 对 SkinnedMesh 会用 boneTransform 逐三角形算，
-     *      所以它是跟着当前骨骼姿势的（但只有真正的三角形才算，鱼鳍这种薄片容易擦过去）
-     *   ② **模型本地包围盒 + 25% 手指容差**（主力层）：射线转进模型坐标系里判，
-     *      所以盒子跟着鱼的朝向走，不会因为旋转而虚胖
+     *      所以它跟着当前骨骼姿势（但只有真正的三角形才算，鱼鳍这种薄片容易擦过去）
+     *   ② **模型本地包围盒 + 25% 手指容差**：射线转进模型坐标系里判，
+     *      盒子跟着鱼的朝向走，不会因为旋转而虚胖
+     *   ③ **屏幕轮廓 + 26px 手指容差**：把鱼的顶点投到屏幕上取凸包，
+     *      手指落在轮廓里、或者离轮廓不超过 26px 都算点中。
+     *      葫芦丝的音孔就靠这一层"感觉特别准"——因为容差是按屏膜像素给的，
+     *      眼睛看到点到了就算到。前两层判不出来时用它兜。
      *
-     * 注意：这个盒子必须跟着骨骼动画重算。之前用的是 geometry.boundingBox（绑定姿势），
-     * 鱼一摆尾/转向，实际身体就跑到盒子外面去了 —— 这就是"有时候点鱼没声音"的根源。
+     * 注意：包围盒必须跟着骨骼动画重算（之前用绑定姿势的 geometry.boundingBox，
+     * 鱼一摆尾身体就跑到盒子外面，这是"点鱼没声音"的一个根源）。
      */
     hitFish: function (fish, clientX, clientY) {
       var sceneEl = this.sceneEl;
@@ -1093,7 +1176,11 @@
       var meshEl = fish.data.anim;
       var mesh = meshEl && meshEl.getObject3D('mesh');
       if (!canvas || !camera || !mesh) return false;
+      // 葫芦丝那边踩过的坑，照抄：射线判定前必须把投影逆矩阵和世界矩阵都刷新，
+      // 否则算出来的射线是旧的（AR.js 会直接往 camera.projectionMatrix 里拷矩阵）
       syncProjectionInverse(camera);
+      camera.updateMatrixWorld(true);
+      sceneEl.object3D.updateMatrixWorld(true);
       var rect = canvas.getBoundingClientRect();
       if (!rect.width || !rect.height) return false;
       ndc.set(((clientX - rect.left) / rect.width) * 2 - 1,
@@ -1117,14 +1204,76 @@
             size.x.toFixed(2) + '×' + size.y.toFixed(2) + '×' + size.z.toFixed(2), '卡宽');
           return true;
         }
-        console.log('AOYU_HIT', fish.data.key, '没点中',
-          '本地射线 ' + localRay.origin.x.toFixed(2) + ',' + localRay.origin.y.toFixed(2) + ',' + localRay.origin.z.toFixed(2) +
-          ' 方向 ' + localRay.direction.x.toFixed(3) + ',' + localRay.direction.y.toFixed(3) + ',' + localRay.direction.z.toFixed(3) +
-          ' 盒尺寸 ' + size.x.toFixed(2) + '×' + size.y.toFixed(2) + '×' + size.z.toFixed(2) +
-          ' 盒中心 ' + box.getCenter(new THREE.Vector3()).x.toFixed(2) + ',' +
-          box.getCenter(new THREE.Vector3()).y.toFixed(2) + ',' + box.getCenter(new THREE.Vector3()).z.toFixed(2));
+        console.log('AOYU_HIT', fish.data.key, '包围盒没中',
+          '盒尺寸 ' + size.x.toFixed(2) + '×' + size.y.toFixed(2) + '×' + size.z.toFixed(2));
       }
+
+      // ③ 屏幕轮廓 + 手指容差（葫芦丝的音孔就靠这层，容差按像素算，"看着点到就算到"）
+      var hull = this.fishScreenHull(fish, camera, rect);
+      var hullDist = hull ? this.distanceToHull(hull, clientX, clientY) : -1;
+      if (hull && hullHit(hull, clientX, clientY, HIT_PADDING_PX)) {
+        console.log('AOYU_HIT', fish.data.key, '轮廓+容差',
+          hull.length + '点 轮廓距离=' + hullDist.toFixed(1) + 'px');
+        return true;
+      }
+      var hullBox = '';
+      if (hull && hull.length) {
+        var mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity;
+        for (var hi = 0; hi < hull.length; hi++) {
+          mnx = Math.min(mnx, hull[hi][0]); mxx = Math.max(mxx, hull[hi][0]);
+          mny = Math.min(mny, hull[hi][1]); mxy = Math.max(mxy, hull[hi][1]);
+        }
+        hullBox = ' 轮廓框 ' + Math.round(mnx) + ',' + Math.round(mny) + '~' + Math.round(mxx) + ',' + Math.round(mxy);
+      }
+      console.log('AOYU_HIT', fish.data.key, '没点中',
+        '离轮廓 ' + (hullDist >= 0 ? hullDist.toFixed(1) + 'px（容差 ' + HIT_PADDING_PX + 'px）' : '算不出来') + hullBox);
       return false;
+    },
+
+    /** 手指点到轮廓的距离（在轮廓内返回 0） */
+    distanceToHull: function (hull, px, py) {
+      if (!hull || hull.length < 3) return -1;
+      if (hullHit(hull, px, py, 0)) return 0;
+      var best = Infinity;
+      for (var i = 0, j = hull.length - 1; i < hull.length; j = i++) {
+        var xi = hull[i][0], yi = hull[i][1];
+        var xj = hull[j][0], yj = hull[j][1];
+        var dx = xj - xi, dy = yj - yi;
+        var len2 = dx * dx + dy * dy;
+        var t = len2 > 0 ? Math.max(0, Math.min(1, ((px - xi) * dx + (py - yi) * dy) / len2)) : 0;
+        var cx = xi + t * dx - px, cy = yi + t * dy - py;
+        best = Math.min(best, Math.sqrt(cx * cx + cy * cy));
+      }
+      return best;
+    },
+
+    /**
+     * 把鱼的顶点投影到屏幕上，取凸包当轮廓。
+     * 蒙皮网格用 boneTransform 算当前姿势（和命中判定同一套坐标），普通网格直接取顶点。
+     */
+    fishScreenHull: function (fish, camera, rect) {
+      var animEl = fish.data.anim;
+      var root = animEl && animEl.getObject3D('mesh');
+      if (!root) return null;
+      var pts = [];
+      var v = new THREE.Vector3();
+      root.updateWorldMatrix(true, true);
+      root.traverse(function (node) {
+        if (!node.isMesh || !node.geometry || isDebugHitBox(node)) return;
+        var pos = node.geometry.attributes && node.geometry.attributes.position;
+        if (!pos) return;
+        var step = Math.max(1, Math.floor(pos.count / HIT_SAMPLES));
+        for (var i = 0; i < pos.count; i += step) {
+          v.fromBufferAttribute(pos, i);
+          if (node.isSkinnedMesh && node.skeleton) node.boneTransform(i, v);
+          v.applyMatrix4(node.matrixWorld).project(camera);
+          if (!isFinite(v.x) || !isFinite(v.y)) continue;
+          pts.push([rect.left + (v.x * 0.5 + 0.5) * rect.width,
+                    rect.top + (-v.y * 0.5 + 0.5) * rect.height]);
+        }
+      });
+      if (pts.length < 3) return null;
+      return convexHull(pts);
     },
 
     /**
@@ -1149,7 +1298,7 @@
         if (!pos) return;
         tmp.copy(inverse).multiply(node.matrixWorld);      // 该网格本地 → 模型本地
         if (node.isSkinnedMesh && node.skeleton) {
-          var step = Math.max(1, Math.floor(pos.count / 96));
+          var step = Math.max(1, Math.floor(pos.count / HIT_SAMPLES));
           for (var i = 0; i < pos.count; i += step) {
             v.fromBufferAttribute(pos, i);                 // boneTransform 要求先放绑定姿势的位置
             node.boneTransform(i, v);
