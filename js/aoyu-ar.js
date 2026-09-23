@@ -1274,6 +1274,24 @@
     recoverVideo: function (video) {
       var stream = video && video.srcObject;
       if (!stream) return;
+      // 流本身还活着（track.readyState === 'live'）→ 重挂同一路就够了；
+      // 如果 track 已经 ended（Chrome 长时间遮挡后可能直接结束这路流），重挂旧流也没用，
+      // 必须重新 getUserMedia 开一次摄像头。
+      var live = false;
+      var tracks = stream.getVideoTracks ? stream.getVideoTracks() : [];
+      for (var i = 0; i < tracks.length; i++) {
+        if (tracks[i].readyState === 'live') { live = true; break; }
+      }
+      if (!live && tracks.length) {
+        var now = performance.now();
+        if (!this._lastReacquireAt || now - this._lastReacquireAt > 5000) {
+          this._lastReacquireAt = now;
+          console.log('AOYU_VIDEO_REACQUIRE 原流已结束（track.readyState=' + tracks[0].readyState + '），重新开摄像头');
+          this.openCameraByGesture();   // 复用"点一下开相机"那条路径（自己 getUserMedia + 挂到 video 上）
+          return;
+        }
+        return;
+      }
       video.style.display = 'none';
       video.srcObject = null;
       video.srcObject = stream;
