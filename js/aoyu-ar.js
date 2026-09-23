@@ -1015,6 +1015,26 @@
       });
       this.gateEl.addEventListener('click', function () { self.openCameraByGesture(); });
 
+      // 每 0.5 秒对齐一次状态（相机切镜头导致事件漏发时能自愈）
+      setInterval(function () { self.syncWithMarkerState(); }, 500);
+
+      // 记录视频尺寸变化：iPhone 靠近时系统自动切镜头会走这里，日志里能直接看出来
+      window.addEventListener('arjs-video-loaded', function (event) {
+        var video = (event.detail && event.detail.component) || document.querySelector('#arjs-video');
+        if (!video || video.tagName !== 'VIDEO') return;
+        var lastSize = '';
+        video.addEventListener('resize', function () {
+          var size = video.videoWidth + '×' + video.videoHeight;
+          if (size === lastSize) return;
+          console.log('AOYU_CAMERA_VIDEO_RESIZED ' + (lastSize || '?') + ' → ' + size);
+          lastSize = size;
+        });
+        video.addEventListener('loadedmetadata', function () {
+          lastSize = video.videoWidth + '×' + video.videoHeight;
+          console.log('AOYU_CAMERA_VIDEO_META ' + lastSize);
+        });
+      });
+
       // 兜底：2 秒后还没画面就弹手势层；已经出画面了就补一次"相机就绪"
       setTimeout(function () {
         if (self.isVideoLive(self.findArVideo())) self.onCameraLive();
@@ -1159,7 +1179,8 @@
         '　ready ' + video.readyState +
         '　' + (video.paused ? '暂停' : '播放中') +
         '　' + (video.srcObject ? '有流' : '无流') +
-        '　z ' + style.zIndex + '　' + style.display + '/' + style.visibility + '/' + style.opacity;
+        '　z ' + style.zIndex + '　' + style.display + '/' + style.visibility + '/' + style.opacity +
+        '　卡片 ' + (this.marker && this.marker.object3D && this.marker.object3D.visible ? '已识别' : '未识别');
     },
 
     showGate: function (error) {
@@ -1446,6 +1467,31 @@
         console.error('AOYU_NOTE_PLAY_ERROR', error);
       }
       console.log('AOYU_NOTE_PLAY', index, CONFIG.notes[index], 'audio-element');
+    },
+
+    /**
+     * 看门狗：把"我们的显示状态"和"AR.js 实际检测到的状态"每隔一会儿对齐一次。
+     *
+     * 为什么需要：相机切换镜头（主摄↔广角）时画面会卡一下，AR.js 可能漏发/错发一次
+     * markerFound/markerLost，我们的隐藏-显示状态机就会卡在"鱼藏着"上——现象就是
+     * 卡片明明清清楚楚，鱼却再也不出来。官方示例里内容直接挂在 marker 下、由 AR.js 的
+     * object3D.visible 控制，没有第二套状态，所以不会卡；我们这套状态机就得自己兜。
+     */
+    syncWithMarkerState: function () {
+      var marker = this.marker;
+      if (!marker || !marker.object3D) return;
+      var visible = !!marker.object3D.visible;
+      // 连续两次采样都是"检测到"才强制恢复，避免撞上 AR.js 每帧先置 false 再置 true 的时序
+      if (visible) this.markerVisibleStreak = (this.markerVisibleStreak || 0) + 1;
+      else this.markerVisibleStreak = 0;
+      if (this.markerVisibleStreak >= 2 && (this.fishHidden || !this.markerActive)) {
+        console.log('AOYU_MARKER_RESYNC 卡片在画面里但鱼还藏着 → 强制恢复显示');
+        this.markerActive = true;
+        this.fishHidden = false;
+        if (this.hideTimer) { clearTimeout(this.hideTimer); this.hideTimer = null; }
+        var fish = this.activeFish();
+        if (fish) fish.enter();
+      }
     },
 
     /* ---------- 卡片在不在画面里 ---------- */
