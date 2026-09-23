@@ -184,7 +184,7 @@
          embedded
          vr-mode-ui="enabled: false"
          renderer="colorManagement: true;"
-         arjs="sourceType: image; sourceUrl: ../assets/patterns/pattern-card-v3.png; debugUIEnabled: false; patternRatio: 0.5; errorPopup: ar-error; sourceWidth: 1920; sourceHeight: 1080">
+         arjs="sourceType: image; sourceUrl: ../assets/patterns/pattern-card-v3.png; debugUIEnabled: false; patternRatio: 0.5; cameraParametersUrl: ../assets/arjs/camera_para.dat; errorPopup: ar-error; sourceWidth: 1920; sourceHeight: 1080">
 
   <a-assets timeout="30000">
     <a-asset-item id="aoyu-model" src="../assets/models/aoyu_ink.glb"></a-asset-item>
@@ -286,8 +286,16 @@
     <div class="db-row">
       <button id="db-size-m">鱼小一点</button>
       <button id="db-size-p">鱼大一点</button>
+      <button id="db-startle-m">惊吓-</button>
+      <button id="db-startle-p">惊吓+</button>
+    </div>
+    <div class="db-row">
       <button id="db-material">材质：标准</button>
+      <button id="db-hitbox">碰撞盒：关</button>
       <button id="db-adaptive">自适应：关</button>
+    </div>
+    <div class="db-row">
+      <button id="db-anchor">锚点环</button>
       <button id="db-reset">恢复默认</button>
     </div>
 
@@ -331,6 +339,6 @@
   setTimeout(function () { console.log('PROBE >>> 模拟丢卡'); window.dispatchEvent(new CustomEvent('markerLost')); }, 6000);
   setTimeout(function () { console.log('PROBE >>> 模拟重新找到卡'); window.dispatchEvent(new CustomEvent('markerFound', { detail: document.getElementById('ar-marker') })); }, 12000);
 </script>
-<script src="../js/aoyu-ar.js?v=40"></script>
+<script src="../js/aoyu-ar.js?v=44"></script>
 </body>
 </html>

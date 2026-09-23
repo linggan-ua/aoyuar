@@ -26,15 +26,17 @@
       return 'assets/audio/' + name + '.mp3';
     }),
     storageKey: 'aoyu-tuning-v4',   // v1/v2 的『摆尾上限』语义已变成『摆尾倍率』，换键避免旧值生效
-    // 惊吓（点空白让鱼窜出去）：暂时禁用。原因是惊吓把速度乘 3.2，而转弯半径是固定的
-    // （身长×1.25，被场地封顶），速度变快时角速度也跟着快 3.2 倍，在那个偏小的圈里
-    // 快速打转，看起来就是"原地转圈"。想恢复就把这里改回 true。
-    startleEnabled: false,
+    // 惊吓（点空白让鱼窜出去）：速度倍率可调（默认 4×），冲刺 1.1 秒。
+    // 关键点是冲刺期间**转弯半径跟着速度一起放大**，角速度不跟着飙，所以是"直线窜走"，
+    // 不会像旧版那样在原地快速打转。
+    startleEnabled: true,
+    startleMs: 1100,
     tuningLimits: {
       speedScale: [0.5, 4.0],
       turnScale: [0.5, 1.7],
       rangeScale: [0.5, 8.0],     // 活动范围：1 = 椭圆半径 0.70×0.50 卡宽；小卡片（印在节目单上）要放大很多才游得开
       animSpeedMax: [0.5, 2.5],   // 摆尾倍率（椭圆轨道下它就是骨骼动画的速度倍率）
+      startleSpeed: [1.5, 8.0],   // 惊吓冲刺速度倍率（相对巡航速度）
       modelScale: [0.05, 2.0]     // 鱼的大小（默认基准已是 6 倍，所以下限放到 0.05 方便往回收）
     }
   };
@@ -50,6 +52,29 @@
 
   function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
 
+  /**
+   * AR.js 每帧把它的投影矩阵**直接拷**进 camera.projectionMatrix，three 的
+   * projectionMatrixInverse 不会跟着更新；而 Raycaster.setFromCamera 用的正是那个逆矩阵。
+   * 不同步的话，"手指点的屏幕位置"和"算出来的射线方向"就对不上——点鱼有时点不中、
+   * 越靠画面边缘偏得越多，就是这个原因。这里只在投影矩阵变化时重算一次。
+   */
+  var lastProj = { a: NaN, b: NaN };
+  function syncProjectionInverse(camera) {
+    if (!camera || !camera.projectionMatrixInverse) return;
+    var m = camera.projectionMatrix.elements;
+    if (m[0] === lastProj.a && m[5] === lastProj.b) return;
+    lastProj.a = m[0];
+    lastProj.b = m[5];
+    camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+  }
+
+  /** 调试用的碰撞盒挂在模型下面，包围盒测量必须跳过它自己，否则会越算越大 */
+  function isDebugHitBox(node) {
+    if (node.userData && node.userData.aoyuDebug) return true;
+    var el = node.el;
+    return !!(el && el.closest && el.closest('#hit-box'));
+  }
+
   /** 屏幕坐标 → 卡片局部坐标（打到卡面平面上）；打不到（卡几乎侧对镜头）返回 null */
   function cardPointFromScreen(clientX, clientY) {
     var sceneEl = document.querySelector('a-scene');
@@ -57,6 +82,7 @@
     var camera = sceneEl && sceneEl.camera;
     var canvas = sceneEl && sceneEl.renderer && sceneEl.renderer.domElement;
     if (!marker || !camera || !canvas) return null;
+    syncProjectionInverse(camera);
     var rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
     ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
@@ -140,6 +166,44 @@
   });
 
   /* =========================================================================
+   * 调试用：把命中判定用的那个包围盒画出来
+   *   - 挂在当前这条鱼的模型节点下，坐标就是模型本地坐标，永远和鱼同一个姿态
+   *   - 每帧调 app.fishLocalBox() 重算，和点击命中用的是同一个函数：看到的即判定用的
+   * ========================================================================= */
+  AFRAME.registerComponent('hitbox-debug', {
+    init: function () {
+      this.el.setAttribute('geometry', 'primitive: box');
+      this.el.setAttribute('material',
+        'shader: flat; color: #ff2bd6; opacity: 0.14; transparent: true; depthTest: false');
+      var wire = document.createElement('a-entity');
+      wire.setAttribute('geometry', 'primitive: box');
+      wire.setAttribute('material',
+        'shader: flat; color: #ff2bd6; wireframe: true; transparent: true; opacity: 0.95; depthTest: false');
+      this.el.appendChild(wire);
+      this.el.object3D.userData.aoyuDebug = true;     // 各种包围盒测量要跳过它自己
+      wire.object3D.userData.aoyuDebug = true;
+      this.size = new THREE.Vector3();
+      this.center = new THREE.Vector3();
+    },
+    tick: function () {
+      var fish = app && app.activeFish();
+      var animEl = fish && fish.data.anim;
+      var mesh = animEl && animEl.getObject3D('mesh');
+      if (!fish || !animEl || !mesh) return;
+      // 直接把盒子挂到模型对象下面：坐标系和命中判定用的那套（模型本地坐标）完全一致，
+      // 中间不管有多少层旋转/缩放都不会错位。
+      if (this.el.object3D.parent !== mesh) mesh.add(this.el.object3D);
+      var box = app.fishLocalBox(mesh);
+      if (!box) return;
+      box.getSize(this.size);
+      box.getCenter(this.center);
+      this.el.object3D.position.copy(this.center);
+      this.el.object3D.scale.copy(this.size);
+      this.el.object3D.visible = !fish.hidden;    // 鱼藏起来了盒子也别留着
+    }
+  });
+
+  /* =========================================================================
    * 一条鱼：游动 + 入场退场 + 惊吓
    * ========================================================================= */
   /**
@@ -191,7 +255,7 @@
       this.stateDuration = 0;
       this.bank = 0;
       this.startleUntil = 0;
-      this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1 };
+      this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1, startleSpeed: 4 };
       this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 锦鲤 0.55）
       this.appliedScale = 0;   // 0 表示还没写过缩放，第一帧一定会写一次
       this.hidden = true;
@@ -223,12 +287,26 @@
       // 模型还没加载完时不要缓存兜底值，否则会永久停在 1.00
       if (!root) return 1;
       root.updateWorldMatrix(true, true);
-      var box = new THREE.Box3().setFromObject(root);
+      var box = new THREE.Box3();
+      var tmp = new THREE.Box3();
+      root.traverse(function (node) {
+        if (!node.isMesh || !node.geometry) return;
+        if (isDebugHitBox(node)) return;                        // 跳过调试用的碰撞盒
+        if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
+        if (!node.geometry.boundingBox) return;
+        box.union(tmp.copy(node.geometry.boundingBox).applyMatrix4(node.matrixWorld));
+      });
       if (box.isEmpty()) return 1;
       var size = box.getSize(new THREE.Vector3());
       var len = Math.max(size.x, size.z);
       if (!(len > 0.05) || !isFinite(len)) return 1;
       return len;
+    },
+
+    /** 冲刺速度（卡宽/秒）：鱼自己会朝这个速度冲，受惊时用 */
+    dashSpeed: function () {
+      var rangeBoost = Math.max(0.25, this.tuning.rangeScale * this.fit);
+      return this.data.speed * this.tuning.startleSpeed * this.tuning.speedScale * rangeBoost;
     },
 
     /** 用户调出来的活动椭圆（不含自适应缩放），单位＝卡宽 */
@@ -332,23 +410,32 @@
       }
 
       var r = this.radii();
+      var boosting = this.startleUntil > time;
+      var rn = Math.sqrt((this.pos.x / r.x) * (this.pos.x / r.x) +
+                         (this.pos.z / r.z) * (this.pos.z / r.z));   // 0=中心 1=边界
       var dx = this.target.x - this.pos.x;
       var dz = this.target.z - this.pos.z;
       var dist = Math.sqrt(dx * dx + dz * dz);
       this.targetTime += d;
-      if (dist < 0.12 || this.targetTime > this.targetDuration) this.pickTarget();
-
-      // 期望方向：朝目标 + 越靠边越强的向内修正
-      var dirX = dist > 1e-4 ? dx / dist : this.head.x;
-      var dirZ = dist > 1e-4 ? dz / dist : this.head.z;
-      var rn = Math.sqrt((this.pos.x / r.x) * (this.pos.x / r.x) +
-                         (this.pos.z / r.z) * (this.pos.z / r.z));   // 0=中心 1=边界
-      if (rn > 0.75) {
-        var back = Math.min(1, (rn - 0.75) / 0.25) * 2.0;
-        var len = Math.sqrt(this.pos.x * this.pos.x + this.pos.z * this.pos.z) || 1;
-        dirX -= (this.pos.x / len) * back;
-        dirZ -= (this.pos.z / len) * back;
+      var dirX, dirZ;
+      if (boosting && this.startleDir) {
+        // 冲刺：不追目标点，朝逃跑方向直着窜；窜到活动边界的 95% 就收
+        dirX = this.startleDir.x;
+        dirZ = this.startleDir.z;
+        if (rn > 0.95) { boosting = false; this.startleUntil = 0; }
+      } else {
+        // 正常巡游：朝目标 + 越靠边越强的向内修正
+        if (dist < 0.12 || this.targetTime > this.targetDuration) this.pickTarget();
+        dirX = dist > 1e-4 ? dx / dist : this.head.x;
+        dirZ = dist > 1e-4 ? dz / dist : this.head.z;
+        if (rn > 0.75) {
+          var back = Math.min(1, (rn - 0.75) / 0.25) * 2.0;
+          var len = Math.sqrt(this.pos.x * this.pos.x + this.pos.z * this.pos.z) || 1;
+          dirX -= (this.pos.x / len) * back;
+          dirZ -= (this.pos.z / len) * back;
+        }
       }
+      if (this.boosting && !boosting) this.pickTarget();   // 冲刺刚结束：挑个新目标继续巡游
       var dl = Math.sqrt(dirX * dirX + dirZ * dirZ) || 1;
       dirX /= dl; dirZ /= dl;
 
@@ -369,6 +456,9 @@
       //         否则半径超过场地，鱼就只会绕着码转圈——实测半径 4.07 > 场地 2.5 就是这样）
       var turnRadius = Math.min(bodyLen * 1.25, Math.min(r.x, r.z) * 0.6);
       if (!(turnRadius > 0.05) || !isFinite(turnRadius)) turnRadius = 0.6;
+      // 冲刺时转弯半径跟速度一起放大：角速度≈不变，所以是"直线窜出去"，
+      // 而不是旧版那样在原地快速打转（角速度也乘 3.2）。
+      if (boosting) turnRadius *= Math.max(1.5, this.tuning.startleSpeed * 0.7);
       this.turnRadius = turnRadius;                    // 调试面板显示真实值
       var maxTurn = Math.max(0.12, speedNow / turnRadius) * this.tuning.turnScale * d;
       var turn = Math.max(-maxTurn, Math.min(maxTurn, diff));
@@ -385,14 +475,18 @@
         this.stateDuration = 1.2 + this.rng() * 2.5;
         this.speedTarget = this.data.speed * (0.45 + this.rng() * 1.1);
       }
-      var boosting = this.startleUntil > time;
       // 速度按"实际能游的范围"线性放大：范围是按卡片宽度算的，卡片印小、范围调到 8 倍时，
       // 若速度不变，鱼要花 8 倍时间才能游完一圈——看着就是"卡在原地游不起来"；
       // 反过来，自适应把范围缩小之后速度也要跟着缩，否则鱼会在缩小的圈里狂转。
       // 两种情况都靠这一个系数，保证"游完一圈的时间"与范围无关。
       var rangeBoost = Math.max(0.25, this.tuning.rangeScale * this.fit);
-      var want_speed = this.speedTarget * this.tuning.speedScale * rangeBoost * (boosting ? 3.2 : 1);
-      var accel = (want_speed > this.speed ? (boosting ? 4.5 : 1.2) : 0.9) * Math.max(1, rangeBoost * 0.6);
+      var want_speed = boosting
+        ? Math.max(this.dashSpeed(), this.speedTarget * this.tuning.speedScale * rangeBoost * 1.5)
+        : this.speedTarget * this.tuning.speedScale * rangeBoost;
+      // 冲刺时加速要猛；冲刺结束后速度远高于巡航，收油也要明显，不然会一路滑出去
+      var over = this.speed > want_speed * 1.3;
+      var accel = (want_speed > this.speed ? (boosting ? 9 : 1.2) : (over ? 3.2 : 0.9)) *
+        Math.max(1, rangeBoost * 0.6);
       this.speed += Math.max(-accel * d, Math.min(accel * d, want_speed - this.speed));
       if (!(this.speed > 0)) this.speed = 0;            // 同时挡住 NaN 与负数
 
@@ -439,16 +533,69 @@
     },
     enter: function () { this.show(); },
     exit: function () { /* 游动是连续的，丢卡时直接由 hide 收尾 */ },
-    /** 点屏幕吓一跳：短时间内大幅提速（依旧被硬约束限制在范围内） */
-    startle: function () {
-      this.startleUntil = performance.now() + 900;
+    /**
+     * 点空白吓一跳。旧版只是把速度乘 3.2（转弯半径不变 → 角速度也乘 3.2），
+     * 表现出来就是在原地快速打转。现在改成"定一个逃跑方向 + 直线冲刺"：
+     *   1) 期望方向 = 背对点击处，再混一点当前航向（免得掉头绕大圈）
+     *   2) 在这个方向附近 ±0.8 弧度里挑一个"前方空间最大"的（贴边时不会一冲就撞边界）
+     *   3) 冲刺期间朝这个方向直着窜，转弯半径跟着速度放大——角速度和巡航差不多，
+     *      所以是窜出去，不是原地打转；撞到活动边界或者时间到就收
+     */
+    startle: function (threat) {
+      var now = performance.now();
+      if (now < this.startleUntil) return;      // 正在窜，别被连续点击打断成原地抖
+      var dx = this.pos.x - (threat ? threat.x : 0);
+      var dz = this.pos.z - (threat ? threat.z : 0);
+      var len = Math.sqrt(dx * dx + dz * dz);
+      if (!(len > 1e-4)) { dx = this.head.x; dz = this.head.z; }   // 正好按在鱼身上：沿当前航向
+      else { dx /= len; dz /= len; }
+      // 先算"背对威胁点 + 混一点当前航向"的期望方向
+      var mx = dx * 0.8 + this.head.x * 0.5;
+      var mz = dz * 0.8 + this.head.z * 0.5;
+      var ml = Math.sqrt(mx * mx + mz * mz);
+      if (ml > 1e-4) { mx /= ml; mz /= ml; }
+
+      // 在期望方向附近挑一个"前方空间最大"的方向：贴边时如果还朝外冲，
+      // 冲刺会在几十毫秒内撞到边界直接结束（实测就是这样，看起来没反应）。
+      var base = Math.atan2(mz, mx);
+      var best = null;
+      for (var i = -2; i <= 2; i++) {
+        var a = base + i * 0.4;
+        var cx = Math.cos(a), cz = Math.sin(a);
+        var dist = this.ellipseExitDistance(this.pos.x, this.pos.z, cx, cz, 0.9);
+        if (!best || dist > best.dist) best = { dist: dist, x: cx, z: cz };
+      }
+      this.startleDir = { x: best.x, z: best.z };
+      this.target.x = this.pos.x + best.x * best.dist;
+      this.target.z = this.pos.z + best.z * best.dist;
+      this.targetTime = 0;
+      this.targetDuration = 10;                  // 冲刺期间不换目标
+      this.startleUntil = now + CONFIG.startleMs;
+      // 起步就窜：直接给到冲刺速度的一半多，剩下的靠加速度补
+      this.speed = Math.max(this.speed, this.dashSpeed() * 0.6);
+      console.log('AOYU_STARTLE_SET 逃脱距离=' + best.dist.toFixed(2) +
+        ' 冲刺速度=' + this.dashSpeed().toFixed(2) + ' 当前速度=' + this.speed.toFixed(2));
     },
+
+    /** 从 (px,pz) 沿 (dx,dz) 走到椭圆 k 倍边界要走多远（解一元二次） */
+    ellipseExitDistance: function (px, pz, dx, dz, k) {
+      var r = this.radii();
+      var kx = r.x * k, kz = r.z * k;
+      var a = (dx / kx) * (dx / kx) + (dz / kz) * (dz / kz);
+      var b = 2 * (px * dx / (kx * kx) + pz * dz / (kz * kz));
+      var c = (px / kx) * (px / kx) + (pz / kz) * (pz / kz) - 1;
+      var disc = b * b - 4 * a * c;
+      if (!(disc > 0) || !(a > 0)) return 0.2;
+      var s = (-b + Math.sqrt(disc)) / (2 * a);
+      return s > 0.2 ? s : 0.2;
+    },
+
     status: function () {
       var r = this.radii();
       return {
         posture: { name: '贴卡平面（有界漫游）', tiltDeg: 0 },
         tuning: this.tuning,
-        state: this.boosting ? '受惊加速' : (this.moving ? '巡游' : '悬停'),
+        state: this.boosting ? '受惊冲刺' : (this.moving ? '巡游' : '悬停'),
         radius: { x: r.x.toFixed(2), z: r.z.toFixed(2) },
         fit: this.fit,
         bodyLen: this.measureBodyLength(),
@@ -470,6 +617,7 @@
     forceMode: null,      // 调试强制
     offsetMs: 0,          // 调试时间偏移
     adaptive: false,      // 自适应：整幅构图一定留在画面内（默认关，保持按卡宽的固定比例）
+    hitBoxVisible: false, // 调试：把命中包围盒画出来
     hideTimer: null,
     transitionTimer: null,
     switchTimer: null,
@@ -888,7 +1036,10 @@
         if (!down) return;
         var moved = Math.abs(event.clientX - down.x) + Math.abs(event.clientY - down.y);
         down = null;
-        if (moved > 20) return;             // 拖着画面/晃手机不算点击
+        if (moved > 20) {                  // 拖着画面/晃手机不算点击
+          console.log('AOYU_TAP_SKIP 手指移动了', Math.round(moved), 'px');
+          return;
+        }
         self.handleTap(event.clientX, event.clientY);
       };
       window.addEventListener('pointerdown', start, { passive: true });
@@ -902,20 +1053,23 @@
 
     handleTap: function (x, y) {
       this.resumeAudio();
-      if (!this.markerActive || this.fishHidden) return;
+      if (!this.markerActive || this.fishHidden) {
+        // 卡片刚好丢了的时候点屏幕是不会有反应的，记一笔省得下次又当成"点不中鱼"
+        console.log('AOYU_TAP_SKIP markerActive=' + this.markerActive + ' fishHidden=' + this.fishHidden);
+        return;
+      }
       var fish = this.activeFish();
       if (!fish) return;
       if (this.hitFish(fish, x, y)) {
         this.playRandomNote();
         return;
       }
-      // 点空白：原本是拿点击落点当威胁点让鱼窜出去。现在 CONFIG.startleEnabled = false，
-      // 暂时什么都不做（避免"原地快速打转"）。
+      // 点空白：拿点击落点当威胁点，让鱼朝反方向窜出去
       if (!CONFIG.startleEnabled) return;
       var local = cardPointFromScreen(x, y);
       var threat = local ? { x: local.x, z: local.z } : null;
       fish.startle(threat);
-      console.log('AOYU_STARTLE', fish.key, threat ? threat.x.toFixed(2) + ',' + threat.z.toFixed(2) : 'no-point');
+      console.log('AOYU_STARTLE', fish.data.key, threat ? threat.x.toFixed(2) + ',' + threat.z.toFixed(2) : 'no-point');
     },
 
     activeFish: function () {
@@ -923,14 +1077,14 @@
     },
 
     /**
-     * 命中判定。三层，任意一层中就算点到鱼：
-     *   ① 模型网格射线（对非蒙皮模型精准）
-     *   ② **整个模型的本地包围盒 + 25% 手指容差**（含鱼鳍、尾巴；射线转到模型坐标系里判，
-     *      所以盒子跟着鱼的朝向走，不会因为旋转而虚胖）—— 这是主力层
-     *   ③ 骨骼包围盒兜底（绑定姿势与动画差很多时的保险）
+     * 命中判定。两层，任意一层中就算点到了鱼：
+     *   ① 模型网格射线：three 的 raycast 对 SkinnedMesh 会用 boneTransform 逐三角形算，
+     *      所以它是跟着当前骨骼姿势的（但只有真正的三角形才算，鱼鳍这种薄片容易擦过去）
+     *   ② **模型本地包围盒 + 25% 手指容差**（主力层）：射线转进模型坐标系里判，
+     *      所以盒子跟着鱼的朝向走，不会因为旋转而虚胖
      *
-     * 走过的弯路：只用骨骼算 → 骨骼沿脊椎是一条细线，鱼鳍尾部点不中；只用世界 AABB →
-     * 鱼一转就虚胖。本地包围盒（OBB）+ 容差才是又准又好点的做法。
+     * 注意：这个盒子必须跟着骨骼动画重算。之前用的是 geometry.boundingBox（绑定姿势），
+     * 鱼一摆尾/转向，实际身体就跑到盒子外面去了 —— 这就是"有时候点鱼没声音"的根源。
      */
     hitFish: function (fish, clientX, clientY) {
       var sceneEl = this.sceneEl;
@@ -939,6 +1093,7 @@
       var meshEl = fish.data.anim;
       var mesh = meshEl && meshEl.getObject3D('mesh');
       if (!canvas || !camera || !mesh) return false;
+      syncProjectionInverse(camera);
       var rect = canvas.getBoundingClientRect();
       if (!rect.width || !rect.height) return false;
       ndc.set(((clientX - rect.left) / rect.width) * 2 - 1,
@@ -946,63 +1101,72 @@
       raycaster.setFromCamera(ndc, camera);
 
       // ① 网格射线
-      if (raycaster.intersectObject(mesh, true).length) return true;
+      if (raycaster.intersectObject(mesh, true).length) {
+        console.log('AOYU_HIT', fish.data.key, '网格');
+        return true;
+      }
 
       mesh.updateWorldMatrix(true, true);
-      var inverse = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
-
-      // ② 模型本地包围盒 + 容差
       var box = this.fishLocalBox(mesh);
       if (box) {
+        var inverse = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
         var localRay = raycaster.ray.clone().applyMatrix4(inverse);
-        if (localRay.intersectsBox(box)) return true;
+        var size = box.getSize(new THREE.Vector3());
+        if (localRay.intersectsBox(box)) {
+          console.log('AOYU_HIT', fish.data.key, '包围盒',
+            size.x.toFixed(2) + '×' + size.y.toFixed(2) + '×' + size.z.toFixed(2), '卡宽');
+          return true;
+        }
+        console.log('AOYU_HIT', fish.data.key, '没点中',
+          '本地射线 ' + localRay.origin.x.toFixed(2) + ',' + localRay.origin.y.toFixed(2) + ',' + localRay.origin.z.toFixed(2) +
+          ' 方向 ' + localRay.direction.x.toFixed(3) + ',' + localRay.direction.y.toFixed(3) + ',' + localRay.direction.z.toFixed(3) +
+          ' 盒尺寸 ' + size.x.toFixed(2) + '×' + size.y.toFixed(2) + '×' + size.z.toFixed(2) +
+          ' 盒中心 ' + box.getCenter(new THREE.Vector3()).x.toFixed(2) + ',' +
+          box.getCenter(new THREE.Vector3()).y.toFixed(2) + ',' + box.getCenter(new THREE.Vector3()).z.toFixed(2));
       }
-
-      // ③ 骨骼包围盒兜底
-      var bones = this._bones;
-      if (!bones || bones.el !== mesh) {
-        bones = [];
-        mesh.traverse(function (node) { if (node.isBone) bones.push(node); });
-        bones.el = mesh;
-        this._bones = bones;
-      }
-      if (!bones.length) return false;
-      var boneBox = new THREE.Box3();
-      var v = new THREE.Vector3();
-      for (var i = 0; i < bones.length; i++) {
-        boneBox.expandByPoint(bones[i].getWorldPosition(v));
-      }
-      var localBoneBox = boneBox.clone().applyMatrix4(inverse);
-      var size = localBoneBox.getSize(new THREE.Vector3());
-      var center = localBoneBox.getCenter(new THREE.Vector3());
-      size.set(Math.max(size.x, 0.10), Math.max(size.y, 0.10), Math.max(size.z, 0.10));
-      localBoneBox.setFromCenterAndSize(center, size);
-      return localRay.intersectsBox(localBoneBox);
+      return false;
     },
 
-    /** 模型本地坐标系里的整体包围盒（含所有子网格），整体放大 25% 当手指容差 */
+    /**
+     * 模型本地坐标系里的整体包围盒（跟着当前骨骼姿势），整体放大 25% 当手指容差。
+     *
+     * 这里是"点鱼没声音"的关键：geometry.boundingBox 是**绑定姿势**的盒子，
+     * 鱼摆尾、转弯之后身体会跑到盒子外面，点上去就没反应。
+     * 现在对 SkinnedMesh 按索引均匀抽 96 个顶点，用 boneTransform 算它们当前姿势的位置，
+     * 再取包围盒——所以它会跟着鱼一起动。只在点击时和调试显示时算，不影响帧率。
+     */
     fishLocalBox: function (mesh) {
-      if (this._localBox && this._localBox.mesh === mesh) return this._localBox.box;
       mesh.updateWorldMatrix(true, true);
       var inverse = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
-      var box = new THREE.Box3();
       var tmp = new THREE.Matrix4();
+      var v = new THREE.Vector3();
+      var box = new THREE.Box3();
       var valid = false;
       mesh.traverse(function (node) {
         if (!node.isMesh || !node.geometry) return;
-        if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
-        if (!node.geometry.boundingBox) return;
-        tmp.copy(inverse).multiply(node.matrixWorld);
-        box.union(node.geometry.boundingBox.clone().applyMatrix4(tmp));
-        valid = true;
+        if (isDebugHitBox(node)) return;
+        var pos = node.geometry.attributes && node.geometry.attributes.position;
+        if (!pos) return;
+        tmp.copy(inverse).multiply(node.matrixWorld);      // 该网格本地 → 模型本地
+        if (node.isSkinnedMesh && node.skeleton) {
+          var step = Math.max(1, Math.floor(pos.count / 96));
+          for (var i = 0; i < pos.count; i += step) {
+            v.fromBufferAttribute(pos, i);                 // boneTransform 要求先放绑定姿势的位置
+            node.boneTransform(i, v);
+            box.expandByPoint(v.applyMatrix4(tmp));
+          }
+          valid = true;
+        } else {
+          if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
+          if (!node.geometry.boundingBox) return;
+          box.union(node.geometry.boundingBox.clone().applyMatrix4(tmp));
+          valid = true;
+        }
       });
       if (!valid || box.isEmpty()) return null;
       var size = box.getSize(new THREE.Vector3()).multiplyScalar(1.25);
       var center = box.getCenter(new THREE.Vector3());
       box.setFromCenterAndSize(center, size);
-      console.log('AOYU_HITBOX', '本地尺寸',
-        size.x.toFixed(2) + '×' + size.y.toFixed(2) + '×' + size.z.toFixed(2));
-      this._localBox = { mesh: mesh, box: box };
       return box;
     },
 
@@ -1176,6 +1340,7 @@
           (fish.adaptive ? ' 自适×' + status.fit.toFixed(2) : '') +
           ' 摆尾×' + status.tuning.animSpeedMax.toFixed(2) +
           ' 大小×' + status.tuning.modelScale.toFixed(2) +
+          ' 惊吓×' + status.tuning.startleSpeed.toFixed(1) +
           '　身长 ' + status.bodyLen.toFixed(2) + ' 转弯半径 ' + status.turnRadius.toFixed(2) + ' 卡宽' +
           '　当前速度 ' + status.t + ' 位置 ' + status.pos.x.toFixed(2) + ',' +
           status.pos.y.toFixed(2) + ',' + status.pos.z.toFixed(2);
@@ -1222,16 +1387,18 @@
         ['turnScale', -0.2, 'db-turn-m'], ['turnScale', 0.2, 'db-turn-p'],
         ['rangeScale', -0.5, 'db-range-m'], ['rangeScale', 0.5, 'db-range-p'],
         ['animSpeedMax', -0.2, 'db-tail-m'], ['animSpeedMax', 0.2, 'db-tail-p'],
-        ['modelScale', -0.1, 'db-size-m'], ['modelScale', 0.1, 'db-size-p']];
+        ['modelScale', -0.1, 'db-size-m'], ['modelScale', 0.1, 'db-size-p'],
+        ['startleSpeed', -0.5, 'db-startle-m'], ['startleSpeed', 0.5, 'db-startle-p']];
       knobs.forEach(function (item) {
         document.getElementById(item[2]).addEventListener('click', function () { knob(item[0], item[1]); });
       });
       document.getElementById('db-material').addEventListener('click', function () { self.toggleLightweight(); });
       document.getElementById('db-adaptive').addEventListener('click', function () { self.toggleAdaptive(); });
+      document.getElementById('db-hitbox').addEventListener('click', function () { self.toggleHitBox(); });
       document.getElementById('db-anchor').addEventListener('click', function () { self.toggleAnchorRing(); });
       document.getElementById('db-reset').addEventListener('click', function () {
         var fish = self.activeFish();
-        if (fish) fish.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1 };
+        if (fish) fish.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1, startleSpeed: 4 };
         self.saveTuning();
         self.refreshDebug();
       });
@@ -1257,7 +1424,8 @@
         localStorage.setItem(CONFIG.storageKey, JSON.stringify({
           tuning: fish.tuning,
           lightweight: !!this.lightweight,
-          adaptive: !!this.adaptive
+          adaptive: !!this.adaptive,
+          hitBoxVisible: !!this.hitBoxVisible
         }));
       } catch (error) {
         /* 隐私模式之类写不了就算了 */
@@ -1276,6 +1444,9 @@
       });
       if (saved.adaptive) {
         this.toggleAdaptive();
+      }
+      if (saved.hitBoxVisible) {
+        this.toggleHitBox();
       }
       if (saved.lightweight) {
         this.lightweight = true;
@@ -1323,6 +1494,29 @@
       el.setAttribute('position', '0 ' + h + ' 0');
       marker.appendChild(el);
       console.log('AOYU_ANCHOR_RING on', r.x + '×' + r.z);
+    },
+
+    /** 调试：把命中判定用的包围盒画出来（和点击判定用的是同一个盒子） */
+    toggleHitBox: function () {
+      this.hitBoxVisible = !this.hitBoxVisible;
+      var existing = document.getElementById('hit-box');
+      if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+      if (this.hitBoxVisible) {
+        var el = document.createElement('a-entity');
+        el.id = 'hit-box';
+        el.setAttribute('hitbox-debug', '');
+        var fish = this.activeFish();
+        var animEl = fish && fish.data.anim;
+        if (animEl) animEl.appendChild(el);
+        else this.sceneEl.appendChild(el);
+      }
+      var btn = document.getElementById('db-hitbox');
+      if (btn) {
+        btn.classList.toggle('on', this.hitBoxVisible);
+        btn.textContent = this.hitBoxVisible ? '碰撞盒：开' : '碰撞盒：关';
+      }
+      this.saveTuning();
+      console.log('AOYU_HITBOX_DEBUG', this.hitBoxVisible ? 'on' : 'off');
     },
 
     /**
