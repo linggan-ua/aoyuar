@@ -157,7 +157,7 @@
   window.AOYU_USE_IMAGE_TRACKER = useImageTracker;
   window.AOYU_SKIP_CAMERA = useImageTracker;      // 相机由 image-tracker 自己开
   // 图像跟踪用的卡片参考图（默认值写死在 image-tracker.js 里，这里跟随 pattern 一起换）
-  window.AOYU_TRACKER_CARD = 'assets/patterns/pattern-card-v3-track.png';
+  window.AOYU_TRACKER_CARD = 'assets/patterns/pattern-card-v4-track.png';
   if (!useImageTracker) return;
   document.addEventListener('DOMContentLoaded', function () {});
   var rewrite = function () {
@@ -188,7 +188,7 @@
          device-orientation-permission-ui="enabled: false"
          vr-mode-ui="enabled: false"
          renderer="colorManagement: true;"
-         arjs="sourceType: image; sourceUrl: ../assets/patterns/pattern-card-v3.png; debugUIEnabled: false; patternRatio: 0.5; cameraParametersUrl: ../assets/arjs/camera_para.dat; errorPopup: ar-error; sourceWidth: 1920; sourceHeight: 1080">
+         arjs="sourceType: image; sourceUrl: ../assets/patterns/pattern-card-v4.png; debugUIEnabled: false; patternRatio: 0.5; cameraParametersUrl: ../assets/arjs/camera_para.dat; errorPopup: ar-error; sourceWidth: 1920; sourceHeight: 1080">
 
   <a-assets timeout="30000">
     <a-asset-item id="aoyu-model" src="../assets/models/aoyu_ink.glb"></a-asset-item>
@@ -205,7 +205,7 @@
 
   <!-- 识别用的 .patt：同名 .png 是要打印的卡片（黑方块占 80%、内图占黑方块 50%，
        所以 arjs 的 patternRatio 必须是 0.5；换卡就换这两个文件 + 下面这一行） -->
-  <a-marker id="ar-marker" type="pattern" url="../assets/patterns/pattern-card-v3.patt"
+  <a-marker id="ar-marker" type="pattern" url="../assets/patterns/pattern-card-v4.patt"
             emitevents="true" size="1">
 
     <!-- 游动节点：位置和朝向每帧由 fish-swim 直接写 object3D，
