@@ -36,6 +36,11 @@
     else document.addEventListener('DOMContentLoaded', markDebugUi);
   }
 
+  // 贴到活动边界时允许的最小转身角速度（弧度/秒）：0.85 半径开始生效，1.0 时全额。
+  // 不加这条会出大问题：转弯半径跟速度挂钩，鱼贴边时速度已经很低，
+  // 角速度也跟着很低，结果被硬约束按在边界上慢慢蹭好几秒（实测）。
+  var EDGE_TURN_RATE = 5.0;
+
   // 屏幕空间手指容差（像素）：葫芦丝那个项目用的是 34px，鱼身子细，取 26px
   var HIT_PADDING_PX = 26;
   // 算轮廓/包围盒时每个网格抽多少个顶点
@@ -451,13 +456,14 @@
       }
       return lo;
     },
-    /** 只在圆内部 0.72 半径处取点，并给一个到达时限（免得卡在某个目标上） */
-    pickTarget: function () {
+    /** 在圆内取一个目标点（默认 0.72 半径内）；maxK 给"已经贴边了，往中间瞄"用 */
+    pickTarget: function (maxK) {
       var r = this.radii();
       var a = this.rng() * Math.PI * 2;
-      var k = Math.sqrt(this.rng()) * 0.72;
+      var k = Math.sqrt(this.rng()) * (maxK || 0.72);
       this.target.x = Math.cos(a) * r.x * k;
       this.target.z = Math.sin(a) * r.z * k;
+      this.targetRn = k;                 // 目标点相对半径的位置（0=圆心 1=边界）
       this.targetTime = 0;
       // 时限按"游到那儿要多久"来定，另给 2.5 倍余量；范围放大后不再半路换目标。
       var speedNow0 = Math.max(0.05, this.speed);
@@ -502,7 +508,12 @@
         if (rn > 0.95 && time > this.startleBurstUntil) { boosting = false; this.startleUntil = 0; }
       } else {
         // 正常巡游：朝目标 + 越靠边越强的向内修正
-        if (dist < 0.12 || this.targetTime > this.targetDuration) this.pickTarget();
+        if (dist < 0.12 || this.targetTime > this.targetDuration) {
+          this.pickTarget();
+        } else if (rn > 0.9 && this.targetRn > 0.6) {
+          // 已经贴在边上了，而目标点也偏外——直接改瞄中心附近，别在边上游来游去
+          this.pickTarget(0.45);
+        }
         dirX = dist > 1e-4 ? dx / dist : this.head.x;
         dirZ = dist > 1e-4 ? dz / dist : this.head.z;
         if (rn > 0.75) {
@@ -538,6 +549,12 @@
       if (boosting) turnRadius *= Math.max(1.5, this.tuning.startleSpeed * 0.7);
       this.turnRadius = turnRadius;                    // 调试面板显示真实值
       var maxTurn = Math.max(0.12, speedNow / turnRadius) * this.tuning.turnScale * d;
+      // 贴边时给一个固定角速度兜底：正常巡游转角速度跟速度挂钩（转弯半径恒定，才不像原地转），
+      // 但贴到边界上速度已经很低，那时转不过来，就会被硬约束按在边上蹭很久。
+      if (rn > 0.85) {
+        var edgeTurn = Math.min(1, (rn - 0.85) / 0.15) * EDGE_TURN_RATE * d;
+        if (edgeTurn > maxTurn) maxTurn = edgeTurn;
+      }
       var turn = Math.max(-maxTurn, Math.min(maxTurn, diff));
       var ang = cur + turn;
       this.head.x = Math.sin(ang);
