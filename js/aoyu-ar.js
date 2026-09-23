@@ -1112,6 +1112,23 @@
         });
       });
 
+      // 切到后台/回到前台：后台不折腾（浏览器会暂停摄像头），回到前台再检查一次、必要时恢复
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) {
+          console.log('AOYU_PAGE_HIDDEN 进后台：摄像头由浏览器暂停，看门狗先停手');
+          self._lastVideoTime = null;
+          self._lastVideoTimeAt = 0;
+          return;
+        }
+        console.log('AOYU_PAGE_VISIBLE 回到前台：检查摄像头是否恢复');
+        setTimeout(function () {
+          self.reassertLayout();          // 重新贴样式 + play() + 对齐画布
+        }, 400);
+        setTimeout(function () {
+          self.videoWatchdogTick();       // 还没恢复就重挂一次流
+        }, 1500);
+      });
+
       // 启动后补两次：首帧布局时视口高度可能是 0（画布会卡在 0 高 → 全黑）
       setTimeout(function () { self.forceCanvasSize(); }, 300);
       setTimeout(function () { self.forceCanvasSize(); }, 1500);
@@ -1232,6 +1249,9 @@
     videoWatchdogTick: function () {
       var video = this.findArVideo();
       if (!video || video.tagName !== 'VIDEO' || !video.srcObject) return;
+      // 页面在后台时浏览器会主动暂停摄像头（隐私策略），这是正常的，不能当成"卡住"去重挂流——
+      // 之前就是在后台反复重挂，回到前台时流已经被折腾坏了，画面就没了。
+      if (document.hidden) return;
       var now = performance.now();
       if (video.paused || video.readyState < 2) {
         console.log('AOYU_VIDEO_STALLED paused=' + video.paused + ' ready=' + video.readyState);
