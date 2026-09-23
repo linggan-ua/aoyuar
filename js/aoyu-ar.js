@@ -380,15 +380,22 @@
       return len;
     },
 
-    /** 持续冲刺速度（卡宽/秒）：受惊后保持的那段快速游动 */
+    /**
+     * 持续冲刺速度（卡宽/秒）：受惊后保持的那段快速游动。
+     * 按活动范围封顶（至少 0.25 秒才穿过整个范围）——不封顶的话，
+     * 惊吓倍率/范围调到很大时鱼会一直在边界上弹，看起来惊吓停不下来。
+     */
     dashSpeed: function () {
       var rangeBoost = Math.max(0.25, this.tuning.rangeScale * this.fit);
-      return this.data.speed * this.tuning.startleSpeed * this.tuning.speedScale * rangeBoost;
+      var v = this.data.speed * this.tuning.startleSpeed * this.tuning.speedScale * rangeBoost;
+      var r = this.radii();
+      return Math.min(v, Math.min(r.x, r.z) * 4);
     },
 
     /** 爆冲速度：受惊那一瞬间的瞬时速度（比持续冲刺快一截，然后很快落回来） */
     burstSpeed: function () {
-      return this.dashSpeed() * CONFIG.startleBurstMul;
+      var r = this.radii();
+      return Math.min(this.dashSpeed() * CONFIG.startleBurstMul, Math.min(r.x, r.z) * 6);
     },
 
     /**
@@ -494,7 +501,14 @@
       }
 
       var r = this.radii();
-      var boosting = this.startleUntil > time;
+      // 注意：这里统一用 performance.now()，不要用 tick 的 time——
+      // 两者时间原点在某些 WebView 里不一致，混用会把 1.1 秒的惊吓拖成十几秒。
+      var nowMs = performance.now();
+      var boosting = nowMs < this.startleUntil;
+      if (this.boosting && !boosting) {
+        console.log('AOYU_STARTLE_END 实际持续=' +
+          Math.round(nowMs - (this.startleStartedAt || nowMs)) + 'ms 弹跳=' + (this.startleBounces || 0));
+      }
       var rn = Math.sqrt((this.pos.x / r.x) * (this.pos.x / r.x) +
                          (this.pos.z / r.z) * (this.pos.z / r.z));   // 0=中心 1=边界
       if (rn > 0.97) this.edgeTime += d; else this.edgeTime = 0;
@@ -522,7 +536,8 @@
           dirZ = bounce.z;
           snapTurn = true;
           this.edgeTime = 0;
-          this.startleBurstUntil = time + 120;   // 掉头后再给一小下爆冲，像弹开一样
+          this.startleBurstUntil = nowMs + 120;   // 掉头后再给一小下爆冲，像弹开一样
+          this.startleBounces = (this.startleBounces || 0) + 1;
           console.log('AOYU_BOUNCE 受惊撞边界掉头');
         }
       } else {
@@ -604,10 +619,10 @@
       // 两种情况都靠这一个系数，保证"游完一圈的时间"与范围无关。
       var rangeBoost = Math.max(0.25, this.tuning.rangeScale * this.fit);
       var dash = this.dashSpeed();
-      if (boosting && time < this.startleBurstUntil) {
+      if (boosting && nowMs < this.startleBurstUntil) {
         // 爆冲阶段：速度按曲线从爆冲值落回持续冲刺值。
         // 这一段直接写速度、不走加速度积分——积分出来的曲线开头不够陡。
-        var kBurst = (this.startleBurstUntil - time) / CONFIG.startleBurstMs;   // 1 → 0
+        var kBurst = (this.startleBurstUntil - nowMs) / CONFIG.startleBurstMs;   // 1 → 0
         this.speed = dash + (this.burstSpeed() - dash) * Math.max(0, Math.min(1, kBurst));
       } else {
         var want_speed = boosting
@@ -702,6 +717,8 @@
       this.targetTime = 0;
       this.targetDuration = 10;                  // 冲刺期间不换目标
       this.startleUntil = now + CONFIG.startleMs;
+      this.startleStartedAt = now;
+      this.startleBounces = 0;
       // 受惊的这一下：速度直接顶到爆冲值（不是慢慢加速），然后在 startleBurstMs 内
       // 沿曲线落回持续冲刺速度——像鱼被吓到突然窜出去，然后保持快游。
       this.speed = Math.max(this.speed, this.burstSpeed());
