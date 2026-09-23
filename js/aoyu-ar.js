@@ -923,6 +923,7 @@
         'drawingBuffer=' + renderer.domElement.width + '×' + renderer.domElement.height,
         'max=' + this.maxPixelRatio);
       setInterval(function () {
+        self.videoWatchdogTick();
         if (!self.fps) return;
         var next = self.pixelRatio;
         if (self.fps >= 55 && next < self.maxPixelRatio) next = Math.min(self.maxPixelRatio, next + 0.25);
@@ -1223,13 +1224,63 @@
     },
 
     /**
+     * 视频看门狗：每秒看一眼相机画面是不是还在推进。
+     * Chrome 全屏、手机切镜头、iOS 回到前台之后，<video> 偶尔会"还在播但画面不动了"——
+     * 表现就是整页黑（相机层不动，识别也就没有新帧）。这里检测到卡住就重挂一次同一路流。
+     */
+    videoWatchdogTick: function () {
+      var video = this.findArVideo();
+      if (!video || video.tagName !== 'VIDEO' || !video.srcObject) return;
+      var now = performance.now();
+      if (video.paused || video.readyState < 2) {
+        console.log('AOYU_VIDEO_STALLED paused=' + video.paused + ' ready=' + video.readyState);
+        this.recoverVideo(video);
+        return;
+      }
+      if (this._lastVideoTime !== video.currentTime) {
+        this._lastVideoTime = video.currentTime;
+        this._lastVideoTimeAt = now;
+        return;
+      }
+      if (this._lastVideoTimeAt && now - this._lastVideoTimeAt > 1500) {
+        console.log('AOYU_VIDEO_STALLED currentTime 不动 ' +
+          Math.round(now - this._lastVideoTimeAt) + 'ms');
+        this.recoverVideo(video);
+      }
+    },
+
+    /** 重挂同一路流（强制重新解码）：全屏/切镜头/回前台后画面卡住时用 */
+    recoverVideo: function (video) {
+      var stream = video && video.srcObject;
+      if (!stream) return;
+      video.style.display = 'none';
+      video.srcObject = null;
+      video.srcObject = stream;
+      video.muted = true;
+      video.style.display = '';
+      var p = video.play();
+      if (p && p.catch) p.catch(function () {});
+      this._lastVideoTime = null;
+      this._lastVideoTimeAt = performance.now();
+      this.forceCanvasSize();
+      console.log('AOYU_VIDEO_REATTACH ready=' + video.readyState);
+    },
+
+    /**
      * 全屏/尺寸变化后重新贴一次画面尺寸，并让 A-Frame 重新量画布。
      * 全屏时浏览器给的 resize 时机有时早于布局稳定，画布会停在旧尺寸（表现是黑屏或只占一块），
      * 这里隔一小会儿再补一次 resize 事件。
      */
     reassertLayout: function () {
+      var self = this;
       var video = this.findArVideo();
       if (video) {
+        // 全屏切换后视频偶尔会掉出合成层（画面冻结/变黑），用一次无感的"重绘"把它拉回来
+        if (video.tagName === 'VIDEO') {
+          video.style.opacity = '0.999';
+          void video.offsetHeight;
+          video.style.opacity = '1';
+        }
         video.style.setProperty('position', 'fixed', 'important');
         video.style.setProperty('top', '0', 'important');
         video.style.setProperty('left', '0', 'important');
@@ -1244,8 +1295,36 @@
           video.muted = true;
           var p = video.play();
           if (p && p.catch) p.catch(function () {});
+          // 视频真的停了（readyState<2 或 paused）：重挂一次同一路流，让它重新解码
+          if (video.readyState < 2 || video.paused) {
+            var stream = video.srcObject;
+            if (stream) {
+              video.srcObject = null;
+              video.srcObject = stream;
+              var p2 = video.play();
+              if (p2 && p2.catch) p2.catch(function () {});
+              console.log('AOYU_VIDEO_REATTACH ready=' + video.readyState);
+            }
+          }
         }
       }
+      // 全屏后 0.8 秒打一条状态自检：视频元素、画布、实际绘制量（drawCalls>0 说明 AR 画面在画）
+      setTimeout(function () {
+        var v = self.findArVideo();
+        var sceneEl = self.sceneEl;
+        var canvas = sceneEl && sceneEl.renderer && sceneEl.renderer.domElement;
+        var info = sceneEl && sceneEl.renderer && sceneEl.renderer.info;
+        var vr = v && v.getBoundingClientRect();
+        var cr = canvas && canvas.getBoundingClientRect();
+        console.log('AOYU_DIAG_AFTER_FS ' +
+          'video=' + (v ? (v.tagName + ' ' + Math.round(vr.width) + '×' + Math.round(vr.height) +
+            ' ready=' + v.readyState + ' ' + (v.paused ? 'paused' : 'playing') +
+            ' 画面=' + (v.videoWidth || 0) + '×' + (v.videoHeight || 0) +
+            ' z=' + getComputedStyle(v).zIndex + ' op=' + getComputedStyle(v).opacity) : 'none') +
+          ' canvas=' + (canvas ? (canvas.width + '×' + canvas.height + ' css=' +
+            Math.round(cr.width) + '×' + Math.round(cr.height)) : 'none') +
+          ' drawCalls=' + (info ? info.render.calls : '-') + ' tris=' + (info ? info.render.triangles : '-'));
+      }, 800);
       var self2 = this;
       var refire = function () {
         window.dispatchEvent(new Event('resize'));
