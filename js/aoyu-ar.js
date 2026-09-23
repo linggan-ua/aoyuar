@@ -49,6 +49,10 @@
   // 自适应缩放允许游动范围碰到画面的这个边界（0.8 = 四周各留 10% 余量），以及最小倍率
   var SCREEN_FIT_LIMIT = 0.8;
   var SCREEN_FIT_MIN = 0.1;
+  // 屏幕填充：范围按"占屏幕多大"来定。这里是最外圈的 NDC 边界（0.92 ≈ 四周各留 4%）
+  var SCREEN_FILL_MAX_X = 0.92;
+  var SCREEN_FILL_MAX_Y = 0.88;
+  var SCREEN_FILL_SAMPLES = 24;
 
   var CONFIG = {
     switchHour: 20,            // 20:00 之后显示鳌鱼，之前显示锦鲤
@@ -332,6 +336,7 @@
       this.startleBurstUntil = 0;
       this.edgeTime = 0;        // 贴在边界上多久了（超过阈值就掉头，不让它一直磨边）
       this.edgeHit = false;     // 上一帧是不是被硬约束按回边界了（= 这一帧刚到边）
+      this.screenR = null;      // 屏幕适配出来的椭圆半径（卡宽），每 100ms 更新一次
       this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1, startleSpeed: 4 };
       this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 锦鲤 0.55）
       this.appliedScale = 0;   // 0 表示还没写过缩放，第一帧一定会写一次
@@ -386,9 +391,11 @@
      * 惊吓倍率/范围调到很大时鱼会一直在边界上弹，看起来惊吓停不下来。
      */
     dashSpeed: function () {
-      var rangeBoost = Math.max(0.25, this.tuning.rangeScale * this.fit);
-      var v = this.data.speed * this.tuning.startleSpeed * this.tuning.speedScale * rangeBoost;
       var r = this.radii();
+      // 速度按"实际能游的范围"放大：范围是屏幕适配出来的，卡片小的时候范围会变大，
+      // 速度不跟着放大就会显得鱼在原地磨。基准＝0.5 卡宽（= 旋钮 5 时的老范围）。
+      var rangeBoost = Math.max(0.25, r.x / Math.max(0.05, this.baseRadius()));
+      var v = this.data.speed * this.tuning.startleSpeed * this.tuning.speedScale * rangeBoost;
       return Math.min(v, Math.min(r.x, r.z) * 4);
     },
 
@@ -398,19 +405,30 @@
       return Math.min(this.dashSpeed() * CONFIG.startleBurstMul, Math.min(r.x, r.z) * 6);
     },
 
-    /**
-     * 用户调出来的活动半径（不含自适应缩放），单位＝卡宽。
-     * 圆的 x/z 半径相同；这里仍然返回 {x,z}，是为了后面的边界投影、采样那些公式不用改。
-     */
-    rawRadii: function () {
-      var r = this.data.radius * this.tuning.rangeScale;
-      return { x: r, z: r };
+    /** 卡片坐标系（AR.js 的 marker）：活动范围是绕卡片中心算的 */
+    markerSpace: function () {
+      if (this._markerSpace && this._markerSpace.parent) return this._markerSpace;
+      var marker = document.getElementById('ar-marker');
+      this._markerSpace = (marker && marker.object3D) || null;
+      return this._markerSpace;
     },
 
-    /** 这一帧真正用的半径：用户设的范围 × 自适应缩放 */
+    /** 基准半径（卡片单位）：屏幕适配算出来的倍率都乘在它上面 */
+    baseRadius: function () { return this.data.radius; },
+
+    /**
+     * 这一帧真正用的活动范围（卡片平面内的椭圆，单位＝卡宽）。
+     * 由 screenK 决定：screenK 是"按当前画面算出、尽量铺满屏幕又不越界"的倍率，
+     * 所以卡片在画面里小的时候范围会自动变大、凑近到占满画面时又会自动收回来——
+     * 永远是"宽一点但不超出屏幕"。范围旋钮改的是目标占屏比例。
+     */
     radii: function () {
-      var r = this.rawRadii();
-      return { x: r.x * this.fit, z: r.z * this.fit };
+      var r = this.screenR;
+      if (r && isFinite(r.x) && isFinite(r.z) && r.x > 0.05 && r.z > 0.05) {
+        return { x: r.x, z: r.z };
+      }
+      var b = this.baseRadius() * 5;               // 还没算出来时的兜底（≈ 老范围）
+      return { x: b, z: b * 0.86 };
     },
 
     /** 悬浮高度区间 × 自适应缩放（构图整体等比缩放，比例不变） */
@@ -430,41 +448,81 @@
      * 以 k 倍画游动范围（连同悬浮高度），检查整圈是不是都在镜头前方并且留在画面内。
      * 采样 24 个点：任何一点跑到镜头后面或者出画面都算装不下。
      */
-    fitsAt: function (k, camera) {
-      var r = this.rawRadii();
-      var y = (this.data.yMin + this.data.yMax) / 2 * k;
-      for (var i = 0; i < 24; i++) {
-        var a = (i / 24) * Math.PI * 2;
-        tmpVec.set(Math.cos(a) * r.x * k, y, Math.sin(a) * r.z * k);
-        this.el.object3D.localToWorld(tmpVec);
+    /** 采样校验：给定椭圆半径（卡宽）是否整圈都在画面内（相机前方 + NDC 不超上限） */
+    fitsRadii: function (rx, rz, camera, limitX, limitY) {
+      var y = (this.yMin() + this.yMax()) / 2;      // 用鱼实际的悬浮高度（含自适应缩放）
+      var space = this.markerSpace();
+      if (!space) return false;
+      for (var i = 0; i < SCREEN_FILL_SAMPLES; i++) {
+        var a = (i / SCREEN_FILL_SAMPLES) * Math.PI * 2;
+        tmpVec.set(Math.cos(a) * rx, y, Math.sin(a) * rz);
+        space.localToWorld(tmpVec);
         // 镜头后面（相机空间 z >= 0）的点投影会翻号，不能拿来算
         if (tmpVec2.copy(tmpVec).applyMatrix4(camera.matrixWorldInverse).z > -0.01) return false;
         tmpVec.project(camera);
-        if (Math.abs(tmpVec.x) > SCREEN_FIT_LIMIT || Math.abs(tmpVec.y) > SCREEN_FIT_LIMIT) return false;
+        if (Math.abs(tmpVec.x) > limitX || Math.abs(tmpVec.y) > limitY) return false;
       }
       return true;
     },
 
     /**
-     * 自适应缩放：游动范围是按**卡宽**定义的，卡在画面里占满的时候
-     * （大卡片／手机凑得很近），7×5 卡宽的范围早就跑到画面外了，鱼大半时间在镜头外面游，
-     * 看起来就像"空间算错了""鱼游丢了"。这里量出"整幅构图刚好留在画面内"的倍率，
-     * 鱼的大小、活动范围、悬浮高度一起等比缩。
-     *
-     * 卡小的时候倍率恒为 1，一点也不会改手调好的观感；只有画面装不下时才缩。
+     * 自适应缩放（调试面板的「自适应」开关）：把"活动范围 + 鱼身"整幅构图缩到画面内。
+     * 只影响鱼的大小和悬浮高度 —— 活动范围本身已经按屏幕算好了（screenRadii），
+     * 这个开关是给"卡片在画面里占得太满"那种情况兜底的。
      */
     screenFit: function () {
       var sceneEl = document.querySelector('a-scene');
       var camera = sceneEl && sceneEl.camera;
       if (!camera) return 1;
-      if (this.fitsAt(1, camera)) return 1;
-      var lo = SCREEN_FIT_MIN, hi = 1;
-      for (var i = 0; i < 8; i++) {
-        var mid = (lo + hi) / 2;
-        if (this.fitsAt(mid, camera)) lo = mid; else hi = mid;
+      var r = this.radii();
+      var half = Math.max(0.1, this.measureBodyLength()) * 0.5;
+      var needX = r.x + half, needZ = r.z + half;
+      if (this.fitsRadii(needX, needZ, camera, SCREEN_FIT_LIMIT, SCREEN_FIT_LIMIT)) return 1;
+      var k = 1;
+      for (var i = 0; i < 12; i++) {
+        k *= 0.85;
+        if (this.fitsRadii(needX * k, needZ * k, camera, SCREEN_FIT_LIMIT, SCREEN_FIT_LIMIT)) return k;
       }
-      return lo;
+      return k;
     },
+
+    /**
+     * 按当前相机位姿算"刚好铺到指定屏幕比例"的椭圆半径（单位＝卡宽）。
+     *
+     * 做法：量出"卡片中心 + 沿卡面 x / z 各一个基准半径"这三个点投影到屏幕后的跨度，
+     * 得到"每卡宽对应多少 NDC"，再反推横、纵各自能铺多宽 —— 所以椭圆会自己长成屏幕的形状
+     * （竖屏就是竖向长、横向短），并且永远贴着屏幕的边而不越界。
+     * 透视下线性外推会略偏大，所以留 10% 余量，再用采样校验兜一次。
+     */
+    screenRadii: function (limitX, limitY) {
+      var sceneEl = document.querySelector('a-scene');
+      var camera = sceneEl && sceneEl.camera;
+      var space = this.markerSpace();
+      if (!camera || !space) return null;
+      var unit = this.baseRadius();
+      var y = (this.yMin() + this.yMax()) / 2;
+      var o = new THREE.Vector3(0, y, 0);
+      var px = new THREE.Vector3(unit, y, 0);
+      var pz = new THREE.Vector3(0, y, unit);
+      space.localToWorld(o); space.localToWorld(px); space.localToWorld(pz);
+      if (tmpVec2.copy(o).applyMatrix4(camera.matrixWorldInverse).z > -0.01) return null;
+      o.project(camera); px.project(camera); pz.project(camera);
+      if (!isFinite(o.x) || !isFinite(px.x) || !isFinite(pz.y)) return null;
+      var dxPerUnit = Math.abs(px.x - o.x) / unit;      // 每卡宽 -> NDC x
+      var dyPerUnit = Math.abs(pz.y - o.y) / unit;      // 每卡宽 -> NDC y
+      var rx = dxPerUnit > 1e-6 ? limitX / dxPerUnit : unit;
+      var rz = dyPerUnit > 1e-6 ? limitY / dyPerUnit : unit;
+      // 透视外推偏大 + 手指/画面安全边距
+      rx *= 0.9; rz *= 0.9;
+      // 采样校验：万一还是超了（斜看时最明显），按 15% 递减，最多缩三次
+      for (var i = 0; i < 3 && !this.fitsRadii(rx, rz, camera, limitX, limitY); i++) {
+        rx *= 0.85; rz *= 0.85;
+      }
+      if (!(rx > 0.05) || !isFinite(rx)) rx = unit;
+      if (!(rz > 0.05) || !isFinite(rz)) rz = unit;
+      return { x: rx, z: rz };
+    },
+
     /** 在圆内取一个目标点（默认 0.72 半径内）；maxK 给"已经贴边了，往中间瞄"用 */
     pickTarget: function (maxK) {
       var r = this.radii();
@@ -498,6 +556,24 @@
         if (!(this.fit > 0.05) || !isFinite(this.fit)) this.fit = fitWant;
       } else if (this.fit !== 1) {
         this.fit = 1;
+      }
+
+      // 活动范围按屏幕来：每 100ms 重算一次"铺满屏幕又不越界"的倍率（平滑跟随，避免抖）
+      this.screenTimer = (this.screenTimer || 0) + d;
+      if (this.screenTimer >= 0.1) {
+        this.screenTimer = 0;
+        // 旋钮含义：5（默认）≈ 铺到屏幕的 85%，8 ≈ 贴着安全边距的最大范围（0.92 / 0.88）
+        var fill = Math.max(0.15, Math.min(1, this.tuning.rangeScale / 5.9));
+        var want = this.screenRadii(SCREEN_FILL_MAX_X * fill, SCREEN_FILL_MAX_Y * fill);
+        if (want) {
+          if (!this.screenR) {
+            this.screenR = { x: want.x, z: want.z };
+          } else {
+            var k = Math.min(1, d * 6);          // 平滑跟随，避免镜头一动范围就跳
+            this.screenR.x += (want.x - this.screenR.x) * k;
+            this.screenR.z += (want.z - this.screenR.z) * k;
+          }
+        }
       }
 
       var r = this.radii();
@@ -617,7 +693,7 @@
       // 若速度不变，鱼要花 8 倍时间才能游完一圈——看着就是"卡在原地游不起来"；
       // 反过来，自适应把范围缩小之后速度也要跟着缩，否则鱼会在缩小的圈里狂转。
       // 两种情况都靠这一个系数，保证"游完一圈的时间"与范围无关。
-      var rangeBoost = Math.max(0.25, this.tuning.rangeScale * this.fit);
+      var rangeBoost = Math.max(0.25, r.x / Math.max(0.05, this.baseRadius()));
       var dash = this.dashSpeed();
       if (boosting && nowMs < this.startleBurstUntil) {
         // 爆冲阶段：速度按曲线从爆冲值落回持续冲刺值。
@@ -1644,6 +1720,8 @@
           '速度×' + status.tuning.speedScale.toFixed(2) +
           ' 转向×' + status.tuning.turnScale.toFixed(2) +
           ' 范围×' + status.tuning.rangeScale.toFixed(2) +
+          '（目标占屏' + Math.round(Math.min(1, status.tuning.rangeScale / 5.9) * 100) + '%）' +
+          ' 实半径' + status.radius +
           (fish.adaptive ? ' 自适×' + status.fit.toFixed(2) : '') +
           ' 摆尾×' + status.tuning.animSpeedMax.toFixed(2) +
           ' 大小×' + status.tuning.modelScale.toFixed(2) +

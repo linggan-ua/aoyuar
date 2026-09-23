@@ -356,7 +356,7 @@
           var n = 0, hit = 0;
           for (var i = 0; i < 36; i++) {
             var ang = i / 36 * Math.PI * 2;
-            var v = new V(Math.cos(ang) * r.x, (comp.data.yMin + comp.data.yMax) / 2, Math.sin(ang) * r.z);
+            var v = new V(Math.cos(ang) * r.x, (comp.yMin() + comp.yMax()) / 2, Math.sin(ang) * r.z);
             el.object3D.localToWorld(v);
             v.project(cam);
             n++;
@@ -376,6 +376,6 @@
 </script>
 <script>window.AOYU_DEBUG = true;   // 工具页始终显示调试入口</script>
 <script src="../js/note-synth.js?v=1"></script>
-<script src="../js/aoyu-ar.js?v=59"></script>
+<script src="../js/aoyu-ar.js?v=63"></script>
 </body>
 </html>
