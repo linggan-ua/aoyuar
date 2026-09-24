@@ -154,6 +154,83 @@
     return !!(el && el.closest && el.closest('#hit-box'));
   }
 
+  var _skinBase = new THREE.Vector3();
+  var _skinSum = new THREE.Vector3();
+  var _skinMat = new THREE.Matrix4();
+  var _skinIdx = [0, 0, 0, 0];
+  var _skinW = [0, 0, 0, 0];
+
+  /**
+   * 算一个顶点的蒙皮位置（结果在网格本地坐标系），等价于渲染管线做的事。
+   *
+   * 为什么不用 SkinnedMesh.boneTransform()：A-Frame 1.3 里带的 three r137，
+   * BufferAttribute.getX() 不处理 normalized —— 权重在 GPU 上会被归一化（所以渲染正常），
+   * JS 侧却拿到 65535 这种原始整数。双鱼.glb 的 WEIGHTS_0 正是 normalized 的 ushort，
+   * 用它算出来的位置被放大几万倍（盒子 7 万卡宽、体长量成 1 万），
+   * 点击判定和"鱼大小自适应"全跟着错。这里按权重和归一化，两种格式都算得对。
+   */
+  function skinnedVertex(node, index, target) {
+    var geo = node.geometry;
+    var wi = geo.attributes.skinIndex;
+    var ww = geo.attributes.skinWeight;
+    var w0 = ww.getX(index), w1 = ww.getY(index), w2 = ww.getZ(index), w3 = ww.getW(index);
+    var sum = w0 + w1 + w2 + w3;
+    if (!(sum > 0) || !isFinite(sum)) return null;
+    _skinIdx[0] = wi.getX(index); _skinIdx[1] = wi.getY(index);
+    _skinIdx[2] = wi.getZ(index); _skinIdx[3] = wi.getW(index);
+    _skinW[0] = w0 / sum; _skinW[1] = w1 / sum; _skinW[2] = w2 / sum; _skinW[3] = w3 / sum;
+    var sk = node.skeleton;
+    _skinBase.copy(target).applyMatrix4(node.bindMatrix);
+    _skinSum.set(0, 0, 0);
+    for (var i = 0; i < 4; i++) {
+      var w = _skinW[i];
+      if (!w) continue;
+      var bone = sk.bones[_skinIdx[i]];
+      if (!bone) continue;
+      _skinMat.multiplyMatrices(bone.matrixWorld, sk.boneInverses[_skinIdx[i]]);
+      target.copy(_skinBase).applyMatrix4(_skinMat);
+      _skinSum.addScaledVector(target, w);
+    }
+    return target.copy(_skinSum).applyMatrix4(node.bindMatrixInverse);
+  }
+
+  var _pointMat = new THREE.Matrix4();
+
+  /**
+   * 采样蒙皮后的顶点，得到模型在 toLocal 坐标系里的包围盒。
+   *
+   * 关键点：每个点都是"先按骨骼算位置，再乘 matrixWorld 变到世界，最后乘 toLocal 变到目标系"，
+   * 绝不能先算世界轴对齐盒再变换（那会因为鱼heading旋转而把盒子撑大，实测宽高能多出 60%）。
+   */
+  function skinnedPointBox(root, samples, toLocal) {
+    var box = new THREE.Box3();
+    var v = new THREE.Vector3();
+    var valid = false;
+    root.updateWorldMatrix(true, true);
+    root.traverse(function (node) {
+      if (!node.isMesh || !node.geometry) return;
+      if (isDebugHitBox(node)) return;
+      var pos = node.geometry.attributes && node.geometry.attributes.position;
+      if (!pos) return;
+      _pointMat.copy(toLocal).multiply(node.matrixWorld);      // 该网格本地 → 目标坐标系
+      if (node.isSkinnedMesh && node.skeleton) {
+        var step = Math.max(1, Math.floor(pos.count / samples));
+        for (var i = 0; i < pos.count; i += step) {
+          v.fromBufferAttribute(pos, i);                       // 先放绑定姿势的位置
+          if (!skinnedVertex(node, i, v)) continue;            // 按骨骼姿势算位置
+          box.expandByPoint(v.applyMatrix4(_pointMat));
+        }
+        valid = true;
+      } else {
+        if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
+        if (!node.geometry.boundingBox) return;
+        box.union(node.geometry.boundingBox.clone().applyMatrix4(_pointMat));
+        valid = true;
+      }
+    });
+    return valid && !box.isEmpty() ? box : null;
+  }
+
   /** 屏幕坐标 → 卡片局部坐标（打到卡面平面上）；打不到（卡几乎侧对镜头）返回 null */
   function cardPointFromScreen(clientX, clientY) {
     var sceneEl = document.querySelector('a-scene');
@@ -375,25 +452,29 @@
     },
     /** 量一次鱼的身长（卡宽）：取模型包围盒的水平最长边。模型没加载好返回一个保守值 */
     measureBodyLength: function () {
-      // 不缓存：模型加载前后、换模型、改缩放都会变，缓存住的旧值会误导调试
       var el = this.data.anim;
       var root = el && el.getObject3D('mesh');
       // 模型还没加载完时不要缓存兜底值，否则会永久停在 1.00
       if (!root) return 1;
-      root.updateWorldMatrix(true, true);
-      var box = new THREE.Box3();
-      var tmp = new THREE.Box3();
-      root.traverse(function (node) {
-        if (!node.isMesh || !node.geometry) return;
-        if (isDebugHitBox(node)) return;                        // 跳过调试用的碰撞盒
-        if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
-        if (!node.geometry.boundingBox) return;
-        box.union(tmp.copy(node.geometry.boundingBox).applyMatrix4(node.matrixWorld));
-      });
-      if (box.isEmpty()) return 1;
-      var size = box.getSize(new THREE.Vector3());
-      var len = Math.max(size.x, size.z);
-      if (!(len > 0.05) || !isFinite(len)) return 1;
+      // 每帧要问好几次（规避、间距、转弯半径、自适应），采样一次算好缓存 0.25 秒。
+      // 不能长缓存：模型加载完、换模型、改缩放都会变。
+      var now = performance.now();
+      if (this.bodyLenAt && this.bodyLenValue && now - this.bodyLenAt < 250) return this.bodyLenValue;
+      // 量在"鱼的本地坐标系"里（= swim 节点坐标系，鱼头永远朝本地 +Z）：
+      // 用世界轴对齐盒量，鱼横着游时长度会缩水一半，间距和转弯半径全跟着乱。
+      var swim = this.el.object3D;
+      swim.updateWorldMatrix(true, true);
+      var toSwim = new THREE.Matrix4().copy(swim.matrixWorld).invert();
+      var box = skinnedPointBox(root, HIT_SAMPLES, toSwim);
+      var len = 1;
+      if (box) {
+        var size = box.getSize(new THREE.Vector3());
+        var worldScale = swim.getWorldScale(new THREE.Vector3()).x;
+        len = Math.max(size.x, size.z) * (isFinite(worldScale) && worldScale > 0 ? worldScale : 1);
+      }
+      if (!(len > 0.05) || !isFinite(len)) len = 1;
+      this.bodyLenAt = now;
+      this.bodyLenValue = len;
       return len;
     },
 
@@ -1716,7 +1797,7 @@
 
     /**
      * 命中判定。三层，任意一层中就算点到了鱼（这一套是照葫芦丝那个项目的做法来的）：
-     *   ① 模型网格射线：three 的 raycast 对 SkinnedMesh 会用 boneTransform 逐三角形算，
+     *   ① 模型网格射线：three 的 raycast 对 SkinnedMesh 会按骨骼逐三角形算，
      *      所以它跟着当前骨骼姿势（但只有真正的三角形才算，鱼鳍这种薄片容易擦过去）
      *   ② **模型本地包围盒 + 25% 手指容差**：射线转进模型坐标系里判，
      *      盒子跟着鱼的朝向走，不会因为旋转而虚胖
@@ -1808,7 +1889,7 @@
 
     /**
      * 把鱼的顶点投影到屏幕上，取凸包当轮廓。
-     * 蒙皮网格用 boneTransform 算当前姿势（和命中判定同一套坐标），普通网格直接取顶点。
+     * 蒙皮网格按骨骼算当前姿势（和命中判定同一套坐标），普通网格直接取顶点。
      */
     fishScreenHull: function (fish, camera, rect) {
       var animEl = fish.data.anim;
@@ -1824,7 +1905,7 @@
         var step = Math.max(1, Math.floor(pos.count / HIT_SAMPLES));
         for (var i = 0; i < pos.count; i += step) {
           v.fromBufferAttribute(pos, i);
-          if (node.isSkinnedMesh && node.skeleton) node.boneTransform(i, v);
+          if (node.isSkinnedMesh && node.skeleton && !skinnedVertex(node, i, v)) continue;
           v.applyMatrix4(node.matrixWorld).project(camera);
           if (!isFinite(v.x) || !isFinite(v.y)) continue;
           pts.push([rect.left + (v.x * 0.5 + 0.5) * rect.width,
@@ -1840,38 +1921,15 @@
      *
      * 这里是"点鱼没声音"的关键：geometry.boundingBox 是**绑定姿势**的盒子，
      * 鱼摆尾、转弯之后身体会跑到盒子外面，点上去就没反应。
-     * 现在对 SkinnedMesh 按索引均匀抽 96 个顶点，用 boneTransform 算它们当前姿势的位置，
+     * 现在对 SkinnedMesh 按索引均匀抽 96 个顶点，按骨骼算它们当前姿势的位置，
      * 再取包围盒——所以它会跟着鱼一起动。只在点击时和调试显示时算，不影响帧率。
      */
     fishLocalBox: function (mesh) {
-      mesh.updateWorldMatrix(true, true);
-      var inverse = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
-      var tmp = new THREE.Matrix4();
-      var v = new THREE.Vector3();
-      var box = new THREE.Box3();
-      var valid = false;
-      mesh.traverse(function (node) {
-        if (!node.isMesh || !node.geometry) return;
-        if (isDebugHitBox(node)) return;
-        var pos = node.geometry.attributes && node.geometry.attributes.position;
-        if (!pos) return;
-        tmp.copy(inverse).multiply(node.matrixWorld);      // 该网格本地 → 模型本地
-        if (node.isSkinnedMesh && node.skeleton) {
-          var step = Math.max(1, Math.floor(pos.count / HIT_SAMPLES));
-          for (var i = 0; i < pos.count; i += step) {
-            v.fromBufferAttribute(pos, i);                 // boneTransform 要求先放绑定姿势的位置
-            node.boneTransform(i, v);
-            box.expandByPoint(v.applyMatrix4(tmp));
-          }
-          valid = true;
-        } else {
-          if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
-          if (!node.geometry.boundingBox) return;
-          box.union(node.geometry.boundingBox.clone().applyMatrix4(tmp));
-          valid = true;
-        }
-      });
-      if (!valid || box.isEmpty()) return null;
+      // 模型本地坐标系：点击判定把射线用 inverse(mesh.matrixWorld) 变到同一个坐标系，
+      // 调试盒也是挂在模型节点下面，两边必须一致。
+      var toLocal = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
+      var box = skinnedPointBox(mesh, HIT_SAMPLES, toLocal);
+      if (!box) return null;
       var size = box.getSize(new THREE.Vector3()).multiplyScalar(1.25);
       var center = box.getCenter(new THREE.Vector3());
       box.setFromCenterAndSize(center, size);
