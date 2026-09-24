@@ -544,7 +544,9 @@
       var keys = (app && app.activeKeys) || [];
       for (var i = 0; i < keys.length; i++) {
         var other = instances[keys[i]];
-        if (other && other !== this && !other.hidden) out.push(other);
+        // other.pos 还没建出来说明那条鱼还在 init 里（组件按 DOM 顺序初始化）：
+        // 这时候算它不是"邻居"，不然 init 里挑目标点会读到 undefined
+        if (other && other !== this && other.pos && !other.hidden) out.push(other);
       }
       return out;
     },
@@ -558,8 +560,8 @@
       var others = this.neighbors();
       if (!others.length) return out;
       var bodyLen = this.measureBodyLength();
-      // 避让半径：约 1.6 个身长；场地小的时候按场地收一下，免得全场都在互相躲
-      var avoid = Math.max(0.5, Math.min(bodyLen * 1.6, Math.min(r.x, r.z) * 1.2));
+      // 避让半径：约 2.2 个身长；场地小的时候按场地收一下，免得全场都在互相躲
+      var avoid = Math.max(0.6, Math.min(bodyLen * 2.2, Math.min(r.x, r.z) * 1.5));
       for (var i = 0; i < others.length; i++) {
         var dx = this.pos.x - others[i].pos.x;
         var dz = this.pos.z - others[i].pos.z;
@@ -582,26 +584,47 @@
       var others = this.neighbors();
       if (!others.length) return;
       var bodyLen = this.measureBodyLength();
-      var minGap = Math.max(0.3, Math.min(bodyLen * 0.7, Math.min(r.x, r.z) * 0.8));
+      // 间距下限约 1.25 个身长（两条鱼贴到 0.7 个身长以内就看成一条了）。
+      // 场地限制按**长半轴**算：两条鱼是沿长轴各占一头，按短半轴收会把间距压得太小
+      // （之前就是压到 0.7 个身长，看着还是黏在一起）。
+      var minGap = Math.max(0.45, Math.min(bodyLen * 1.25, Math.max(r.x, r.z) * 0.85));
       for (var i = 0; i < others.length; i++) {
         var dx = this.pos.x - others[i].pos.x;
         var dz = this.pos.z - others[i].pos.z;
         var d = Math.sqrt(dx * dx + dz * dz);
         if (d >= minGap) continue;
         if (d < 1e-4) { dx = 1; dz = 0; d = 1e-4; }
-        var push = (minGap - d) * 0.75;                   // 两边各自往外推，重叠一帧内就分开（宁可稍微冲过一点）
+        var push = (minGap - d) * 0.6;                    // 两边各自往外推；这里已经是常态约束，推太狠会抖
         this.pos.x += (dx / d) * push;
         this.pos.z += (dz / d) * push;
       }
     },
 
-    /** 在圆内取一个目标点（默认 0.72 半径内）；maxK 给"已经贴边了，往中间瞄"用 */
+    /**
+     * 在椭圆内取一个目标点（默认 0.72 半径内）；maxK 给"已经贴边了，往中间瞄"用。
+     *
+     * 同场有别的鱼时瞄"它对面那一侧"：以圆心为参照，挑跟邻居正好相反的方向，
+     * 所以两条鱼会各自守着一头，而不是都在中间绕来绕去（中间绕着绕着就贴一起了）。
+     * 邻居正好在圆心附近时方向没意义，这时退回随机方向。
+     */
     pickTarget: function (maxK) {
       var r = this.radii();
-      var a = this.rng() * Math.PI * 2;
-      var k = Math.sqrt(this.rng()) * (maxK || 0.72);
-      this.target.x = Math.cos(a) * r.x * k;
-      this.target.z = Math.sin(a) * r.z * k;
+      var kMax = maxK || 0.72;
+      var others = this.neighbors();
+      var ang = this.rng() * Math.PI * 2;
+      var k = Math.sqrt(this.rng()) * kMax;
+      if (others.length) {
+        var nx = 0, nz = 0;
+        for (var j = 0; j < others.length; j++) { nx += others[j].pos.x; nz += others[j].pos.z; }
+        nx /= others.length; nz /= others.length;
+        var un = nx / r.x, vn = nz / r.z;            // 邻居在椭圆归一化坐标里的位置
+        var ul = Math.sqrt(un * un + vn * vn);
+        // 目标点往外拉（别再往中间凑），方向按 maxK 等比缩放，贴边改瞄中间时依然有效
+        k = kMax * (0.72 + this.rng() * 0.28);
+        if (ul > 0.25) ang = Math.atan2(-vn, -un) + (this.rng() - 0.5) * 0.8;
+      }
+      this.target.x = Math.cos(ang) * r.x * k;
+      this.target.z = Math.sin(ang) * r.z * k;
       this.targetRn = k;                 // 目标点相对半径的位置（0=圆心 1=边界）
       this.targetTime = 0;
       // 时限按"游到那儿要多久"来定，另给 2.5 倍余量；范围放大后不再半路换目标。
@@ -649,6 +672,17 @@
       }
 
       var r = this.radii();
+      // 目标点必须落在当前活动范围内。活动范围是每 100ms 跟着镜头重算的，
+      // 范围一缩小，之前挑的目标点就会跑到椭圆外面：鱼会一直顶着边界磨，
+      // 两条鱼还特别容易一起被挤到同一条边上（看着就是"黏在一起"）。
+      var tn = Math.sqrt((this.target.x / r.x) * (this.target.x / r.x) +
+                         (this.target.z / r.z) * (this.target.z / r.z));
+      if (tn > 0.85) {
+        var tk = 0.85 / tn;
+        this.target.x *= tk;
+        this.target.z *= tk;
+        this.targetRn *= tk;
+      }
       // 注意：这里统一用 performance.now()，不要用 tick 的 time——
       // 两者时间原点在某些 WebView 里不一致，混用会把 1.1 秒的惊吓拖成十几秒。
       var nowMs = performance.now();
@@ -718,8 +752,8 @@
       // 互相规避：把"远离另一条鱼"的分量叠加进期望方向（越近越强）
       var sep = this.separation(r);
       if (sep.w > 0) {
-        dirX += sep.x * 1.4;
-        dirZ += sep.z * 1.4;
+        dirX += sep.x * 1.7;
+        dirZ += sep.z * 1.7;
       }
       var dl = Math.sqrt(dirX * dirX + dirZ * dirZ) || 1;
       dirX /= dl; dirZ /= dl;
