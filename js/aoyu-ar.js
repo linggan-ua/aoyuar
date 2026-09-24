@@ -21,6 +21,11 @@
    */
   function debugUiRequested() {
     if (window.AOYU_DEBUG === true) return true;
+    // 本地版（127.0.0.1 / localhost / file://）默认带调试入口：
+    // 演出前要在桌面上调鱼的大小，不用再手动加 ?debug=1
+    var host = window.location.hostname;
+    if (window.location.protocol === 'file:' || host === 'localhost' || host === '127.0.0.1' ||
+        host === '::1' || host === '[::1]') return true;
     var m = /(?:^|[?&])debug(?:=([^&]*))?(?:&|$)/.exec(window.location.search);
     if (!m) return false;
     var v = (m[1] || '1').toLowerCase();
@@ -30,7 +35,7 @@
   if (debugUiRequested()) {
     var markDebugUi = function () {
       if (document.body) document.body.classList.add('aoyu-debug');
-      console.log('AOYU_DEBUG_UI on（链接带了调试参数）');
+      console.log('AOYU_DEBUG_UI on（本地版默认开 / 链接带了调试参数）');
     };
     if (document.body) markDebugUi();
     else document.addEventListener('DOMContentLoaded', markDebugUi);
@@ -57,6 +62,11 @@
   // 斜看/离得远时卡片投影像素极少，按"铺满屏幕"外推出来的范围会大到离谱（实测 1000+ 卡宽），
   // 鱼会拿到一个屏幕外的目标一路飞出去。低于这个值就不更新范围，沿用上一次的好值。
   var MIN_NDC_PER_CARD = 0.02;
+  // 两条鱼"不许交叉叠在一起"的间距：中心距离 ≥ PAIR_GAP_K × 平均身长。
+  // 1.0 正好是两个"包围圆"相切（每条鱼的包围圆半径 = 身长的一半），留 15% 余量。
+  var PAIR_GAP_K = 1.15;
+  // 两条鱼最多各自占到长半轴的 80%（于是间距上限 = 1.6 × 长半轴）
+  var PAIR_ROOM_K = 0.8;
 
   var CONFIG = {
     switchHour: 20,            // 20:00 之后显示鳌鱼，之前显示锦鲤
@@ -83,7 +93,8 @@
       rangeScale: [0.5, 8.0],     // 活动范围：1 = 圆形半径 0.50 卡宽；小卡片（印在节目单上）要放大很多才游得开
       animSpeedMax: [0.5, 2.5],   // 摆尾倍率（游动时它就是骨骼动画的速度倍率）
       startleSpeed: [1.5, 8.0],   // 惊吓冲刺速度倍率（相对巡航速度）
-      modelScale: [0.05, 2.0]     // 鱼的大小（默认基准已是 6 倍，所以下限放到 0.05 方便往回收）
+      modelScale: [0.05, 2.0],    // 鱼的大小（默认基准已是 6 倍，所以下限放到 0.05 方便往回收），
+      pcModelScale: [0.05, 2.0]   // PC 模式专用大小：桌面端/OBS 用它，和现场那套互不影响
     }
   };
 
@@ -430,7 +441,7 @@
       this.edgeTime = 0;        // 贴在边界上多久了（超过阈值就掉头，不让它一直磨边）
       this.edgeHit = false;     // 上一帧是不是被硬约束按回边界了（= 这一帧刚到边）
       this.screenR = null;      // 屏幕适配出来的椭圆半径（卡宽），每 100ms 更新一次
-      this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1, startleSpeed: 4 };
+      this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1, pcModelScale: 1, startleSpeed: 4 };
       this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 锦鲤 0.55）
       this.appliedScale = 0;   // 0 表示还没写过缩放，第一帧一定会写一次
       this.hidden = true;
@@ -534,7 +545,9 @@
 
     /** 模型最终缩放 = HTML 基准 × 手调大小 × 自适应缩放 */
     applyModelScale: function () {
-      var want = this.baseScale * this.tuning.modelScale * this.fit;
+      // PC 模式：桌面端（OBS 抓窗口那种）用 pcModelScale，现场用 modelScale，两边互不影响
+      var scale = (app && app.pcMode) ? this.tuning.pcModelScale : this.tuning.modelScale;
+      var want = this.baseScale * scale * this.fit;
       if (Math.abs(want - this.appliedScale) > 1e-4) {
         this.appliedScale = want;
         this.el.object3D.scale.setScalar(want);
@@ -571,6 +584,24 @@
       console.warn('AOYU_FIELD_SKIP ' + why +
         ' 每卡宽NDC=' + dxPerUnit.toFixed(4) + '/' + dyPerUnit.toFixed(4) +
         ' 当前范围=' + (this.screenR ? this.screenR.x.toFixed(2) + '×' + this.screenR.z.toFixed(2) : '无'));
+    },
+
+    /**
+     * 「两条鱼要放得下」的缩放上限（≤1；只有一条鱼时是 1）。
+     *
+     * 卡片占满画面时，按屏幕反推出来的活动范围可能只有 0.4 卡宽，而鱼有 1.45 卡宽长：
+     * 这种场地里两条鱼无论怎么游都会交叉叠在一起（物理上塞不下），只能把鱼按比例缩小到
+     * "两条鱼 + 一条间距"能塞进长轴。这条不受「自适应」开关影响 —— 它管的是会不会叠在一起。
+     */
+    pairFit: function () {
+      if (!this.neighbors().length) return 1;
+      var fit = (this.fit > 0.05 && isFinite(this.fit)) ? this.fit : 1;
+      var lenBase = Math.max(0.1, this.measureBodyLength() / fit);   // 折算回 fit=1 时的身长
+      var r = this.radii();
+      var room = Math.max(r.x, r.z) * PAIR_ROOM_K * 2;
+      var want = room / (lenBase * PAIR_GAP_K);
+      if (!isFinite(want) || !(want > 0.12)) want = 0.12;
+      return want < 1 ? want : 1;
     },
 
     /**
@@ -689,17 +720,20 @@
       var others = this.neighbors();
       if (!others.length) return;
       var bodyLen = this.measureBodyLength();
-      // 间距下限约 1.25 个身长（两条鱼贴到 0.7 个身长以内就看成一条了）。
-      // 场地限制按**长半轴**算：两条鱼是沿长轴各占一头，按短半轴收会把间距压得太小
-      // （之前就是压到 0.7 个身长，看着还是黏在一起）。
-      var minGap = Math.max(0.45, Math.min(bodyLen * 1.25, Math.max(r.x, r.z) * 0.85));
+      // 场地允许的最大间距：两条鱼各自贴到长轴的 80% 处
+      var cap = Math.max(r.x, r.z) * PAIR_ROOM_K * 2;
       for (var i = 0; i < others.length; i++) {
+        // 不许交叉叠在一起：中心距离 ≥ 1.05 × 两条鱼的平均身长。
+        // 以前是"身长×1.25 再被长半轴 0.85 封顶"，卡片离得近时封顶后只有 0.7 个身长，
+        // 两条 1.45 卡宽长的鱼照样能交叉叠在一起（用户截图里那样）。
+        var minGap = Math.max(0.45,
+          Math.min(PAIR_GAP_K * (bodyLen + others[i].measureBodyLength()) * 0.5, cap));
         var dx = this.pos.x - others[i].pos.x;
         var dz = this.pos.z - others[i].pos.z;
         var d = Math.sqrt(dx * dx + dz * dz);
         if (d >= minGap) continue;
         if (d < 1e-4) { dx = 1; dz = 0; d = 1e-4; }
-        var push = (minGap - d) * 0.6;                    // 两边各自往外推；这里已经是常态约束，推太狠会抖
+        var push = (minGap - d) * 0.7;                    // 两边各自往外推；这里已经是常态约束，推太狠会抖
         this.pos.x += (dx / d) * push;
         this.pos.z += (dz / d) * push;
       }
@@ -749,13 +783,14 @@
       if (!d) return;
       if (this.hidden) return;    // 位置保持不动，重新找到卡时接着往下游
 
-      if (this.adaptive) {
-        // 装不下就较快地收（约 0.3 秒），装得下就慢慢放回去——放太快会看到范围忽大忽小
-        var fitWant = this.screenFit();
+      // 装不下就较快地收（约 0.3 秒），装得下就慢慢放回去——放太快会看到范围忽大忽小。
+      // 「两条鱼放得下」这条永远生效，「自适应」开关只管屏幕构图那一条。
+      var fitWant = this.adaptive ? Math.min(this.screenFit(), this.pairFit()) : this.pairFit();
+      if (Math.abs(fitWant - this.fit) > 0.004) {
         this.fit += (fitWant - this.fit) * Math.min(1, d * (fitWant < this.fit ? 6 : 1));
         if (!(this.fit > 0.05) || !isFinite(this.fit)) this.fit = fitWant;
-      } else if (this.fit !== 1) {
-        this.fit = 1;
+      } else if (this.fit !== fitWant) {
+        this.fit = fitWant;
       }
 
       // 活动范围按屏幕来：每 100ms 重算一次"铺满屏幕又不越界"的倍率（平滑跟随，避免抖）
@@ -937,12 +972,13 @@
       var amp = (this.yMax() - this.yMin()) / 2 * 0.8;
       this.pos.y = mid + Math.sin(this.heightPhase) * amp;
 
-      // 硬约束：出圈按比例拉回，高度夹进区间（最后一道保险）
+      // 硬约束：出圈按比例拉回，高度夹进区间
       var out = Math.sqrt((this.pos.x / r.x) * (this.pos.x / r.x) +
                           (this.pos.z / r.z) * (this.pos.z / r.z));
       if (out > 1) { this.pos.x /= out; this.pos.z /= out; this.edgeHit = true; }
       this.pos.y = Math.max(this.yMin(), Math.min(this.yMax(), this.pos.y));
-      // 最后一道保底：和别的鱼的距离不得小于 minGap
+      // 最后一道保底：两条鱼不许叠在一起。放在夹紧之后 —— 夹紧会把它俩拉近，
+      // 放在前面等于白做。间距上限由 pairFit 保证塞得下，所以最多只是略微出圈一点点。
       this.enforceGap(r);
 
       // 写进场景：朝向 = 航向，侧倾 = 转弯
@@ -1078,6 +1114,7 @@
     forceMode: null,      // 调试强制
     offsetMs: 0,          // 调试时间偏移
     adaptive: false,      // 自适应：整幅构图一定留在画面内（默认关，保持按卡宽的固定比例）
+    pcMode: false,        // PC 模式：桌面端（OBS 抓窗口）用调好的 pcModelScale 大小
     hitBoxVisible: false, // 调试：把命中包围盒画出来
     transitionTimer: null,
     switchTimer: null,
@@ -2096,7 +2133,8 @@
           ' 实半径' + status.radius +
           (fish.adaptive ? ' 自适×' + status.fit.toFixed(2) : '') +
           ' 摆尾×' + status.tuning.animSpeedMax.toFixed(2) +
-          ' 大小×' + status.tuning.modelScale.toFixed(2) +
+          ' 大小×' + (self.pcMode ? status.tuning.pcModelScale : status.tuning.modelScale).toFixed(2) +
+          (self.pcMode ? '(PC)' : '') +
           ' 惊吓×' + status.tuning.startleSpeed.toFixed(1) +
           '　身长 ' + status.bodyLen.toFixed(2) + ' 转弯半径 ' + status.turnRadius.toFixed(2) + ' 卡宽' +
           '　当前速度 ' + status.t + ' 位置 ' + status.pos.x.toFixed(2) + ',' +
@@ -2131,6 +2169,8 @@
       var knob = function (key, delta) {
         var fish = self.activeFish();
         if (!fish) return;
+        // PC 模式下「鱼大/小」调的是 PC 专用大小，现场那套不动
+        if (key === 'modelScale' && self.pcMode) key = 'pcModelScale';
         var limits = CONFIG.tuningLimits[key];
         // 防御 NaN：clamp 的实现对 NaN 会把 NaN 原样传下去，一旦存进去就永久坏掉
         var base = fish.tuning[key];
@@ -2149,6 +2189,8 @@
       knobs.forEach(function (item) {
         document.getElementById(item[2]).addEventListener('click', function () { knob(item[0], item[1]); });
       });
+      var pcBtnEl = document.getElementById('db-pc');
+      if (pcBtnEl) pcBtnEl.addEventListener('click', function () { self.togglePcMode(); });
       document.getElementById('db-material').addEventListener('click', function () { self.toggleLightweight(); });
       document.getElementById('db-adaptive').addEventListener('click', function () { self.toggleAdaptive(); });
       document.getElementById('db-hitbox').addEventListener('click', function () { self.toggleHitBox(); });
@@ -2182,6 +2224,7 @@
           tuning: fish.tuning,
           lightweight: !!this.lightweight,
           adaptive: !!this.adaptive,
+          pcMode: !!this.pcMode,
           hitBoxVisible: !!this.hitBoxVisible
         }));
       } catch (error) {
@@ -2199,6 +2242,11 @@
           if (typeof saved.tuning[k] === 'number' && isFinite(saved.tuning[k])) fish.tuning[k] = saved.tuning[k];
         });
       });
+      if (saved.pcMode) {
+        this.pcMode = true;
+        var pcBtn = document.getElementById('db-pc');
+        if (pcBtn) { pcBtn.classList.add('on'); pcBtn.textContent = 'PC 模式：开'; }
+      }
       if (saved.adaptive) {
         this.toggleAdaptive();
       }
@@ -2294,6 +2342,19 @@
       this.saveTuning();
       this.refreshDebug();
       console.log('AOYU_ADAPTIVE', this.adaptive ? 'on' : 'off');
+    },
+
+    /** PC 模式开关：桌面端用 pcModelScale 这条大小，现场那套 modelScale 保持不动 */
+    togglePcMode: function () {
+      this.pcMode = !this.pcMode;
+      var btn = document.getElementById('db-pc');
+      if (btn) {
+        btn.classList.toggle('on', this.pcMode);
+        btn.textContent = this.pcMode ? 'PC 模式：开' : 'PC 模式：关';
+      }
+      this.saveTuning();
+      this.refreshDebug();
+      console.log('AOYU_PC_MODE', this.pcMode ? 'on' : 'off');
     },
 
     toggleLightweight: function () {
