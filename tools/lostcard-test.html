@@ -200,8 +200,7 @@
 
   <a-assets timeout="30000">
     <a-asset-item id="aoyu-model" src="../assets/models/aoyu_ink.glb"></a-asset-item>
-    <a-asset-item id="koi-model" src="../assets/models/koi_ink.glb"></a-asset-item>
-    <a-asset-item id="koi2-model" src="../assets/models/koi2_feixia.glb"></a-asset-item>
+    <a-asset-item id="koi-model" src="../assets/models/koi_red.glb"></a-asset-item>
   </a-assets>
 
   <!-- 性能：不要开 logarithmicDepthBuffer（会关掉早期深度测试优化）。
@@ -225,14 +224,14 @@
     </a-entity>
 
     <a-entity id="koi-swim" fish-swim="key: koi; anim: #koi-anim" scale="2.475 2.475 2.475">
-      <a-entity id="koi-anim" fish-anim="clip: Swim_Loop_2.4s"
+      <a-entity id="koi-anim" fish-anim="clip: Feixia_Swim_Loop_2.8s"
                 gltf-model="#koi-model" rotation="0 90 0"></a-entity>
     </a-entity>
 
     <!-- 第二条锦鲤：同一份 glb 资源，另一套游动/骨骼动画实例，互相之间不撞车 -->
     <a-entity id="koi2-swim" fish-swim="key: koi2; anim: #koi2-anim" scale="2.475 2.475 2.475">
       <a-entity id="koi2-anim" fish-anim="clip: Feixia_Swim_Loop_2.8s"
-                gltf-model="#koi2-model" rotation="0 90 0"></a-entity>
+                gltf-model="#koi-model" rotation="0 90 0"></a-entity>
     </a-entity>
 
   </a-marker>
