@@ -68,6 +68,9 @@
   // 两条鱼最多各自占到长半轴的 80%（于是间距上限 = 1.6 × 长半轴）
   var PAIR_ROOM_K = 0.8;
 
+  // 调试面板旋钮的"无上限"哨兵值：只用来挡住 NaN/Infinity，实用上等于没有上限
+  var UNLOCKED_MAX = 999;
+
   var CONFIG = {
     switchHour: 20,            // 20:00 之后显示鳌鱼，之前显示锦鲤
     // 每个模式下"在场"的鱼：锦鲤模式两条（互相规避），鳌鱼模式一条
@@ -87,14 +90,18 @@
     // 然后在 startleBurstMs 内按曲线落回持续冲刺速度——开头极快、后面保持快游。
     startleBurstMul: 2.0,
     startleBurstMs: 180,
+    // 调试面板各旋钮的量程 [下限, 上限]。上限一律解锁到 UNLOCKED_MAX：
+    // 之前每项都有上限（速度 4、转向 1.7、范围 8、摆尾 2.5、大小 2.0…），
+    // 现场想再大一点就顶死了。下限仍然保留 —— 0 或负数会让速度/缩放变成 NaN 或反向，
+    // 那不是"调大"，是坏掉。
     tuningLimits: {
-      speedScale: [0.5, 4.0],
-      turnScale: [0.5, 1.7],
-      rangeScale: [0.5, 8.0],     // 活动范围：1 = 圆形半径 0.50 卡宽；小卡片（印在节目单上）要放大很多才游得开
-      animSpeedMax: [0.5, 2.5],   // 摆尾倍率（游动时它就是骨骼动画的速度倍率）
-      startleSpeed: [1.5, 8.0],   // 惊吓冲刺速度倍率（相对巡航速度）
-      modelScale: [0.05, 2.0],    // 鱼的大小（默认基准已是 6 倍，所以下限放到 0.05 方便往回收），
-      pcModelScale: [0.05, 2.0]   // PC 模式专用大小：桌面端/OBS 用它，和现场那套互不影响
+      speedScale: [0.5, UNLOCKED_MAX],
+      turnScale: [0.5, UNLOCKED_MAX],
+      rangeScale: [0.5, UNLOCKED_MAX],   // 活动范围：5 ≈ 铺满屏幕 85%，再往上也只是贴到安全边距（屏幕封顶）
+      animSpeedMax: [0.5, UNLOCKED_MAX], // 摆尾倍率（游动时它就是骨骼动画的速度倍率）
+      startleSpeed: [1.5, UNLOCKED_MAX], // 惊吓冲刺速度倍率（相对巡航速度）
+      modelScale: [0.05, UNLOCKED_MAX],  // 鱼的大小（默认基准已是 6 倍，所以下限放到 0.05 方便往回收）
+      pcModelScale: [0.05, UNLOCKED_MAX] // PC 模式专用大小：桌面端/OBS 用它，和现场那套互不影响
     }
   };
 
@@ -2197,7 +2204,7 @@
       document.getElementById('db-anchor').addEventListener('click', function () { self.toggleAnchorRing(); });
       document.getElementById('db-reset').addEventListener('click', function () {
         var fish = self.activeFish();
-        if (fish) fish.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1, startleSpeed: 4 };
+        if (fish) fish.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1, pcModelScale: 1, startleSpeed: 4 };
         self.saveTuning();
         self.refreshDebug();
       });
