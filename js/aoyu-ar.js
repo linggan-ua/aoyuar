@@ -68,20 +68,6 @@
   // 两条鱼最多各自占到长半轴的 80%（于是间距上限 = 1.6 × 长半轴）
   var PAIR_ROOM_K = 0.8;
 
-  /**
-   * 识别灵敏度的"阶梯"：丢卡时依次换二值化方式再找一遍，找到卡就回到默认。
-   * mode 是 ARToolkit 的 labeling threshold mode：
-   *   0 手动（原生默认，阈值 100/255）、1 自动中值、2 自动 Otsu、3 自适应。
-   * 模糊/逆光/曝光跳变时，固定阈值最先失效，自动那几档通常能把卡捞回来。
-   * 只改模式不动阈值 —— 所以最后一档切回"手动"就等于回到出厂状态。
-   */
-  var AR_THRESH_LADDER = [
-    { name: '自动中值', mode: 1 },
-    { name: '自动Otsu', mode: 2 },
-    { name: '自适应', mode: 3 },
-    { name: '手动(默认)', mode: 0 }
-  ];
-
   // 调试面板旋钮的"无上限"哨兵值：只用来挡住 NaN/Infinity，实用上等于没有上限
   var UNLOCKED_MAX = 999;
 
@@ -1136,12 +1122,6 @@
     offsetMs: 0,          // 调试时间偏移
     adaptive: false,      // 自适应：整幅构图一定留在画面内（默认关，保持按卡宽的固定比例）
     pcMode: false,        // PC 模式：桌面端（OBS 抓窗口）用调好的 pcModelScale 大小
-    // 识别阈值：0 = 丢卡时自动爬阶梯（默认）；1..4 = 手动锁定 AR_THRESH_LADDER 里的某一档
-    threshChoice: 0,
-    markerActive: false,
-    markerLostAt: 0,
-    threshStep: null,
-    threshStepAt: 0,
     hitBoxVisible: false, // 调试：把命中包围盒画出来
     transitionTimer: null,
     switchTimer: null,
@@ -1389,8 +1369,6 @@
           var size = video.videoWidth + '×' + video.videoHeight;
           if (size === lastSize) return;
           console.log('AOYU_CAMERA_VIDEO_RESIZED ' + (lastSize || '?') + ' → ' + size);
-          // 切镜头后识别画布尺寸没跟上，是"画面清晰但认不出卡"的常见原因，这里一并打出来
-          if (self.logArSizes) self.logArSizes('after-resize');
           lastSize = size;
         });
         video.addEventListener('loadedmetadata', function () {
@@ -1534,8 +1512,6 @@
      * 表现就是整页黑（相机层不动，识别也就没有新帧）。这里检测到卡住就重挂一次同一路流。
      */
     videoWatchdogTick: function () {
-      // 每秒顺带跑一次识别灵敏度阶梯（只在丢卡时动手，见 arLadderTick）
-      this.arLadderTick();
       var video = this.findArVideo();
       if (!video || video.tagName !== 'VIDEO' || !video.srcObject) return;
       // 页面在后台时浏览器会主动暂停摄像头（隐私策略），这是正常的，不能当成"卡住"去重挂流——
@@ -1557,72 +1533,6 @@
           Math.round(now - this._lastVideoTimeAt) + 'ms');
         this.recoverVideo(video);
       }
-    },
-
-    /** AR.js 的识别引擎本体（ARController），拿不到就返回 null */
-    arController: function () {
-      var sys = this.sceneEl && this.sceneEl.systems && this.sceneEl.systems.arjs;
-      var session = sys && sys._arSession;
-      var ctx = session && session.arContext;
-      return (ctx && ctx.arController) || null;
-    },
-
-    /** 切一档识别阈值（mode 只改 labeling threshold mode，不动阈值数值） */
-    applyThresholdStep: function (step) {
-      var c = this.arController();
-      if (!c || !c.artoolkit || typeof c.setThresholdMode !== 'function') return false;
-      try {
-        c.setThresholdMode(step.mode);
-        return true;
-      } catch (error) {
-        console.warn('AOYU_AR_THRESH 设置失败', step.name, error && error.message);
-        return false;
-      }
-    },
-
-    /** 回到原生默认（手动 + 阈值 100/255） */
-    resetThreshold: function () {
-      if (this.threshStep == null) return;
-      this.threshStep = null;
-      this.threshStepAt = 0;
-      var c = this.arController();
-      if (!c || typeof c.setThresholdMode !== 'function') return;
-      try {
-        c.setThresholdMode(0);
-        c.setThreshold(100);
-        console.log('AOYU_AR_THRESH_RESET 回到手动 100/255');
-      } catch (error) { /* 拿不到就算了 */ }
-    },
-
-    /**
-     * 丢卡超过 2 秒就开始"灵敏度阶梯"：每 2.8 秒换一档二值化方式再找一遍。
-     * 卡片重新被认出来会立刻停止并回到默认（见 setMarkerActive）。
-     * 调试面板里手动选了某一档（threshChoice != 0）时这里不插手。
-     */
-    arLadderTick: function () {
-      if (document.hidden || this.markerActive) return;
-      if (this.threshChoice) return;
-      if (!this.markerLostAt) return;
-      var now = performance.now();
-      var lost = now - this.markerLostAt;
-      if (lost < 2000) return;
-      if (this.threshStepAt && now - this.threshStepAt < 2800) return;
-      this.threshStepAt = now;
-      this.threshStep = (this.threshStep == null ? 0 : (this.threshStep + 1) % AR_THRESH_LADDER.length);
-      var step = AR_THRESH_LADDER[this.threshStep];
-      if (this.applyThresholdStep(step)) {
-        console.log('AOYU_AR_RETRY 丢卡 ' + (lost / 1000).toFixed(1) + 's → 识别阈值换到「' + step.name + '」');
-      }
-    },
-
-    /** 相机分辨率变了（手机自动切镜头）：把视频尺寸和识别画布尺寸打出来对比 */
-    logArSizes: function (label) {
-      var video = this.findArVideo();
-      var c = this.arController();
-      var canvas = c && c.canvas;
-      console.log('AOYU_AR_SIZE ' + label +
-        ' video=' + (video ? video.videoWidth + 'x' + video.videoHeight : '无') +
-        ' arCanvas=' + (canvas ? canvas.width + 'x' + canvas.height : '无'));
     },
 
     /** 重挂同一路流（强制重新解码）：全屏/切镜头/回前台后画面卡住时用 */
@@ -2131,21 +2041,6 @@
     setMarkerActive: function (active) {
       if (this.markerActive === active) return;
       this.markerActive = active;
-      var now = performance.now();
-      if (active) {
-        if (this.markerLostAt) {
-          var lostSec = (now - this.markerLostAt) / 1000;
-          console.log('AOYU_MARKER_FOUND 中断 ' + lostSec.toFixed(1) + 's' +
-            (this.threshStep != null ? '（期间试了 ' + (this.threshStep + 1) + ' 档识别阈值）' : ''));
-          this.markerLostAt = 0;
-          this.resetThreshold();
-        }
-      } else {
-        this.markerLostAt = now;
-        this.threshStep = null;
-        this.threshStepAt = 0;
-        console.log('AOYU_MARKER_LOST 卡不在画面里了');
-      }
       var hint = document.getElementById('hint');
       if (!hint) return;
       if (active) hint.classList.add('hidden');
@@ -2247,7 +2142,6 @@
           ' 摆尾×' + status.tuning.animSpeedMax.toFixed(2) +
           ' 大小×' + (self.pcMode ? status.tuning.pcModelScale : status.tuning.modelScale).toFixed(2) +
           (self.pcMode ? '(PC)' : '') +
-          (self.threshChoice > 0 ? ' 阈值' + AR_THRESH_LADDER[self.threshChoice - 1].name : '') +
           ' 惊吓×' + status.tuning.startleSpeed.toFixed(1) +
           '　身长 ' + status.bodyLen.toFixed(2) + ' 转弯半径 ' + status.turnRadius.toFixed(2) + ' 卡宽' +
           '　当前速度 ' + status.t + ' 位置 ' + status.pos.x.toFixed(2) + ',' +
@@ -2304,8 +2198,6 @@
       });
       var pcBtnEl = document.getElementById('db-pc');
       if (pcBtnEl) pcBtnEl.addEventListener('click', function () { self.togglePcMode(); });
-      var threshBtnEl = document.getElementById('db-thresh');
-      if (threshBtnEl) threshBtnEl.addEventListener('click', function () { self.cycleThresh(); });
       document.getElementById('db-material').addEventListener('click', function () { self.toggleLightweight(); });
       document.getElementById('db-adaptive').addEventListener('click', function () { self.toggleAdaptive(); });
       document.getElementById('db-hitbox').addEventListener('click', function () { self.toggleHitBox(); });
@@ -2340,7 +2232,6 @@
           lightweight: !!this.lightweight,
           adaptive: !!this.adaptive,
           pcMode: !!this.pcMode,
-          threshChoice: this.threshChoice | 0,
           hitBoxVisible: !!this.hitBoxVisible
         }));
       } catch (error) {
@@ -2358,14 +2249,6 @@
           if (typeof saved.tuning[k] === 'number' && isFinite(saved.tuning[k])) fish.tuning[k] = saved.tuning[k];
         });
       });
-      if (typeof saved.threshChoice === 'number' && saved.threshChoice > 0 &&
-          saved.threshChoice <= AR_THRESH_LADDER.length) {
-        this.threshChoice = saved.threshChoice;
-        var step = AR_THRESH_LADDER[this.threshChoice - 1];
-        this.applyThresholdStep(step);
-        var th = document.getElementById('db-thresh');
-        if (th) th.textContent = '识别阈值：' + step.name;
-      }
       if (saved.pcMode) {
         this.pcMode = true;
         var pcBtn = document.getElementById('db-pc');
@@ -2466,30 +2349,6 @@
       this.saveTuning();
       this.refreshDebug();
       console.log('AOYU_ADAPTIVE', this.adaptive ? 'on' : 'off');
-    },
-
-    /**
-     * 调试面板：手动选识别阈值。0 = 自动阶梯（丢卡时自己爬），1..4 = 锁定某一档。
-     * 手机上如果某档明显更容易认出卡，就锁定它。
-     */
-    cycleThresh: function () {
-      this.threshChoice = (this.threshChoice + 1) % (AR_THRESH_LADDER.length + 1);
-      var btn = document.getElementById('db-thresh');
-      var label = '识别阈值：自动阶梯';
-      if (this.threshChoice > 0) {
-        var step = AR_THRESH_LADDER[this.threshChoice - 1];
-        label = '识别阈值：' + step.name;
-        if (this.applyThresholdStep(step)) console.log('AOYU_AR_THRESH_LOCK ' + step.name);
-      } else {
-        var c = this.arController();
-        if (c && typeof c.setThresholdMode === 'function') {
-          try { c.setThresholdMode(0); c.setThreshold(100); } catch (error) { /* 忽略 */ }
-        }
-        console.log('AOYU_AR_THRESH_LOCK 自动阶梯');
-      }
-      if (btn) btn.textContent = label;
-      this.saveTuning();
-      this.refreshDebug();
     },
 
     /** PC 模式开关：桌面端用 pcModelScale 这条大小，现场那套 modelScale 保持不动 */
