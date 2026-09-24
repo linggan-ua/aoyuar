@@ -56,6 +56,8 @@
 
   var CONFIG = {
     switchHour: 20,            // 20:00 之后显示鳌鱼，之前显示锦鲤
+    // 每个模式下"在场"的鱼：锦鲤模式两条（互相规避），鳌鱼模式一条
+    modeFish: { koi: ['koi', 'koi2'], aoyu: ['aoyu'] },
     noteVolume: 0.75,          // 和小程序一致
     clips: { aoyu: 'Ao_Swim_Loop_3.2s', koi: 'Swim_Loop_2.4s' },
     notes: ['note-c6', 'note-d6', 'note-e6', 'note-g6', 'note-a6'].map(function (name) {
@@ -208,6 +210,9 @@
       this.action = this.mixer.clipAction(clip);
       this.action.setLoop(THREE.LoopRepeat, Infinity);
       this.action.play();
+      // 每条鱼摆尾相位随机：两条锦鲤不会像复制粘贴一样同步摆尾
+      this.action.time = Math.random() * clip.duration;
+      this.mixer.update(0);
       this.action.paused = !!this.wantPaused;   // 已经隐藏的鱼，创建后立刻保持暂停
       console.log('AOYU_ANIM_READY', clip.name, clip.duration.toFixed(1) + 's',
         'paused=' + this.action.paused);
@@ -320,7 +325,15 @@
     init: function () {
       var self = this;
       this.rng = Math.random;
-      this.pos = { x: 0, y: (this.data.yMin + this.data.yMax) / 2, z: 0 };
+      // 随机初始落点：同场两条鱼不会从圆心同一点冒出来
+      var startR = this.radii();
+      var startA = this.rng() * Math.PI * 2;
+      var startK = 0.3 + this.rng() * 0.4;
+      this.pos = {
+        x: Math.cos(startA) * startR.x * startK,
+        y: (this.data.yMin + this.data.yMax) / 2,
+        z: Math.sin(startA) * startR.z * startK
+      };
       this.head = { x: 0, z: 1 };
       this.target = { x: 0, z: 0 };
       this.targetTime = 0;
@@ -522,6 +535,66 @@
       return { x: rx, z: rz };
     },
 
+    /**
+     * 同场其他鱼的位置（只算当前模式下"在场"的那几条）。
+     * app.activeKeys 由主控按模式维护：锦鲤模式 = ['koi','koi2']，鳌鱼模式 = ['aoyu']。
+     */
+    neighbors: function () {
+      var out = [];
+      var keys = (app && app.activeKeys) || [];
+      for (var i = 0; i < keys.length; i++) {
+        var other = instances[keys[i]];
+        if (other && other !== this && !other.hidden) out.push(other);
+      }
+      return out;
+    },
+
+    /**
+     * 方向避让：靠近别的鱼时给出"远离它"的单位方向与权重（越近越强）。
+     * 权重>0 时会在转向方向里叠加这个分量，让两条鱼自己绕开，而不是硬顶。
+     */
+    separation: function (r) {
+      var out = { x: 0, z: 0, w: 0 };
+      var others = this.neighbors();
+      if (!others.length) return out;
+      var bodyLen = this.measureBodyLength();
+      // 避让半径：约 1.6 个身长；场地小的时候按场地收一下，免得全场都在互相躲
+      var avoid = Math.max(0.5, Math.min(bodyLen * 1.6, Math.min(r.x, r.z) * 1.2));
+      for (var i = 0; i < others.length; i++) {
+        var dx = this.pos.x - others[i].pos.x;
+        var dz = this.pos.z - others[i].pos.z;
+        var d = Math.sqrt(dx * dx + dz * dz);
+        if (d > avoid) continue;
+        if (d < 1e-4) { dx = 1; dz = 0; d = 1e-4; }      // 完全重合时给一个确定方向
+        var w = 1 - d / avoid;                            // 0（刚好在边界）→ 1（贴在一起）
+        out.x += (dx / d) * w;
+        out.z += (dz / d) * w;
+        out.w += w;
+      }
+      return out;
+    },
+
+    /**
+     * 硬约束（保底）：两条鱼中心的距离不得小于 minGap，否则直接把本鱼往外推。
+     * 方向避让正常工作时基本用不到，但受惊冲刺、贴边等极端情况下能兜住"不许撞一起"。
+     */
+    enforceGap: function (r) {
+      var others = this.neighbors();
+      if (!others.length) return;
+      var bodyLen = this.measureBodyLength();
+      var minGap = Math.max(0.3, Math.min(bodyLen * 0.7, Math.min(r.x, r.z) * 0.8));
+      for (var i = 0; i < others.length; i++) {
+        var dx = this.pos.x - others[i].pos.x;
+        var dz = this.pos.z - others[i].pos.z;
+        var d = Math.sqrt(dx * dx + dz * dz);
+        if (d >= minGap) continue;
+        if (d < 1e-4) { dx = 1; dz = 0; d = 1e-4; }
+        var push = (minGap - d) * 0.75;                   // 两边各自往外推，重叠一帧内就分开（宁可稍微冲过一点）
+        this.pos.x += (dx / d) * push;
+        this.pos.z += (dz / d) * push;
+      }
+    },
+
     /** 在圆内取一个目标点（默认 0.72 半径内）；maxK 给"已经贴边了，往中间瞄"用 */
     pickTarget: function (maxK) {
       var r = this.radii();
@@ -642,6 +715,12 @@
         }
       }
       if (this.boosting && !boosting) this.pickTarget();   // 冲刺刚结束：挑个新目标继续巡游
+      // 互相规避：把"远离另一条鱼"的分量叠加进期望方向（越近越强）
+      var sep = this.separation(r);
+      if (sep.w > 0) {
+        dirX += sep.x * 1.4;
+        dirZ += sep.z * 1.4;
+      }
       var dl = Math.sqrt(dirX * dirX + dirZ * dirZ) || 1;
       dirX /= dl; dirZ /= dl;
 
@@ -724,6 +803,8 @@
                           (this.pos.z / r.z) * (this.pos.z / r.z));
       if (out > 1) { this.pos.x /= out; this.pos.z /= out; this.edgeHit = true; }
       this.pos.y = Math.max(this.yMin(), Math.min(this.yMax(), this.pos.y));
+      // 最后一道保底：和别的鱼的距离不得小于 minGap
+      this.enforceGap(r);
 
       // 写进场景：朝向 = 航向，侧倾 = 转弯
       this.applyModelScale();
@@ -854,6 +935,7 @@
   app = {
     markerActive: false,
     targetMode: null,     // 'aoyu' | 'koi'
+    activeKeys: [],       // 当前在场的鱼（锦鲤模式两条）
     forceMode: null,      // 调试强制
     offsetMs: 0,          // 调试时间偏移
     adaptive: false,      // 自适应：整幅构图一定留在画面内（默认关，保持按卡宽的固定比例）
@@ -1559,26 +1641,43 @@
         console.log('AOYU_TAP_SKIP 卡片不在画面里（marker.visible=false）');
         return false;
       }
-      var fish = this.activeFish();
-      if (!fish) return false;
-      if (!this.hitFish(fish, x, y)) return false;
-      this.playRandomNote();
-      return true;
+      var list = this.activeFishList();
+      for (var i = 0; i < list.length; i++) {
+        if (this.hitFish(list[i], x, y)) {
+          this.playRandomNote();
+          return true;
+        }
+      }
+      return false;
     },
 
     /** 抬手确认是点击（不是拖拽）、且按下的地方不是鱼 → 吓一跳 */
     handleTapEmpty: function (x, y) {
-      var fish = this.activeFish();
-      if (!fish) return;
       if (!CONFIG.startleEnabled) return;
+      var list = this.activeFishList();
+      if (!list.length) return;
       var local = cardPointFromScreen(x, y);
       var threat = local ? { x: local.x, z: local.z } : null;
-      fish.startle(threat);
-      console.log('AOYU_STARTLE', fish.data.key, threat ? threat.x.toFixed(2) + ',' + threat.z.toFixed(2) : 'no-point');
+      list.forEach(function (fish) { fish.startle(threat); });
+      console.log('AOYU_STARTLE', list.map(function (f) { return f.data.key; }).join('+'),
+        threat ? threat.x.toFixed(2) + ',' + threat.z.toFixed(2) : 'no-point');
     },
 
+    /** 主鱼（调试面板、锚点环、状态行用它；锦鲤模式下还有第二条） */
     activeFish: function () {
-      return instances[this.targetMode === 'koi' ? 'koi' : 'aoyu'] || null;
+      var key = this.activeKeys && this.activeKeys[0];
+      if (!key) key = this.targetMode === 'koi' ? 'koi' : 'aoyu';
+      return instances[key] || null;
+    },
+
+    /** 当前在场的所有鱼 */
+    activeFishList: function () {
+      var list = [];
+      var keys = this.activeKeys || [];
+      for (var i = 0; i < keys.length; i++) {
+        if (instances[keys[i]]) list.push(instances[keys[i]]);
+      }
+      return list;
     },
 
     /**
@@ -1819,37 +1918,23 @@
       }, delay);
     },
 
+    /**
+     * 切换模式：显示这个模式在场的鱼（锦鲤模式是两条），隐藏其它。
+     * 这只决定"哪几条鱼在场"，和卡片在不在画面里无关（那个交给 AR.js 的 marker 可见性）。
+     */
     applyMode: function (next) {
-      var prev = this.targetMode;
-      if (prev === next) return;
+      if (this.targetMode === next) return;
       this.targetMode = next;
-      console.log('AOYU_TIME_MODE', next);
-
-      if (!prev) {
-        // 第一次定模式：直接让对应那条鱼可见（卡片在不在由 AR.js 的 marker 可见性决定）
-        this.resetFish();
-        if (instances[next]) instances[next].enter();
-        this.syncModeButtons();
-        return;
-      }
-
-      // 换鱼：直接硬切——新的入场、旧的立刻隐藏。
-      // （小程序那边是"旧的游走、新的游入，同框 0.9 秒"；椭圆轨道没有游走动作，
-      //   同框那 0.9 秒看起来就是"两条鱼同时冒出来"，所以这里不保留交叉过渡。
-      //   另外原来这里调 FishMotion.startExiting(instances[prev].motion)，
-      //   换掉状态机之后 .motion 不存在，会抛异常把整个切换流程打断——那才是切换失效的原因。）
-      // 换鱼：新的显示、旧的隐藏（这是"选哪条鱼"，和卡片丢没丢无关）
-      if (instances[next]) instances[next].enter();
-      if (instances[prev]) instances[prev].hide();
-      this.syncModeButtons();
-    },
-
-    resetFish: function () {
+      var keys = CONFIG.modeFish[next] || [next];
+      this.activeKeys = keys.slice();
       Object.keys(instances).forEach(function (key) {
         var fish = instances[key];
-        if (key === this.targetMode) return;
-        fish.hide();
-      }, this);
+        if (!fish) return;
+        if (keys.indexOf(key) >= 0) fish.enter();
+        else fish.hide();
+      });
+      console.log('AOYU_TIME_MODE', next, keys.join('+'));
+      this.syncModeButtons();
     },
 
     /* ---------- 调试面板 ---------- */
