@@ -53,6 +53,10 @@
   var SCREEN_FILL_MAX_X = 0.92;
   var SCREEN_FILL_MAX_Y = 0.88;
   var SCREEN_FILL_SAMPLES = 24;
+  // 卡片在画面里至少要有这么多 NDC（≈ 屏幕短的 2%）才认这次位姿：
+  // 斜看/离得远时卡片投影像素极少，按"铺满屏幕"外推出来的范围会大到离谱（实测 1000+ 卡宽），
+  // 鱼会拿到一个屏幕外的目标一路飞出去。低于这个值就不更新范围，沿用上一次的好值。
+  var MIN_NDC_PER_CARD = 0.02;
 
   var CONFIG = {
     switchHour: 20,            // 20:00 之后显示鳌鱼，之前显示锦鲤
@@ -558,6 +562,17 @@
       return true;
     },
 
+    /** 范围被判定不可信时的日志：同一原因 2 秒内只打一条，方便真机上抓现场 */
+    warnField: function (why, dxPerUnit, dyPerUnit) {
+      var now = performance.now();
+      if (this._fieldWarnAt && now - this._fieldWarnAt < 2000 && this._fieldWarnWhy === why) return;
+      this._fieldWarnAt = now;
+      this._fieldWarnWhy = why;
+      console.warn('AOYU_FIELD_SKIP ' + why +
+        ' 每卡宽NDC=' + dxPerUnit.toFixed(4) + '/' + dyPerUnit.toFixed(4) +
+        ' 当前范围=' + (this.screenR ? this.screenR.x.toFixed(2) + '×' + this.screenR.z.toFixed(2) : '无'));
+    },
+
     /**
      * 自适应缩放（调试面板的「自适应」开关）：把"活动范围 + 鱼身"整幅构图缩到画面内。
      * 只影响鱼的大小和悬浮高度 —— 活动范围本身已经按屏幕算好了（screenRadii），
@@ -603,13 +618,22 @@
       if (!isFinite(o.x) || !isFinite(px.x) || !isFinite(pz.y)) return null;
       var dxPerUnit = Math.abs(px.x - o.x) / unit;      // 每卡宽 -> NDC x
       var dyPerUnit = Math.abs(pz.y - o.y) / unit;      // 每卡宽 -> NDC y
+      if (dxPerUnit < MIN_NDC_PER_CARD || dyPerUnit < MIN_NDC_PER_CARD) {
+        this.warnField('卡片太小/位姿不可信', dxPerUnit, dyPerUnit);
+        return null;                                     // 不更新，沿用上一次的好值
+      }
       var rx = dxPerUnit > 1e-6 ? limitX / dxPerUnit : unit;
       var rz = dyPerUnit > 1e-6 ? limitY / dyPerUnit : unit;
       // 透视外推偏大 + 手指/画面安全边距
       rx *= 0.9; rz *= 0.9;
-      // 采样校验：万一还是超了（斜看时最明显），按 15% 递减，最多缩三次
-      for (var i = 0; i < 3 && !this.fitsRadii(rx, rz, camera, limitX, limitY); i++) {
+      // 采样校验：整圈必须真的在画面里。以前只缩三次就收工，斜看时能返回 1000+ 卡宽的范围
+      // （鱼随后就顺着目标飞出去了），所以这里一直缩到装得下为止。
+      for (var i = 0; i < 40 && !this.fitsRadii(rx, rz, camera, limitX, limitY); i++) {
         rx *= 0.85; rz *= 0.85;
+      }
+      if (!this.fitsRadii(rx, rz, camera, limitX, limitY)) {
+        this.warnField('怎么缩都装不下', dxPerUnit, dyPerUnit);
+        return null;
       }
       if (!(rx > 0.05) || !isFinite(rx)) rx = unit;
       if (!(rz > 0.05) || !isFinite(rz)) rz = unit;
