@@ -164,7 +164,7 @@
   window.AOYU_USE_IMAGE_TRACKER = useImageTracker;
   window.AOYU_SKIP_CAMERA = useImageTracker;      // 相机由 image-tracker 自己开
   // 图像跟踪用的卡片参考图（默认值写死在 image-tracker.js 里，这里跟随 pattern 一起换）
-  window.AOYU_TRACKER_CARD = 'assets/patterns/pattern-card-v5-track.png';
+  window.AOYU_TRACKER_CARD = 'assets/patterns/pattern-card-v4-track.png';
   if (!useImageTracker) return;
   document.addEventListener('DOMContentLoaded', function () {});
   var rewrite = function () {
@@ -316,7 +316,7 @@
     l.onload = function () {
       window.AOYU_LOAD_OPENCV(function (ok) { console.log('AOYU_TRACKER_MODE opencv 就绪=' + ok); });
       var t = document.createElement('script');
-      t.src = 'js/image-tracker.js?v=23';   // 改 js/image-tracker.js 时这个数字要 +1：否则手机会用缓存里的旧算法
+      t.src = 'js/image-tracker.js?v=24';   // 改 js/image-tracker.js 时这个数字要 +1：否则手机会用缓存里的旧算法
       document.body.appendChild(t);
     };
     l.onerror = function () { console.error('AOYU_TRACKER_MODE opencv-loader 没加载出来'); };
