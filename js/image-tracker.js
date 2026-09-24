@@ -13,7 +13,7 @@
 
   var CONFIG = {
     // 卡片图路径：子目录部署时用 window.AOYU_TRACKER_CARD 覆盖（相对文档解析）
-    cardImage: (typeof window !== 'undefined' && window.AOYU_TRACKER_CARD) || 'assets/patterns/pattern-card-v3-track.png',
+    cardImage: (typeof window !== 'undefined' && window.AOYU_TRACKER_CARD) || 'assets/patterns/pattern-card-v5-track.png',
     cardWidth: 1,                 // 世界单位 = 卡片宽度（与 fish-motion 的 ±0.7 卡宽一致）
     hfovDeg: 60,
     frameW: 640, frameH: 480,
