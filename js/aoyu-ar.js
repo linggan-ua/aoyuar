@@ -1150,8 +1150,6 @@
     pcMode: false,        // PC 模式：桌面端（OBS 抓窗口）用调好的 pcModelScale 大小
     // 识别阈值：0 = 不锁定（用 ARToolkit 原生默认：手动 + 100/255）；1..4 = 手动锁定某一档
     threshChoice: 0,
-    threshValue: null,    // 手动二值化阈值（0..255），null = 不改（保持 ARToolkit 默认 100）
-    matchColor: false,    // 模板匹配方式：false = 单色（默认，通常更稳）
     // 丢卡自动重试（老卡"糊一下认不回来"时来回换二值化档位）。默认**关**：
     // v99 默认开着，现场出现过"怎么扫都认不出"的回退，所以改成要手动打开。
     autoRetry: false,
@@ -1574,52 +1572,6 @@
           Math.round(now - this._lastVideoTimeAt) + 'ms');
         this.recoverVideo(video);
       }
-    },
-
-    /** 打一条当前识别参数（阈值/匹配方式/标签模式/图案比例），现场排查时一眼能看到 */
-    logArConf: function () {
-      var c = this.arController();
-      if (!c || typeof c.getThreshold !== 'function') return;
-      var mode = c.getThresholdMode ? c.getThresholdMode() : '?';
-      var modeName = ['手动', '自动中值', '自动Otsu', '自适应'][mode] || mode;
-      var match = (c.getPatternDetectionMode && c.getPatternDetectionMode()) === 1 ? '单色' : '彩色';
-      var label = (c.getLabelingMode && c.getLabelingMode()) === 1 ? '黑区' : '白区';
-      console.log('AOYU_AR_CONF 阈值模式=' + modeName + '(' + mode + ')' +
-        ' 阈值=' + (c.getThreshold ? c.getThreshold() : '?') + '/255' +
-        ' 匹配=' + match +
-        ' 标签=' + label +
-        ' 图案比例=' + (c.getPattRatio ? c.getPattRatio() : '?') +
-        '（模板匹配置信度是 ARToolkit 编译期常量，这个版本没有暴露，改不了）');
-    },
-
-    /** 手动改二值化阈值（0..255）：印刷偏灰、环境偏暗/偏亮时最有用的一档 */
-    nudgeThreshold: function (delta) {
-      var c = this.arController();
-      if (!c || typeof c.setThreshold !== 'function') return;
-      var cur = typeof this.threshValue === 'number' ? this.threshValue : (c.getThreshold ? c.getThreshold() : 100);
-      var next = Math.round(Math.max(20, Math.min(235, cur + delta)));
-      try {
-        c.setThresholdMode(0);            // 手动模式，否则阈值会被自动覆盖
-        c.setThreshold(next);
-      } catch (error) { return; }
-      this.threshValue = next;
-      this.saveTuning();
-      this.refreshDebug();
-      console.log('AOYU_AR_THRESH_VALUE 手动阈值=' + next + '/255');
-    },
-
-    /** 模板匹配方式：单色(默认) / 彩色 */
-    toggleMatchMode: function () {
-      var c = this.arController();
-      if (!c || typeof c.setPatternDetectionMode !== 'function') return;
-      var color = !this.matchColor;
-      try { c.setPatternDetectionMode(color ? 0 : 1); } catch (error) { return; }
-      this.matchColor = color;
-      var btn = document.getElementById('db-match');
-      if (btn) btn.textContent = '匹配：' + (color ? '彩色' : '单色');
-      this.saveTuning();
-      this.refreshDebug();
-      console.log('AOYU_AR_MATCH ' + (color ? '彩色(0)' : '单色(1)'));
     },
 
     /** AR.js 的识别引擎本体（ARController），拿不到就返回 null */
@@ -2314,10 +2266,7 @@
           ' 摆尾×' + status.tuning.animSpeedMax.toFixed(2) +
           ' 大小×' + (self.pcMode ? status.tuning.pcModelScale : status.tuning.modelScale).toFixed(2) +
           (self.pcMode ? '(PC)' : '') +
-          (self.threshChoice > 0
-            ? ' 阈值' + AR_THRESH_CHOICES[self.threshChoice - 1].name
-            : (typeof self.threshValue === 'number' ? ' 阈值' + self.threshValue + '/255' : '')) +
-          (self.matchColor ? ' 彩色匹配' : '') +
+          (self.threshChoice > 0 ? ' 阈值' + AR_THRESH_CHOICES[self.threshChoice - 1].name : '') +
           ' 惊吓×' + status.tuning.startleSpeed.toFixed(1) +
           '　身长 ' + status.bodyLen.toFixed(2) + ' 转弯半径 ' + status.turnRadius.toFixed(2) + ' 卡宽' +
           '　当前速度 ' + status.t + ' 位置 ' + status.pos.x.toFixed(2) + ',' +
@@ -2378,13 +2327,6 @@
       if (threshBtnEl) threshBtnEl.addEventListener('click', function () { self.cycleThresh(); });
       var retryBtnEl = document.getElementById('db-retry');
       if (retryBtnEl) retryBtnEl.addEventListener('click', function () { self.setAutoRetry(!self.autoRetry); });
-      var tmEl = document.getElementById('db-thresh-m');
-      if (tmEl) tmEl.addEventListener('click', function () { self.nudgeThreshold(-5); });
-      var tpEl = document.getElementById('db-thresh-p');
-      if (tpEl) tpEl.addEventListener('click', function () { self.nudgeThreshold(5); });
-      var mmEl = document.getElementById('db-match');
-      if (mmEl) mmEl.addEventListener('click', function () { self.toggleMatchMode(); });
-      setTimeout(function () { self.logArConf(); }, 1500);
       document.getElementById('db-material').addEventListener('click', function () { self.toggleLightweight(); });
       document.getElementById('db-adaptive').addEventListener('click', function () { self.toggleAdaptive(); });
       document.getElementById('db-hitbox').addEventListener('click', function () { self.toggleHitBox(); });
@@ -2420,8 +2362,6 @@
           adaptive: !!this.adaptive,
           pcMode: !!this.pcMode,
           threshChoice: this.threshChoice | 0,
-          threshValue: (typeof this.threshValue === 'number') ? this.threshValue : null,
-          matchColor: !!this.matchColor,
           autoRetry: !!this.autoRetry,
           hitBoxVisible: !!this.hitBoxVisible
         }));
@@ -2447,19 +2387,6 @@
         this.applyThresholdStep(step);
         var th = document.getElementById('db-thresh');
         if (th) th.textContent = '识别阈值：' + step.name;
-      }
-      if (typeof saved.threshValue === 'number' && isFinite(saved.threshValue)) {
-        this.threshValue = Math.max(20, Math.min(235, Math.round(saved.threshValue)));
-        var ac = this.arController();
-        if (ac && typeof ac.setThreshold === 'function') {
-          try { ac.setThresholdMode(0); ac.setThreshold(this.threshValue); } catch (error) { /* 忽略 */ }
-        }
-      }
-      if (saved.matchColor) {
-        var mc = this.arController();
-        if (mc && typeof mc.setPatternDetectionMode === 'function') {
-          try { mc.setPatternDetectionMode(0); this.matchColor = true; } catch (error) { /* 忽略 */ }
-        }
       }
       if (saved.autoRetry) this.setAutoRetry(true, true);
       if (saved.pcMode) {
