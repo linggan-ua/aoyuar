@@ -72,7 +72,8 @@
   var UNLOCKED_MAX = 999;
 
   var CONFIG = {
-    switchHour: 20,            // 20:00 之后显示鳌鱼，之前显示锦鲤
+    switchHour: 20,            // 切换时刻：20:30 之后显示鳌鱼，之前显示锦鲤
+    switchMinute: 30,          // 分钟也要能配，所以不直接用 getHours() 比较（见 isAoyuTime）
     // 每个模式下"在场"的鱼：锦鲤模式两条（互相规避），鳌鱼模式一条
     modeFish: { koi: ['koi', 'koi2'], aoyu: ['aoyu'] },
     noteVolume: 0.75,          // 和小程序一致
@@ -2055,20 +2056,29 @@
       return new Date(Date.now() + this.offsetMs);
     },
 
+    /** 当前时间算不算"鳌鱼时段"（切换点精确到分钟，默认 20:30） */
+    isAoyuTime: function (now) {
+      var minutes = now.getHours() * 60 + now.getMinutes();
+      var boundary = CONFIG.switchHour * 60 + CONFIG.switchMinute;
+      return minutes >= boundary;
+    },
+
     updateTimeMode: function () {
       if (this.forceMode) {
         this.applyMode(this.forceMode);
         return;
       }
       var now = this.effectiveNow();
-      this.applyMode(now.getHours() >= CONFIG.switchHour ? 'aoyu' : 'koi');
+      // 这里必须是 this（函数里没有 self：写成 self.isAoyuTime 会抛 ReferenceError，
+      // 而且是在 init 里调用的，会把后面的初始化一起带崩）
+      this.applyMode(this.isAoyuTime(now) ? 'aoyu' : 'koi');
       this.scheduleSwitch(now);
     },
 
     scheduleSwitch: function (now) {
       if (this.switchTimer) clearTimeout(this.switchTimer);
       var next = new Date(now.getTime());
-      next.setHours(CONFIG.switchHour, 0, 0, 0);
+      next.setHours(CONFIG.switchHour, CONFIG.switchMinute, 0, 0);
       if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
       var delay = Math.max(1000, next.getTime() - now.getTime() + 100);
       var self = this;
@@ -2115,7 +2125,7 @@
       this.refreshDebug = function () {
         var now = self.effectiveNow();
         clock.textContent = format(now);
-        var natural = now.getHours() >= CONFIG.switchHour ? '鳌鱼' : '锦鲤';
+        var natural = self.isAoyuTime(now) ? '鳌鱼' : '锦鲤';
         var text = self.forceMode
           ? (self.forceMode === 'aoyu' ? '鳌鱼' : '锦鲤') + '（强制）'
           : natural;
@@ -2167,8 +2177,8 @@
       document.getElementById('db-p1').addEventListener('click', function () { offset(1); });
       document.getElementById('db-p10').addEventListener('click', function () { offset(10); });
       document.getElementById('db-p60').addEventListener('click', function () { offset(60); });
-      document.getElementById('db-1959').addEventListener('click', function () { self.setClockAt(19, 59, 55); });
-      document.getElementById('db-2001').addEventListener('click', function () { self.setClockAt(20, 1, 0); });
+      document.getElementById('db-2029').addEventListener('click', function () { self.setClockAt(20, 29, 55); });
+      document.getElementById('db-2031').addEventListener('click', function () { self.setClockAt(20, 31, 0); });
       document.getElementById('db-koi').addEventListener('click', function () { self.setForce('koi'); });
       document.getElementById('db-aoyu').addEventListener('click', function () { self.setForce('aoyu'); });
       document.getElementById('db-follow').addEventListener('click', function () { self.setForce(null); });
