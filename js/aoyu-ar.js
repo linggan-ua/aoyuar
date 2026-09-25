@@ -68,6 +68,9 @@
   // 两条鱼最多各自占到长半轴的 80%（于是间距上限 = 1.6 × 长半轴）
   var PAIR_ROOM_K = 0.8;
 
+  // 鱼大小的默认基准（面板「鱼大一点/小一点」的起点，三条鱼共用同一套 modelScale）
+  var DEFAULT_MODEL_SCALE = 2.0;
+
   // 调试面板旋钮的"无上限"哨兵值：只用来挡住 NaN/Infinity，实用上等于没有上限
   var UNLOCKED_MAX = 999;
 
@@ -449,7 +452,7 @@
       this.edgeTime = 0;        // 贴在边界上多久了（超过阈值就掉头，不让它一直磨边）
       this.edgeHit = false;     // 上一帧是不是被硬约束按回边界了（= 这一帧刚到边）
       this.screenR = null;      // 屏幕适配出来的椭圆半径（卡宽），每 100ms 更新一次
-      this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1, pcModelScale: 1, startleSpeed: 4 };
+      this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: DEFAULT_MODEL_SCALE, pcModelScale: DEFAULT_MODEL_SCALE, startleSpeed: 4 };
       this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 锦鲤 0.55）
       this.appliedScale = 0;   // 0 表示还没写过缩放，第一帧一定会写一次
       this.hidden = true;
@@ -2192,8 +2195,16 @@
         // 防御 NaN：clamp 的实现对 NaN 会把 NaN 原样传下去，一旦存进去就永久坏掉
         var base = fish.tuning[key];
         if (typeof base !== 'number' || !isFinite(base)) base = 1;
-        var next = clamp(base + delta, limits[0], limits[1]);
-        fish.tuning[key] = Math.round(next * 100) / 100;
+        var next = Math.round(clamp(base + delta, limits[0], limits[1]) * 100) / 100;
+        if (key === 'modelScale' || key === 'pcModelScale') {
+          // 大小是"三条鱼共用"的：只改当前这条的话，切到另一个时段（鳌鱼↔锦鲤）
+          // 会发现那边还是旧大小，得靠刷新才对得上（用户就是这么被坑的）。
+          Object.keys(instances).forEach(function (k) {
+            if (instances[k]) instances[k].tuning[key] = next;
+          });
+        } else {
+          fish.tuning[key] = next;
+        }
         self.saveTuning();
         self.refreshDebug();
       };
@@ -2214,7 +2225,7 @@
       document.getElementById('db-anchor').addEventListener('click', function () { self.toggleAnchorRing(); });
       document.getElementById('db-reset').addEventListener('click', function () {
         var fish = self.activeFish();
-        if (fish) fish.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: 1, pcModelScale: 1, startleSpeed: 4 };
+        if (fish) fish.tuning = { speedScale: 1, turnScale: 1, rangeScale: 5, animSpeedMax: 1, modelScale: DEFAULT_MODEL_SCALE, pcModelScale: DEFAULT_MODEL_SCALE, startleSpeed: 4 };
         self.saveTuning();
         self.refreshDebug();
       });
