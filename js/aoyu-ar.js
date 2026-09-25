@@ -70,8 +70,10 @@
 
   // 鱼大小的默认基准（面板「鱼大一点/小一点」的起点，三条鱼共用同一套 modelScale）
   var DEFAULT_MODEL_SCALE = 2.0;
-  // 活动范围：5 ≈ 铺满屏幕 85%，6 起就到 100%（0.92/0.88 安全边距）封顶
-  var DEFAULT_RANGE_SCALE = 6.0;
+  // 鳌鱼在共用大小的基础上再加这么多（用户要求"鳌鱼缩放再 +1"）
+  var AOYU_SCALE_BONUS = 1.0;
+  // 活动范围：5 ≈ 铺满屏幕 85%，6 起就到 100%（0.92/0.88 安全边距）封顶（7 和 6 视觉上一样）
+  var DEFAULT_RANGE_SCALE = 7.0;
 
   // 调试面板旋钮的"无上限"哨兵值：只用来挡住 NaN/Infinity，实用上等于没有上限
   var UNLOCKED_MAX = 999;
@@ -560,6 +562,7 @@
     applyModelScale: function () {
       // PC 模式：桌面端（OBS 抓窗口那种）用 pcModelScale，现场用 modelScale，两边互不影响
       var scale = (app && app.pcMode) ? this.tuning.pcModelScale : this.tuning.modelScale;
+      if (this.data.key === 'aoyu') scale += AOYU_SCALE_BONUS;   // 鳌鱼始终比锦鲤大一档
       var want = this.baseScale * scale * this.fit;
       if (Math.abs(want - this.appliedScale) > 1e-4) {
         this.appliedScale = want;
@@ -2439,11 +2442,20 @@
 
   window.AOYU = app;
 
-  // a-scene 加载完（marker 元素就绪）再初始化
-  var sceneEl = document.querySelector('a-scene');
-  if (sceneEl.hasLoaded) {
-    app.init();
-  } else {
-    sceneEl.addEventListener('loaded', function () { app.init(); });
-  }
+  // 初始化：等 a-scene 的 loaded 事件（marker 元素、资产都就绪）。
+  // 注意这个脚本现在放在 <head>（必须在 <a-scene> 之前注册组件，否则 A-Frame 不会
+  // 给实体挂上 fish-swim/fish-anim —— 表现就是"几条鱼全叠在锚点上不动"），
+  // 所以这里第一次调用时 document 里可能还没有 a-scene，要等 DOMContentLoaded 再试。
+  (function waitForScene() {
+    var sceneEl = document.querySelector('a-scene');
+    if (!sceneEl) {
+      document.addEventListener('DOMContentLoaded', waitForScene, { once: true });
+      return;
+    }
+    if (sceneEl.hasLoaded) {
+      app.init();
+    } else {
+      sceneEl.addEventListener('loaded', function () { app.init(); }, { once: true });
+    }
+  })();
 })();
