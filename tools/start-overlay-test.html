@@ -117,7 +117,7 @@
     pointer-events: auto; opacity: .78;
   }
   body.aoyu-debug #debug-toggle { display: block; }
-  /* 调试模式：底部中央一键切换「红锦鲤 / 水墨鳌鱼」（现场对灯光、走位时用） */
+  /* 调试模式：底部中央一键切换「红鲤鱼 / 水墨鳌鱼」（现场对灯光、走位时用） */
   #mode-switch {
     display: none;
     position: absolute; left: 50%;
@@ -200,7 +200,7 @@
 <script src="../aframe-ar.js"></script>
 <script src="../js/note-synth.js?v=1"></script>
 <script>window.AOYU_DEBUG = true;   // 工具页始终显示调试入口</script>
-<script src="../js/aoyu-ar.js?v=108"></script>
+<script src="../js/aoyu-ar.js?v=109"></script>
 </head>
 <body>
 
@@ -221,7 +221,7 @@
        识别频率和采集分辨率都用 AR.js 默认值，不人为限制。 -->
   <!-- renderer 必须带 colorManagement：A-Frame 1.3 默认不做 sRGB 输出，
        glTF 贴图会被当线性值写出去，整体明显偏暗（小程序那边是正常的色彩管理） -->
-  <!-- 鳌鱼是 unlit 材质（水墨质感全靠贴图），锦鲤是普通材质，需要一点光 -->
+  <!-- 鳌鱼是 unlit 材质（水墨质感全靠贴图），鲤鱼是普通材质，需要一点光 -->
   <a-entity light="type: ambient; color: #ffffff; intensity: 0.9"></a-entity>
   <a-entity light="type: directional; color: #fff5d6; intensity: 0.7" position="1.5 2 1"></a-entity>
 
@@ -241,7 +241,7 @@
       <a-entity id="koi-anim" fish-anim="clip: Feixia_Swim_Loop_2.8s"
                 gltf-model="#koi-model" rotation="0 90 0"></a-entity>
 
-    <!-- 第二条锦鲤 -->
+    <!-- 第二条鲤鱼 -->
     <a-entity id="koi2-swim" fish-swim="key: koi2; anim: #koi2-anim" scale="0.55 0.55 0.55">
       <a-entity id="koi2-anim" fish-anim="clip: Feixia_Swim_Loop_2.8s"
                 gltf-model="#koi-model" rotation="0 90 0"></a-entity>
@@ -292,7 +292,7 @@
       <button id="db-2046">20:46</button>
     </div>
     <div class="db-row">
-      <button id="db-koi">强制锦鲤</button>
+      <button id="db-koi">强制鲤鱼</button>
       <button id="db-aoyu">强制鳌鱼</button>
     </div>
     <div class="db-row">

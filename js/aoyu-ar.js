@@ -79,9 +79,9 @@
   var UNLOCKED_MAX = 999;
 
   var CONFIG = {
-    switchHour: 20,            // 切换时刻：20:45 之后显示鳌鱼，之前显示锦鲤
+    switchHour: 20,            // 切换时刻：20:45 之后显示鳌鱼，之前显示鲤鱼
     switchMinute: 45,          // 分钟也要能配，所以不直接用 getHours() 比较（见 isAoyuTime）
-    // 每个模式下"在场"的鱼：锦鲤模式两条（互相规避），鳌鱼模式一条
+    // 每个模式下"在场"的鱼：鲤鱼模式两条（互相规避），鳌鱼模式一条
     modeFish: { koi: ['koi', 'koi2'], aoyu: ['aoyu'] },
     noteVolume: 0.75,          // 和小程序一致
     clips: { aoyu: 'Ao_Swim_Loop_3.2s', koi: 'Swim_Loop_2.4s' },
@@ -317,7 +317,7 @@
       this.action = this.mixer.clipAction(clip);
       this.action.setLoop(THREE.LoopRepeat, Infinity);
       this.action.play();
-      // 每条鱼摆尾相位随机：两条锦鲤不会像复制粘贴一样同步摆尾
+      // 每条鱼摆尾相位随机：两条鲤鱼不会像复制粘贴一样同步摆尾
       this.action.time = Math.random() * clip.duration;
       this.mixer.update(0);
       this.action.paused = !!this.wantPaused;   // 已经隐藏的鱼，创建后立刻保持暂停
@@ -457,7 +457,7 @@
       this.edgeHit = false;     // 上一帧是不是被硬约束按回边界了（= 这一帧刚到边）
       this.screenR = null;      // 屏幕适配出来的椭圆半径（卡宽），每 100ms 更新一次
       this.tuning = { speedScale: 1, turnScale: 1, rangeScale: DEFAULT_RANGE_SCALE, animSpeedMax: 1, modelScale: DEFAULT_MODEL_SCALE, pcModelScale: DEFAULT_MODEL_SCALE, startleSpeed: 4 };
-      this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 锦鲤 0.55）
+      this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 鲤鱼 0.55）
       this.appliedScale = 0;   // 0 表示还没写过缩放，第一帧一定会写一次
       this.hidden = true;
       // 隐藏这条鱼有两个坑，都不能踩：
@@ -562,7 +562,7 @@
     applyModelScale: function () {
       // PC 模式：桌面端（OBS 抓窗口那种）用 pcModelScale，现场用 modelScale，两边互不影响
       var scale = (app && app.pcMode) ? this.tuning.pcModelScale : this.tuning.modelScale;
-      if (this.data.key === 'aoyu') scale += AOYU_SCALE_BONUS;   // 鳌鱼始终比锦鲤大一档
+      if (this.data.key === 'aoyu') scale += AOYU_SCALE_BONUS;   // 鳌鱼始终比鲤鱼大一档
       var want = this.baseScale * scale * this.fit;
       if (Math.abs(want - this.appliedScale) > 1e-4) {
         this.appliedScale = want;
@@ -689,7 +689,7 @@
 
     /**
      * 同场其他鱼的位置（只算当前模式下"在场"的那几条）。
-     * app.activeKeys 由主控按模式维护：锦鲤模式 = ['koi','koi2']，鳌鱼模式 = ['aoyu']。
+     * app.activeKeys 由主控按模式维护：鲤鱼模式 = ['koi','koi2']，鳌鱼模式 = ['aoyu']。
      */
     neighbors: function () {
       var out = [];
@@ -1126,7 +1126,7 @@
   app = {
     markerActive: false,
     targetMode: null,     // 'aoyu' | 'koi'
-    activeKeys: [],       // 当前在场的鱼（锦鲤模式两条）
+    activeKeys: [],       // 当前在场的鱼（鲤鱼模式两条）
     forceMode: null,      // 调试强制
     offsetMs: 0,          // 调试时间偏移
     adaptive: false,      // 自适应：整幅构图一定留在画面内（默认关，保持按卡宽的固定比例）
@@ -1855,7 +1855,7 @@
         threat ? threat.x.toFixed(2) + ',' + threat.z.toFixed(2) : 'no-point');
     },
 
-    /** 主鱼（调试面板、锚点环、状态行用它；锦鲤模式下还有第二条） */
+    /** 主鱼（调试面板、锚点环、状态行用它；鲤鱼模式下还有第二条） */
     activeFish: function () {
       var key = this.activeKeys && this.activeKeys[0];
       if (!key) key = this.targetMode === 'koi' ? 'koi' : 'aoyu';
@@ -2097,7 +2097,7 @@
     },
 
     /**
-     * 切换模式：显示这个模式在场的鱼（锦鲤模式是两条），隐藏其它。
+     * 切换模式：显示这个模式在场的鱼（鲤鱼模式是两条），隐藏其它。
      * 这只决定"哪几条鱼在场"，和卡片在不在画面里无关（那个交给 AR.js 的 marker 可见性）。
      */
     applyMode: function (next) {
@@ -2133,9 +2133,9 @@
       this.refreshDebug = function () {
         var now = self.effectiveNow();
         clock.textContent = format(now);
-        var natural = self.isAoyuTime(now) ? '鳌鱼' : '锦鲤';
+        var natural = self.isAoyuTime(now) ? '鳌鱼' : '鲤鱼';
         var text = self.forceMode
-          ? (self.forceMode === 'aoyu' ? '鳌鱼' : '锦鲤') + '（强制）'
+          ? (self.forceMode === 'aoyu' ? '鳌鱼' : '鲤鱼') + '（强制）'
           : natural;
         modeText.textContent = '当前预设：' + text;
         var statusText2 = document.getElementById('debug-camera');
@@ -2202,7 +2202,7 @@
         if (typeof base !== 'number' || !isFinite(base)) base = 1;
         var next = Math.round(clamp(base + delta, limits[0], limits[1]) * 100) / 100;
         // 面板调的是**三条鱼共用**的值：tuning 原本每条鱼一份，只改当前这条的话，
-        // 切到另一个时段（鳌鱼↔锦鲤）会发现那边还是旧值，得刷新才对得上（大小、范围都踩过）。
+        // 切到另一个时段（鳌鱼↔鲤鱼）会发现那边还是旧值，得刷新才对得上（大小、范围都踩过）。
         Object.keys(instances).forEach(function (k) {
           if (instances[k]) instances[k].tuning[key] = next;
         });
@@ -2218,7 +2218,7 @@
       knobs.forEach(function (item) {
         document.getElementById(item[2]).addEventListener('click', function () { knob(item[0], item[1]); });
       });
-      // 底部一键切换：红锦鲤 ↔ 水墨鳌鱼（调试模式才显示；顺手锁住模式，
+      // 底部一键切换：红鲤鱼 ↔ 水墨鳌鱼（调试模式才显示；顺手锁住模式，
       // 免得刚好到切换时间又被系统时间规则切回去）
       var modeSwitchEl = document.getElementById('mode-switch');
       if (modeSwitchEl) modeSwitchEl.addEventListener('click', function () {
@@ -2438,7 +2438,7 @@
 
     syncModeButtons: function () {
       var sw = document.getElementById('mode-switch');
-      if (sw) sw.textContent = this.targetMode === 'koi' ? '切到鳌鱼' : '切到锦鲤';
+      if (sw) sw.textContent = this.targetMode === 'koi' ? '切到鳌鱼' : '切到鲤鱼';
       var koi = document.getElementById('db-koi');
       var aoyu = document.getElementById('db-aoyu');
       var follow = document.getElementById('db-follow');

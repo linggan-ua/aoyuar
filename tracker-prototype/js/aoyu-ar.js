@@ -14,7 +14,7 @@
   var THREE = AFRAME.THREE;
 
   var CONFIG = {
-    switchHour: 20,            // 20:00 之后显示鳌鱼，之前显示锦鲤
+    switchHour: 20,            // 20:00 之后显示鳌鱼，之前显示鲤鱼
     transitionMs: 900,         // 换鱼时两条同时在场的时长
     hideDelayMs: 1000,         // 丢卡后让鱼游走再隐藏
     noteVolume: 0.75,          // 和小程序一致
@@ -124,7 +124,7 @@
       this.upRef = [0, 1, 0];
       this.posture = { name: '平放（默认）', tiltDeg: 0 };
       this.tuning = { speedScale: 1, turnScale: 1, rangeScale: 1, animSpeedMax: 2.2, modelScale: 1 };
-      this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 锦鲤 0.55）
+      this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 鲤鱼 0.55）
       this.appliedScale = 1;
       this.hidden = true;
       this.upRefTimer = 99;                 // 第一帧就估一次姿态
@@ -757,9 +757,9 @@
       this.refreshDebug = function () {
         var now = self.effectiveNow();
         clock.textContent = format(now);
-        var natural = now.getHours() >= CONFIG.switchHour ? '鳌鱼' : '锦鲤';
+        var natural = now.getHours() >= CONFIG.switchHour ? '鳌鱼' : '鲤鱼';
         var text = self.forceMode
-          ? (self.forceMode === 'aoyu' ? '鳌鱼' : '锦鲤') + '（强制）'
+          ? (self.forceMode === 'aoyu' ? '鳌鱼' : '鲤鱼') + '（强制）'
           : natural;
         modeText.textContent = '当前预设：' + text;
         var statusText2 = document.getElementById('debug-camera');
