@@ -2218,6 +2218,13 @@
       knobs.forEach(function (item) {
         document.getElementById(item[2]).addEventListener('click', function () { knob(item[0], item[1]); });
       });
+      // 底部一键切换：红锦鲤 ↔ 水墨鳌鱼（调试模式才显示；顺手锁住模式，
+      // 免得刚好到切换时间又被系统时间规则切回去）
+      var modeSwitchEl = document.getElementById('mode-switch');
+      if (modeSwitchEl) modeSwitchEl.addEventListener('click', function () {
+        self.setForce(self.targetMode === 'koi' ? 'aoyu' : 'koi');
+      });
+
       var pcBtnEl = document.getElementById('db-pc');
       if (pcBtnEl) pcBtnEl.addEventListener('click', function () { self.togglePcMode(); });
       document.getElementById('db-material').addEventListener('click', function () { self.toggleLightweight(); });
@@ -2430,6 +2437,8 @@
     },
 
     syncModeButtons: function () {
+      var sw = document.getElementById('mode-switch');
+      if (sw) sw.textContent = this.targetMode === 'koi' ? '切到鳌鱼' : '切到锦鲤';
       var koi = document.getElementById('db-koi');
       var aoyu = document.getElementById('db-aoyu');
       var follow = document.getElementById('db-follow');

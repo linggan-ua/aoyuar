@@ -117,6 +117,18 @@
     pointer-events: auto; opacity: .78;
   }
   body.aoyu-debug #debug-toggle { display: block; }
+  /* 调试模式：底部中央一键切换「红锦鲤 / 水墨鳌鱼」（现场对灯光、走位时用） */
+  #mode-switch {
+    display: none;
+    position: absolute; left: 50%;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    padding: 10px 18px; border-radius: 999px;
+    border: 1px solid rgba(245, 194, 67, .65); background: rgba(8, 11, 16, .72);
+    color: #f5c243; font-size: 13px; font-weight: 700; font-family: inherit;
+    pointer-events: auto; -webkit-tap-highlight-color: transparent;
+  }
+  body.aoyu-debug #mode-switch { display: block; }
   #debug-panel {
     display: none;
     position: absolute; right: calc(14px + env(safe-area-inset-right));
@@ -189,7 +201,7 @@
 <script src="../aframe-ar.js"></script>
 <script src="../js/note-synth.js?v=1"></script>
 <script>window.AOYU_DEBUG = true;   // 工具页始终显示调试入口</script>
-<script src="../js/aoyu-ar.js?v=107"></script>
+<script src="../js/aoyu-ar.js?v=108"></script>
 </head>
 <body>
 
@@ -259,6 +271,7 @@
   <div id="ar-error"></div>
 
   <div id="debug-toggle">调试</div>
+  <button id="mode-switch" type="button">切到鳌鱼</button>
   <div id="debug-panel">
     <div class="db-head">
       <span class="db-title">系统时间调试</span>
