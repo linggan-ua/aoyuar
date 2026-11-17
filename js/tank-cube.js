@@ -20,8 +20,8 @@
     { label: 'LEFT',   sub: '-X', color: '#ff858d', position: [-0.61, 0, 0] },
     { label: 'TOP',    sub: '+Y', color: '#6ee77e', position: [0,  0.61, 0] },
     { label: 'BOTTOM', sub: '-Y', color: '#2eaa64', position: [0, -0.61, 0] },
-    { label: 'BACK',   sub: '+Z', color: '#5d8cff', position: [0, 0,  0.61] },
-    { label: 'FRONT',  sub: '-Z', color: '#8aabff', position: [0, 0, -0.61] }
+    { label: 'FRONT',  sub: '+Z', color: '#5d8cff', position: [0, 0,  0.61] },
+    { label: 'BACK',   sub: '-Z', color: '#8aabff', position: [0, 0, -0.61] }
   ];
 
   function makeLabelTexture(THREE, def) {
@@ -96,6 +96,9 @@
       sprite.position.set(def.position[0], def.position[1], def.position[2]);
       sprite.scale.set(0.16, 0.06, 1);
       sprite.userData.aoyuFaceLabel = def.label;
+      sprite.userData.faceNormal = new THREE.Vector3(
+        def.position[0], def.position[1], def.position[2]
+      ).normalize();
       group.add(sprite);
     }
 
@@ -116,9 +119,27 @@
     for (var j = 0; j < object.children.length; j++) disposeObject(object.children[j]);
   }
 
+  function updateFaceLabels(group, camera) {
+    if (!group || !camera) return;
+    group.updateWorldMatrix(true, false);
+    var center = group.userData._labelCenter || (group.userData._labelCenter = new THREE.Vector3());
+    var cam = group.userData._labelCam || (group.userData._labelCam = new THREE.Vector3());
+    var normal = group.userData._labelNormal || (group.userData._labelNormal = new THREE.Vector3());
+    group.getWorldPosition(center);
+    camera.getWorldPosition(cam);
+    var toCamera = cam.sub(center).normalize();
+    for (var i = 0; i < group.children.length; i++) {
+      var child = group.children[i];
+      if (!child.userData || !child.userData.faceNormal) continue;
+      normal.copy(child.userData.faceNormal).transformDirection(group.matrixWorld).normalize();
+      child.visible = normal.dot(toCamera) > 0.04;
+    }
+  }
+
   window.AOYU_TANK_CUBE = {
     FACE_DEFS: FACE_DEFS.slice(),
-    createMesh: createMesh
+    createMesh: createMesh,
+    updateFaceLabels: updateFaceLabels
   };
 
   if (!window.AFRAME || !window.AFRAME.registerComponent) return;
@@ -131,6 +152,10 @@
       var group = createMesh(AFRAME.THREE, this.data.opacity);
       this.el.setObject3D('mesh', group);
       this.mesh = group;
+    },
+    tick: function () {
+      var camera = this.el.sceneEl && this.el.sceneEl.camera;
+      updateFaceLabels(this.mesh, camera);
     },
     remove: function () {
       if (!this.mesh) return;

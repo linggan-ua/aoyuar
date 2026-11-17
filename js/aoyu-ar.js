@@ -574,14 +574,21 @@
       };
     },
 
-    /** 鱼在 cube 内的垂直活动范围（marker 的 local +Y = 向上）。 */
+    /** 鱼在 cube 内的垂直活动范围（tank local +Y = 向上，中心为 0）。 */
     yMin: function () {
       var h = Math.max(0.05, Number(tankConfig.height) || 0.56);
-      return Math.max(0.02, h * 0.12);
+      var margin = Math.min(0.07, h * 0.12);
+      return -h / 2 + margin;
     },
     yMax: function () {
       var h = Math.max(0.05, Number(tankConfig.height) || 0.56);
-      return Math.max(this.yMin() + 0.04, h * 0.88);
+      var margin = Math.min(0.07, h * 0.12);
+      return h / 2 - margin;
+    },
+
+    /** 鱼缸后墙在 tank local z=0，鱼的中心坐标需要整体前移半个纵深。 */
+    tankCenterZ: function () {
+      return Math.max(0.025, Number(tankConfig.depth) || 0.50) / 2;
     },
 
     /** 模型最终缩放 = HTML 基准 × 手调大小 × 自适应缩放 */
@@ -947,7 +954,7 @@
 
       // 写进场景：朝向 = 航向，侧倾 = 转弯
       this.applyModelScale();
-      this.el.object3D.position.set(this.pos.x, this.pos.y, this.pos.z);
+      this.el.object3D.position.set(this.pos.x, this.pos.y, this.pos.z + this.tankCenterZ());
       // 使用官方 cube 的坐标轴：鱼头沿水平 X/Z 航向，鱼背朝 cube 的 +Y 面；
       // 这样从斜视、俯视等不同角度看，鱼和鱼缸共用同一个 marker 坐标系。
       tmpForward.set(this.head.x, 0, this.head.z);
@@ -2042,7 +2049,7 @@
     /** 打开独立的鱼缸三维调试器。工具页和主页面都能用同一个入口。 */
     openTankEditor: function () {
       var path = window.location.pathname;
-      var editor = /\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html';
+      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=4';
       window.open(editor, '_blank', 'noopener');
     },
 
@@ -2101,7 +2108,7 @@
       if (this._tankBoxSignature === signature) return;
       this._tankBoxSignature = signature;
       // 只写 A-Frame transform，不直接操作 object3D；鱼缸底面始终落在 marker 平面上。
-      el.setAttribute('position', '0 ' + (h / 2).toFixed(5) + ' 0');
+      el.setAttribute('position', '0 0 ' + (d / 2).toFixed(5));
       el.setAttribute('scale', w.toFixed(5) + ' ' + h.toFixed(5) + ' ' + d.toFixed(5));
     },
 

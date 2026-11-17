@@ -67,6 +67,8 @@
   }
   #view-actions button:hover { background: rgba(255,255,255,.07); color: #fff; }
   #view-actions button.on { background: rgba(255,159,67,.16); color: #ffb35f; }
+  #view-actions button.ar-jump { color: #ffbd72; border-left: 1px solid rgba(255,159,67,.28); margin-left: 2px; }
+  #view-actions button.ar-jump:hover { background: rgba(255,159,67,.13); }
   #help {
     position: absolute; left: 20px; bottom: 18px;
     padding: 8px 11px; border-radius: 8px; border: 1px solid var(--line);
@@ -156,7 +158,7 @@
     color: #191307; background: linear-gradient(180deg, #ffb35f, #f29132); font-weight: 800;
   }
   .primary-btn:hover { filter: brightness(1.07); }
-  .toggle-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 7px; }
+  .toggle-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 7px; }
   .toggle-row button {
     min-height: 31px; border-radius: 7px; border: 1px solid var(--line);
     background: #22262d; color: #8f98a4; cursor: pointer; font-size: 10px;
@@ -184,6 +186,28 @@
     position: absolute; right: 20px; bottom: 18px; z-index: 3;
     color: #6d7682; font-size: 10px; pointer-events: none;
   }
+  #ar-preview-shell {
+    position: fixed; inset: 0; z-index: 80; display: none; background: #000;
+  }
+  #ar-preview-shell.open { display: block; }
+  #ar-preview {
+    display: block; width: 100%; height: 100%; border: 0; background: #000;
+  }
+  #ar-preview-bar {
+    position: absolute; top: 12px; left: 12px; z-index: 2;
+    display: flex; align-items: center; gap: 10px; pointer-events: none;
+  }
+  #ar-preview-back {
+    min-height: 34px; padding: 0 12px; border-radius: 8px;
+    border: 1px solid rgba(245,194,67,.65); background: rgba(10,14,18,.86);
+    color: #f5c243; font: inherit; font-weight: 700; font-size: 12px;
+    pointer-events: auto; cursor: pointer;
+  }
+  #ar-preview-label {
+    padding: 7px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.18);
+    background: rgba(10,14,18,.66); color: #c8d2d8; font-size: 10px;
+    pointer-events: none; backdrop-filter: blur(8px);
+  }
   @media (max-width: 760px) {
     #app { flex-direction: column; }
     #viewport { flex: 1 1 53%; min-height: 250px; }
@@ -200,7 +224,10 @@
 </style>
 <script src="../aframe.min.js"></script>
 <script src="../js/tank-config.js?v=1"></script>
-<script src="../js/tank-cube.js?v=13"></script>
+<script src="../js/tank-cube.js?v=15"></script>
+<script>window.THREE = window.AFRAME && window.AFRAME.THREE;</script>
+<script src="../js/GLTFLoader.js"></script>
+<script src="../js/tank-editor-fish.js?v=3"></script>
 </head>
 <body>
 <div id="app">
@@ -215,6 +242,7 @@
         <button type="button" data-view="front">正面</button>
         <button type="button" data-view="top">顶视</button>
         <button type="button" data-view="side">侧视</button>
+        <button type="button" id="ar-quick-btn" class="ar-jump">AR 实景</button>
       </div>
     </div>
     <div id="axis-key">
@@ -230,7 +258,7 @@
   <aside id="sidebar">
     <header class="panel-head">
       <h1>鱼缸尺寸</h1>
-      <p>鲤鱼码是鱼缸的底面。拖动参数会实时改变三维体积，并自动保存到本机；回到 AR 刷新或切回页面后生效。</p>
+      <p>鲤鱼码是鱼缸的后墙。拖动参数会实时改变三维体积并自动保存；点「AR 实景」即可在同一页用当前参数查看。</p>
     </header>
 
     <section class="section">
@@ -275,7 +303,7 @@
           <input data-number type="number" min="0.05" max="3.00" step="0.01" value="0.50" aria-label="鱼缸纵深数值">
           <button type="button" data-step="0.05" aria-label="纵深增加">+</button>
         </div>
-        <div class="mini-note">鱼缸前后方向的厚度（Z 轴）</div>
+        <div class="mini-note">从鲤鱼码墙面向观众方向的厚度（Z 轴）</div>
       </div>
     </section>
 
@@ -290,7 +318,7 @@
         <button type="button" class="danger" id="reset-btn">恢复默认</button>
         <button type="button" id="frame-btn">聚焦鱼缸</button>
       </div>
-      <button type="button" class="primary-btn" id="open-ar-btn">打开 AR 调试页</button>
+      <button type="button" class="primary-btn" id="open-ar-btn">进入 AR 实景（同一页面）</button>
     </section>
 
     <section class="section">
@@ -299,6 +327,7 @@
         <button type="button" class="on" data-toggle="grid">网格</button>
         <button type="button" class="on" data-toggle="pattern">鲤鱼码</button>
         <button type="button" class="on" data-toggle="labels">尺寸标签</button>
+        <button type="button" class="on" data-toggle="fish">鱼</button>
       </div>
     </section>
 
@@ -310,10 +339,18 @@
     </section>
 
     <footer class="panel-footer">
-      保存的是这台浏览器里的鱼缸参数。AR 页面会读取同一份参数，不用重新生成鲤鱼码。<br>
+      保存的是这台浏览器里的鱼缸参数。空间调试和同页 AR 共用同一份参数与 tank 坐标。<br>
       键盘：1 透视 · 2 正面 · 3 顶视 · 4 侧视 · F 聚焦
     </footer>
   </aside>
+</div>
+
+<div id="ar-preview-shell" aria-hidden="true">
+  <iframe id="ar-preview" title="AR 实景预览" allow="camera; microphone; autoplay"></iframe>
+  <div id="ar-preview-bar">
+    <button type="button" id="ar-preview-back">← 返回空间调试</button>
+    <span id="ar-preview-label">AR 实景 · 当前使用空间调试器参数</span>
+  </div>
 </div>
 
 <script>
@@ -341,10 +378,10 @@
 
   var camera = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
   var orbit = {
-    target: new THREE.Vector3(0, 0.28, 0),
-    radius: 2.9,
-    theta: 0.62,
-    phi: 0.95
+    target: new THREE.Vector3(0, 0, 0.28),
+    radius: 2.65,
+    theta: 0.58,
+    phi: 1.17
   };
 
   function updateCamera() {
@@ -370,8 +407,15 @@
   var gridGroup = new THREE.Group();
   scene.add(gridGroup);
 
+  var backGrid = new THREE.GridHelper(4.2, 42, 0x4a5361, 0x303640);
+  backGrid.rotation.x = Math.PI / 2;
+  backGrid.position.z = -0.012;
+  backGrid.material.transparent = true;
+  backGrid.material.opacity = 0.78;
+  gridGroup.add(backGrid);
+
   var floorGrid = new THREE.GridHelper(4.2, 42, 0x3b424d, 0x282e37);
-  floorGrid.position.set(0, 0, 0);
+  floorGrid.position.set(0, -0.82, 0.25);
   floorGrid.material.transparent = true;
   floorGrid.material.opacity = 0.72;
   gridGroup.add(floorGrid);
@@ -384,7 +428,7 @@
     new THREE.SphereGeometry(0.018, 12, 8),
     new THREE.MeshBasicMaterial({ color: 0xffb35f })
   );
-  originDot.position.set(0, 0.01, 0);
+  originDot.position.set(0, 0, 0.01);
   scene.add(originDot);
 
   /* ---------- 鲤鱼码卡面 ---------- */
@@ -394,8 +438,7 @@
     new THREE.PlaneGeometry(1.08, 1.08),
     new THREE.MeshBasicMaterial({ color: 0x07090c, side: THREE.DoubleSide })
   );
-  markerBack.rotation.x = -Math.PI / 2;
-  markerBack.position.y = -0.004;
+  markerBack.position.z = -0.004;
   markerGroup.add(markerBack);
 
   var markerTexture = new THREE.TextureLoader().load('../assets/patterns/pattern-card-v4.png', function (texture) {
@@ -410,16 +453,14 @@
     side: THREE.DoubleSide
   });
   var markerPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), patternMaterial);
-  markerPlane.rotation.x = -Math.PI / 2;
-  markerPlane.position.y = 0.001;
+  markerPlane.position.z = 0.002;
   markerGroup.add(markerPlane);
 
   var markerOutline = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.PlaneGeometry(1.06, 1.06)),
     new THREE.LineBasicMaterial({ color: 0xd6b26a, transparent: true, opacity: 0.9 })
   );
-  markerOutline.rotation.x = -Math.PI / 2;
-  markerOutline.position.y = 0.002;
+  markerOutline.position.z = 0.002;
   markerGroup.add(markerOutline);
 
   /* ---------- 鱼缸体积 ---------- */
@@ -427,6 +468,7 @@
   scene.add(tankGroup);
   var tankCube = window.AOYU_TANK_CUBE.createMesh(THREE, 0.88);
   tankGroup.add(tankCube);
+  var fishSystem = window.AOYU_EDITOR_FISH.create(THREE, scene, config);
 
   var dimensionGroup = new THREE.Group();
   scene.add(dimensionGroup);
@@ -493,32 +535,34 @@
     var d = config.depth;
     var left = -w / 2;
     var right = w / 2;
-    var front = d / 2 + 0.08;
-    var bottom = 0.025;
+    var bottom = -h / 2;
+    var top = h / 2;
+    var front = d + 0.045;
 
-    // 宽度 X：沿 cube 底部前沿
-    makeLine([new THREE.Vector3(left, bottom, front), new THREE.Vector3(right, bottom, front)], 0xff6e7b, 0.9);
-    makeLine([new THREE.Vector3(left, 0, front), new THREE.Vector3(left, 0.08, front)], 0xff6e7b, 0.9);
-    makeLine([new THREE.Vector3(right, 0, front), new THREE.Vector3(right, 0.08, front)], 0xff6e7b, 0.9);
+    // 宽度 X：鱼缸下沿外侧
+    var widthY = bottom - 0.12;
+    makeLine([new THREE.Vector3(left, widthY, front), new THREE.Vector3(right, widthY, front)], 0xff6e7b, 0.9);
+    makeLine([new THREE.Vector3(left, widthY - 0.035, front), new THREE.Vector3(left, widthY + 0.035, front)], 0xff6e7b, 0.9);
+    makeLine([new THREE.Vector3(right, widthY - 0.035, front), new THREE.Vector3(right, widthY + 0.035, front)], 0xff6e7b, 0.9);
     var widthLabel = makeLabel('W  ' + w.toFixed(2), '#ff6e7b', 0.70);
-    widthLabel.position.set(0, 0.10, d / 2 + 0.22);
+    widthLabel.position.set(0, widthY - 0.11, front + 0.012);
 
-    // 高度 Y：沿 cube 右侧前缘
-    var heightX = right + 0.10;
-    makeLine([new THREE.Vector3(heightX, 0, front), new THREE.Vector3(heightX, h, front)], 0x7bd88f, 0.9);
-    makeLine([new THREE.Vector3(heightX - 0.04, 0, front), new THREE.Vector3(heightX + 0.04, 0, front)], 0x7bd88f, 0.9);
-    makeLine([new THREE.Vector3(heightX - 0.04, h, front), new THREE.Vector3(heightX + 0.04, h, front)], 0x7bd88f, 0.9);
+    // 高度 Y：鱼缸右侧
+    var heightX = right + 0.12;
+    makeLine([new THREE.Vector3(heightX, bottom, front), new THREE.Vector3(heightX, top, front)], 0x7bd88f, 0.9);
+    makeLine([new THREE.Vector3(heightX - 0.035, bottom, front), new THREE.Vector3(heightX + 0.035, bottom, front)], 0x7bd88f, 0.9);
+    makeLine([new THREE.Vector3(heightX - 0.035, top, front), new THREE.Vector3(heightX + 0.035, top, front)], 0x7bd88f, 0.9);
     var heightLabel = makeLabel('H  ' + h.toFixed(2), '#7bd88f', 0.70);
-    heightLabel.position.set(heightX + 0.20, h / 2, front + 0.02);
+    heightLabel.position.set(heightX + 0.17, 0, front + 0.012);
 
-    // 纵深 Z：沿 cube 右侧底边，从后向前
-    var depthX = right + 0.10;
-    var depthY = 0.025;
-    makeLine([new THREE.Vector3(depthX, depthY, -d / 2), new THREE.Vector3(depthX, depthY, d / 2)], 0x70a8ff, 0.94);
-    makeLine([new THREE.Vector3(depthX - 0.04, depthY, -d / 2), new THREE.Vector3(depthX + 0.04, depthY, -d / 2)], 0x70a8ff, 0.9);
-    makeLine([new THREE.Vector3(depthX - 0.04, depthY, d / 2), new THREE.Vector3(depthX + 0.04, depthY, d / 2)], 0x70a8ff, 0.9);
+    // 纵深 Z：从墙面向观众
+    var depthX = right + 0.12;
+    var depthY = bottom - 0.03;
+    makeLine([new THREE.Vector3(depthX, depthY, 0.012), new THREE.Vector3(depthX, depthY, d + 0.012)], 0x70a8ff, 0.94);
+    makeLine([new THREE.Vector3(depthX - 0.035, depthY, 0.012), new THREE.Vector3(depthX + 0.035, depthY, 0.012)], 0x70a8ff, 0.9);
+    makeLine([new THREE.Vector3(depthX - 0.035, depthY, d + 0.012), new THREE.Vector3(depthX + 0.035, depthY, d + 0.012)], 0x70a8ff, 0.9);
     var depthLabel = makeLabel('D  ' + d.toFixed(2), '#70a8ff', 0.70);
-    depthLabel.position.set(depthX + 0.20, 0.10, 0);
+    depthLabel.position.set(depthX + 0.20, depthY, d / 2 + 0.02);
   }
 
   function applyTank(config, opts) {
@@ -527,7 +571,8 @@
     var h = config.height;
     var d = config.depth;
     tankGroup.scale.set(w, h, d);
-    tankGroup.position.set(0, h / 2, 0);
+    tankGroup.position.set(0, 0, d / 2 + 0.008);
+    fishSystem.setConfig(config);
     rebuildDimensions();
     updateControls(config);
     document.getElementById('summary-size').textContent = w.toFixed(2) + ' × ' + h.toFixed(2) + ' × ' + d.toFixed(2);
@@ -625,19 +670,30 @@
   });
 
   document.getElementById('frame-btn').addEventListener('click', function () {
-    orbit.target.set(0, config.height / 2, 0);
-    orbit.radius = Math.max(2.45, Math.max(config.width, config.height, config.depth) * 2.35);
-    orbit.theta = 0.62;
-    orbit.phi = 0.95;
+    orbit.target.set(0, 0, config.depth / 2);
+    orbit.radius = Math.max(2.25, Math.max(config.width, config.height, config.depth) * 2.15);
+    orbit.theta = 0.58;
+    orbit.phi = 1.17;
     updateCamera();
     updateViewActive('persp');
   });
 
-  document.getElementById('open-ar-btn').addEventListener('click', function () {
-    var path = location.pathname;
-    var target = /\/tools\//.test(path) ? '../?debug=1' : 'index.html?debug=1';
-    window.open(target, '_blank', 'noopener');
-  });
+  var arShell = document.getElementById('ar-preview-shell');
+  var arFrame = document.getElementById('ar-preview');
+  function showArPreview() {
+    var target = /\/tools\//.test(location.pathname) ? '../index.html' : 'index.html';
+    arFrame.src = target + '?debug=1&studio=1&t=' + Date.now();
+    arShell.classList.add('open');
+    arShell.setAttribute('aria-hidden', 'false');
+  }
+  function hideArPreview() {
+    arShell.classList.remove('open');
+    arShell.setAttribute('aria-hidden', 'true');
+    arFrame.src = 'about:blank';
+  }
+  document.getElementById('open-ar-btn').addEventListener('click', showArPreview);
+  document.getElementById('ar-quick-btn').addEventListener('click', showArPreview);
+  document.getElementById('ar-preview-back').addEventListener('click', hideArPreview);
 
   var visible = { grid: true, pattern: true, labels: true };
   document.querySelectorAll('[data-toggle]').forEach(function (button) {
@@ -647,6 +703,7 @@
       button.classList.toggle('on', visible[key]);
       if (key === 'grid') gridGroup.visible = visible.grid;
       if (key === 'pattern') markerGroup.visible = visible.pattern;
+      if (key === 'fish') fishSystem.setVisible(visible.fish);
       if (key === 'labels') {
         dimensionGroup.children.forEach(function (child) {
           if (child.isSprite) child.visible = visible.labels;
@@ -665,8 +722,8 @@
     updateViewActive(name);
     if (name === 'front') {
       orbit.theta = 0;
-      orbit.phi = 1.44;
-      orbit.radius = 2.6;
+      orbit.phi = Math.PI / 2;
+      orbit.radius = 2.45;
     } else if (name === 'top') {
       orbit.theta = 0;
       orbit.phi = 0.16;
@@ -676,11 +733,11 @@
       orbit.phi = 1.36;
       orbit.radius = 2.6;
     } else {
-      orbit.theta = 0.62;
-      orbit.phi = 0.95;
-      orbit.radius = 2.9;
+      orbit.theta = 0.58;
+      orbit.phi = 1.17;
+      orbit.radius = 2.65;
     }
-    orbit.target.set(0, config.height / 2, 0);
+    orbit.target.set(0, 0, config.depth / 2);
     updateCamera();
   }
   document.querySelectorAll('[data-view]').forEach(function (button) {
@@ -742,7 +799,7 @@
     if (event.key === '3') setView('top');
     if (event.key === '4') setView('side');
     if (event.key.toLowerCase() === 'f') {
-      orbit.target.set(0, config.height / 2, 0);
+      orbit.target.set(0, 0, config.depth / 2);
       orbit.radius = Math.max(2.25, Math.max(config.width, config.height, config.depth) * 2.15);
       updateCamera();
     }
@@ -778,8 +835,13 @@
     applyTank(config);
   });
 
-  function animate() {
+  var lastFrame = performance.now();
+  function animate(now) {
     requestAnimationFrame(animate);
+    var dt = Math.min(0.05, Math.max(0.001, (now - lastFrame) / 1000 || 0.016));
+    lastFrame = now;
+    fishSystem.update(dt);
+    window.AOYU_TANK_CUBE.updateFaceLabels(tankCube, camera);
     renderer.render(scene, camera);
   }
   animate();
