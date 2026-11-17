@@ -908,14 +908,25 @@
       this.pos.z = Math.max(-r.z, Math.min(r.z, this.pos.z));
       this.pos.y = clamp(this.pos.y, yLo, yHi);
 
-      // 写进场景：鱼头朝水平航向，机头随高度变化轻微俯仰；鱼背始终朝世界 +Y。
+      // 写进场景。墙面的局部坐标是 X宽/Y高/Z深；AR marker 的实际局部轴是
+      // X宽/Y纵深/Z高度，所以要应用和 cube 相同的 X 轴 -90° 映射。
       var pitchTarget = Math.atan2(this.verticalVelocity, Math.max(this.speed, 0.12)) * 0.55;
       this.pitch += (pitchTarget - this.pitch) * Math.min(1, d * 4);
-      this.el.object3D.position.set(this.pos.x, this.pos.y, this.pos.z);
-      tmpForward.set(this.head.x, this.pitch, this.head.z);
+      var tankH = Math.max(0.05, Number(tankConfig.height) || 0.56);
+      var tankD = Math.max(0.05, Number(tankConfig.depth) || 0.50);
+      if (window.AOYU_VIRTUAL_SCENE) {
+        // tools/fish-scene-test.html 是普通 A-Frame 场景，保持 Y-up。
+        this.el.object3D.position.set(this.pos.x, this.pos.y, this.pos.z);
+        tmpForward.set(this.head.x, this.pitch, this.head.z);
+        tmpUp.set(0, 1, 0);
+      } else {
+        // 墙面坐标 -> marker-local：宽不变，高度变到 -Z，纵深变到 +Y。
+        this.el.object3D.position.set(this.pos.x, this.pos.z + tankD / 2, tankH / 2 - this.pos.y);
+        tmpForward.set(this.head.x, this.head.z, -this.pitch);
+        tmpUp.set(0, 0, -1);
+      }
       if (tmpForward.lengthSq() < 1e-6) tmpForward.set(0, 0, 1);
       tmpForward.normalize();
-      tmpUp.set(0, 1, 0);
       tmpUp.addScaledVector(tmpForward, -tmpUp.dot(tmpForward)).normalize();
       tmpRight.crossVectors(tmpUp, tmpForward).normalize();
       tmpBasis.makeBasis(tmpRight, tmpUp, tmpForward);
@@ -2048,7 +2059,8 @@
       if (!visible) return;
 
       // 墙面空间：X=宽，Y=高，Z=从鲤鱼码后墙向观众展开。
-      // 鱼和 cube 共用这组轴；后墙固定在 z=0，只沿 +Z 生长。
+      // 整体绕 X 轴转 -90°，得到和 8d4a0b3 相同的 marker-local 世界矩阵：
+      //   宽=w，纵深=d，卡面高度=h，后墙仍在 z=0。
       var w = Number(tankConfig.width);
       var h = Number(tankConfig.height);
       var d = Number(tankConfig.depth);
@@ -2056,7 +2068,13 @@
       var signature = [w, h, d].map(function (v) { return v.toFixed(5); }).join('|');
       if (this._tankBoxSignature === signature) return;
       this._tankBoxSignature = signature;
-      el.setAttribute('position', '0 0 ' + (d / 2).toFixed(5));
+      if (window.AOYU_VIRTUAL_SCENE) {
+        el.setAttribute('rotation', '0 0 0');
+        el.setAttribute('position', '0 ' + (h / 2).toFixed(5) + ' 0');
+      } else {
+        el.setAttribute('rotation', '-90 0 0');
+        el.setAttribute('position', '0 ' + (d / 2).toFixed(5) + ' 0');
+      }
       el.setAttribute('scale', w.toFixed(5) + ' ' + h.toFixed(5) + ' ' + d.toFixed(5));
     },
 
