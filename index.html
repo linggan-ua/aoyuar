@@ -19,7 +19,6 @@
   }
   /* AR 画面铺满：AR.js 的 video 自己会定位，这里保证 scene/canvas 跟着走 */
   a-scene { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: block; z-index: 1; }
-  .a-canvas { width: 100% !important; height: 100% !important; }
   /* 相机画面铺满屏幕。AR.js 自己也会做（按 videoWidth/Height 算出 cover 尺寸），但它依赖
      视频元数据，元数据没就绪时那套算出来是 NaN，画面就只占一块。这里用同样的 cover 语义
      直接写死，等价且不会失效。 */
@@ -28,8 +27,7 @@
      这个顺序会变，相机会掉到黑色 backdrop 后面，表现就是全屏后整页黑。 */
   #arjs-video {
     position: fixed !important; top: 0 !important; left: 0 !important;
-    width: 100% !important; height: 100% !important;
-    margin: 0 !important; object-fit: cover; z-index: 0 !important;
+    z-index: 0 !important;
   }
   /* AR.js 失败时自己会往 body 塞一个没样式的 #error-popup，统一走我们自己的提示卡 */
   #error-popup { display: none !important; }
@@ -170,7 +168,7 @@
   window.AOYU_USE_IMAGE_TRACKER = useImageTracker;
   window.AOYU_SKIP_CAMERA = useImageTracker;      // 相机由 image-tracker 自己开
   // 图像跟踪用的卡片参考图（默认值写死在 image-tracker.js 里，这里跟随 pattern 一起换）
-  window.AOYU_TRACKER_CARD = 'assets/patterns/pattern-card-v4-track.png';
+  window.AOYU_TRACKER_CARD = 'assets/patterns/kanji.png';
   if (!useImageTracker) return;
   document.addEventListener('DOMContentLoaded', function () {});
   var rewrite = function () {
@@ -195,8 +193,8 @@
 <script src="aframe-ar.js"></script>
 <script src="js/note-synth.js?v=1"></script>
 <script src="js/tank-config.js?v=1"></script>
-<script src="js/tank-cube.js?v=26"></script>
-<script src="js/aoyu-ar.js?v=134"></script>
+<script src="js/tank-cube.js?v=27"></script>
+<script src="js/aoyu-ar.js?v=136"></script>
 </head>
 <body>
 
@@ -220,9 +218,9 @@
   <a-entity light="type: ambient; color: #ffffff; intensity: 0.9"></a-entity>
   <a-entity light="type: directional; color: #fff5d6; intensity: 0.7" position="1.5 2 1"></a-entity>
 
-  <!-- 识别用的 .patt：同名 .png 是要打印的卡片（黑方块占 80%、内图占黑方块 50%，
+  <!-- 当前测试用 kanji 官方识别码；同名 .png 是要打印的卡片（黑方块占 80%、内图占黑方块 50%，
        所以 arjs 的 patternRatio 必须是 0.5；换卡就换这两个文件 + 下面这一行） -->
-  <a-marker id="ar-marker" type="pattern" url="assets/patterns/pattern-card-v4.patt"
+  <a-marker id="ar-marker" type="pattern" url="assets/patterns/kanji.patt"
             emitevents="true" size="1">
 
     <!-- 调试鱼缸：和官方 AR.js cubemap demo 一样直接挂在 marker 下。
@@ -251,8 +249,8 @@
 <div id="ui">
   <!-- 启动页（还原老版本）-->
   <div id="start-overlay" class="start-overlay">
-    <div class="start-hero"><div class="start-hero-title">鲤鱼 AR</div><div class="start-hero-sub">扫描大屏上的鲤鱼码 · 看鱼在水箱里游动</div></div>
-    <div class="start-tips"><b>鱼跃龙门</b><br>扫描大屏上的<b>鲤鱼码</b></div>
+    <div class="start-hero"><div class="start-hero-title">鲤鱼 AR</div><div class="start-hero-sub">扫描 kanji 测试码 · 验证鱼缸空间和游动</div></div>
+    <div class="start-tips"><b>鱼跃龙门</b><br>扫描 <b>kanji 测试码</b></div>
     <button id="start-ar-button" type="button" disabled>资源准备中…</button>
     <div class="start-note">电脑上按 <b>F</b> 键可全屏 / 再按一次退出</div>
   </div>

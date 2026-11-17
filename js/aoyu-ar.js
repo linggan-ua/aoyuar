@@ -62,7 +62,7 @@
   // 两条鱼最多各自占到长半轴的 80%（于是间距上限 = 1.6 × 长半轴）
   var PAIR_ROOM_K = 0.8;
 
-  // 三维调试器保存的鱼缸尺寸（单位：鲤鱼码卡宽）。
+  // 三维调试器保存的鱼缸尺寸（单位：识别码卡宽）。
   // 没有保存值时保持原来的屏幕自适应范围；有保存值时按编辑器里的卡宽尺寸精确生效。
   var TANK_DEFAULTS = (window.AOYU_TANK && window.AOYU_TANK.DEFAULTS) || {
     width: 0.80, height: 0.56, depth: 0.50
@@ -1479,12 +1479,15 @@
       if (!renderer) return;
       var canvas = renderer.domElement;
       var ratio = renderer.getPixelRatio ? renderer.getPixelRatio() : 1;
-      var w = Math.max(1, window.innerWidth || 0);
-      var h = Math.max(1, window.innerHeight || 0);
+      // AR.js 会把 video 和 canvas 一起按 cover 后的尺寸设置。
+      // 这里必须跟随它们的 CSS 尺寸，不能单独用 window 宽高，否则 3D 投影和相机画面会错位。
+      var rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : null;
+      var w = Math.max(1, (rect && rect.width) || window.innerWidth || 0);
+      var h = Math.max(1, (rect && rect.height) || window.innerHeight || 0);
       var wantW = Math.floor(w * ratio);
       var wantH = Math.floor(h * ratio);
       if (canvas.width === wantW && canvas.height === wantH) return;
-      renderer.setSize(w, h, false);          // false：CSS 尺寸由样式表控制（100%）
+      renderer.setSize(w, h, false);          // false：CSS 尺寸由 AR.js 控制
       console.log('AOYU_CANVAS_SIZE', canvas.width + '×' + canvas.height, '视口=' + w + '×' + h);
     },
 
@@ -1570,10 +1573,8 @@
         video.style.setProperty('position', 'fixed', 'important');
         video.style.setProperty('top', '0', 'important');
         video.style.setProperty('left', '0', 'important');
-        video.style.setProperty('width', '100%', 'important');
-        video.style.setProperty('height', '100%', 'important');
-        video.style.setProperty('margin', '0', 'important');
-        video.style.setProperty('object-fit', 'cover', 'important');
+        // width/height/margins 留给 AR.js 的 onResizeElement() 管理；
+        // 这里只恢复层级，避免 video 与 canvas 的 cover 尺寸不一致。
         video.style.setProperty('z-index', '0', 'important');
         if (video.tagName === 'VIDEO') {
           video.setAttribute('playsinline', '');
@@ -1633,7 +1634,7 @@
       this.errorEl.textContent = '';
       this.gateEl.classList.remove('show');
       this.hintEl.classList.remove('hidden');
-      this.hintEl.textContent = '把大屏上的鲤鱼码放进画面';
+      this.hintEl.textContent = '把 kanji 测试码放进画面';
       console.log('AOYU_CAMERA_LIVE');
     },
 
@@ -2027,7 +2028,7 @@
       if (!hint) return;
       if (active) hint.classList.add('hidden');
       else {
-        hint.textContent = '把大屏上的鲤鱼码放进画面';
+        hint.textContent = '把 kanji 测试码放进画面';
         hint.classList.remove('hidden');
       }
     },
@@ -2047,7 +2048,7 @@
     /** 打开独立的鱼缸三维调试器。工具页和主页面都能用同一个入口。 */
     openTankEditor: function () {
       var path = window.location.pathname;
-      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=12';
+      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=14';
       window.open(editor, '_blank', 'noopener');
     },
 

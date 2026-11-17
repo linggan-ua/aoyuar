@@ -224,7 +224,7 @@
 </style>
 <script src="../aframe.min.js"></script>
 <script src="../js/tank-config.js?v=1"></script>
-<script src="../js/tank-cube.js?v=26"></script>
+<script src="../js/tank-cube.js?v=27"></script>
 <script>window.THREE = window.AFRAME && window.AFRAME.THREE;</script>
 <script src="../js/GLTFLoader.js"></script>
 <script src="../js/tank-editor-fish.js?v=3"></script>
@@ -254,14 +254,14 @@
       <span><i style="background:var(--blue)"></i>Z 深</span>
     </div>
     <div id="help">左键旋转 · 右键 / Shift 拖拽平移 · 滚轮缩放 · 双击复位</div>
-    <div class="screen-note">单位：鲤鱼码卡宽</div>
+    <div class="screen-note">单位：识别码卡宽</div>
     <div id="toast"></div>
   </main>
 
   <aside id="sidebar">
     <header class="panel-head">
       <h1>鱼缸尺寸</h1>
-      <p>鲤鱼码是鱼缸的后墙。拖动参数会实时改变三维体积并自动保存；点「AR 实景」即可在同一页用当前参数查看。</p>
+      <p>识别码是鱼缸的后墙。当前测试使用 kanji 码；拖动参数会实时改变三维体积并自动保存。</p>
     </header>
 
     <section class="section">
@@ -306,7 +306,7 @@
           <input data-number type="number" min="0.05" max="3.00" step="0.01" value="0.50" aria-label="鱼缸纵深数值">
           <button type="button" data-step="0.05" aria-label="纵深增加">+</button>
         </div>
-        <div class="mini-note">从鲤鱼码墙面向观众方向的厚度（Z 轴）</div>
+        <div class="mini-note">从识别码墙面向观众方向的厚度（Z 轴）</div>
       </div>
     </section>
 
@@ -328,7 +328,7 @@
       <div class="section-label"><span>VIEW</span><span>显示对象</span></div>
       <div class="toggle-row">
         <button type="button" class="on" data-toggle="grid">网格</button>
-        <button type="button" class="on" data-toggle="pattern">鲤鱼码</button>
+        <button type="button" class="on" data-toggle="pattern">识别码</button>
         <button type="button" class="on" data-toggle="labels">尺寸标签</button>
         <button type="button" class="on" data-toggle="fish">鱼</button>
       </div>
@@ -450,7 +450,7 @@
   originDot.position.set(0, 0, 0.01);
   scene.add(originDot);
 
-  /* ---------- 鲤鱼码卡面 ---------- */
+  /* ---------- 识别码卡面 ---------- */
   var markerGroup = new THREE.Group();
   scene.add(markerGroup);
   var markerBack = new THREE.Mesh(
@@ -460,7 +460,7 @@
   markerBack.position.z = -0.004;
   markerGroup.add(markerBack);
 
-  var markerTexture = new THREE.TextureLoader().load('../assets/patterns/pattern-card-v4.png', function (texture) {
+  var markerTexture = new THREE.TextureLoader().load('../assets/patterns/kanji.png', function (texture) {
     texture.encoding = THREE.sRGBEncoding;
     texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
     patternMaterial.map = texture;
