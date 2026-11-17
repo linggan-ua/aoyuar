@@ -69,9 +69,7 @@
   var PAIR_ROOM_K = 0.8;
 
   // 鱼大小的默认基准（面板「鱼大一点/小一点」的起点，三条鱼共用同一套 modelScale）
-  var DEFAULT_MODEL_SCALE = 2.0;
-  // 鳌鱼在共用大小的基础上再加这么多（用户要求"鳌鱼缩放 -0.5"：1.0 → 0.5）
-  var AOYU_SCALE_BONUS = 0.5;
+  var DEFAULT_MODEL_SCALE = 1.0;
   // 活动范围：5 ≈ 铺满屏幕 85%，6 起就到 100%（0.92/0.88 安全边距）封顶（7 和 6 视觉上一样）
   var DEFAULT_RANGE_SCALE = 7.0;
 
@@ -79,12 +77,7 @@
   var UNLOCKED_MAX = 999;
 
   var CONFIG = {
-    switchHour: 20,            // 切换时刻：20:45 之后显示鳌鱼，之前显示鲤鱼
-    switchMinute: 45,          // 分钟也要能配，所以不直接用 getHours() 比较（见 isAoyuTime）
-    // 每个模式下"在场"的鱼：鲤鱼模式两条（互相规避），鳌鱼模式一条
-    modeFish: { koi: ['koi', 'koi2'], aoyu: ['aoyu'] },
     noteVolume: 0.75,          // 和小程序一致
-    clips: { aoyu: 'Ao_Swim_Loop_3.2s', koi: 'Swim_Loop_2.4s' },
     notes: ['note-c6', 'note-d6', 'note-e6', 'note-g6', 'note-a6'].map(function (name) {
       return 'assets/audio/' + name + '.mp3';
     }),
@@ -121,6 +114,14 @@
   var tmpVec = new THREE.Vector3();
   var tmpVec2 = new THREE.Vector3();
   var tmpQuat = new THREE.Quaternion();
+  // 鱼缸姿态用：forward / up / right 三根轴
+  var tmpForward = new THREE.Vector3();
+  var tmpUp = new THREE.Vector3();
+  var tmpRight = new THREE.Vector3();
+  var tmpBasis = new THREE.Matrix4();
+  var tmpQuatBank = new THREE.Quaternion();
+  var tmpQuatPitch = new THREE.Quaternion();
+  var AXIS_Z = new THREE.Vector3(0, 0, 1);
 
   function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
 
@@ -422,12 +423,13 @@
       key: { type: 'string' },
       anim: { type: 'selector' },
       radius: { type: 'number', default: 0.50 },    // 游动范围半径（卡片 = 1 单位；圆形）
-      yMin: { type: 'number', default: 0.32 },      // 悬浮高度区间
-      yMax: { type: 'number', default: 0.72 },
+      // 鱼缸纵深（marker 的 +Y 指向观众）：从大屏往观众方向的深度范围
+      yMin: { type: 'number', default: 0.30 },
+      yMax: { type: 'number', default: 1.25 },
       speed: { type: 'number', default: 0.30 },     // 基准速度（单位/秒）
       turnRate: { type: 'number', default: 1.6 },   // 转弯系数：弧度/单位位移；1.6 ≈ 转弯半径 0.63 卡宽
       maxBank: { type: 'number', default: 10 * Math.PI / 180 },
-      bobSpeed: { type: 'number', default: 0.5 }    // 上下起伏的快慢
+      bobSpeed: { type: 'number', default: 0.22 }   // 前后（纵深）起伏的快慢
     },
     init: function () {
       var self = this;
@@ -469,7 +471,7 @@
       // 动画照常跑，重新找到卡时一开就接着游。
       this.wantModelVisible = false;
       this.fit = 1;          // 自适应缩放倍率（见 screenFit），只有打开自适应开关才会 < 1
-      this.adaptive = false;  // 「自适应：整幅构图一定留在画面内」，调试面板里开关
+      this.adaptive = !!(app && app.adaptive);  // 「自适应：整幅构图一定留在画面内」，默认跟随主控（鱼缸视角默认开）
       this.pickTarget();
       instances[this.data.key] = this;
     },
@@ -562,7 +564,6 @@
     applyModelScale: function () {
       // PC 模式：桌面端（OBS 抓窗口那种）用 pcModelScale，现场用 modelScale，两边互不影响
       var scale = (app && app.pcMode) ? this.tuning.pcModelScale : this.tuning.modelScale;
-      if (this.data.key === 'aoyu') scale += AOYU_SCALE_BONUS;   // 鳌鱼始终比鲤鱼大一档
       var want = this.baseScale * scale * this.fit;
       if (Math.abs(want - this.appliedScale) > 1e-4) {
         this.appliedScale = want;
@@ -576,7 +577,7 @@
      */
     /** 采样校验：给定椭圆半径（卡宽）是否整圈都在画面内（相机前方 + NDC 不超上限） */
     fitsRadii: function (rx, rz, camera, limitX, limitY) {
-      var y = (this.yMin() + this.yMax()) / 2;      // 用鱼实际的悬浮高度（含自适应缩放）
+      var y = this.yMax();                          // 纵深最靠前（画面里最大）的位置做最坏情况校验
       var space = this.markerSpace();
       if (!space) return false;
       for (var i = 0; i < SCREEN_FILL_SAMPLES; i++) {
@@ -717,7 +718,8 @@
       for (var i = 0; i < others.length; i++) {
         var dx = this.pos.x - others[i].pos.x;
         var dz = this.pos.z - others[i].pos.z;
-        var d = Math.sqrt(dx * dx + dz * dz);
+        var dy = this.pos.y - others[i].pos.y;           // 纵深也算进距离
+        var d = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (d > avoid) continue;
         if (d < 1e-4) { dx = 1; dz = 0; d = 1e-4; }      // 完全重合时给一个确定方向
         var w = 1 - d / avoid;                            // 0（刚好在边界）→ 1（贴在一起）
@@ -746,7 +748,8 @@
           Math.min(PAIR_GAP_K * (bodyLen + others[i].measureBodyLength()) * 0.5, cap));
         var dx = this.pos.x - others[i].pos.x;
         var dz = this.pos.z - others[i].pos.z;
-        var d = Math.sqrt(dx * dx + dz * dz);
+        var dy = this.pos.y - others[i].pos.y;
+        var d = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (d >= minGap) continue;
         if (d < 1e-4) { dx = 1; dz = 0; d = 1e-4; }
         var push = (minGap - d) * 0.7;                    // 两边各自往外推；这里已经是常态约束，推太狠会抖
@@ -1000,7 +1003,20 @@
       // 写进场景：朝向 = 航向，侧倾 = 转弯
       this.applyModelScale();
       this.el.object3D.position.set(this.pos.x, this.pos.y, this.pos.z);
-      this.el.object3D.quaternion.setFromEuler(new THREE.Euler(0, ang, this.bank, 'YXZ'));
+      // 大屏竖直摆放：鱼的 up 对齐 marker 的 -Z（屏幕上方），头沿屏幕平面内的航向；
+      // 观众正对大屏看到的是鲤鱼侧面（不是从水面看下去的俯视）。
+      tmpForward.set(this.head.x, 0, this.head.z);
+      if (tmpForward.lengthSq() < 1e-6) tmpForward.set(0, 0, 1);
+      tmpForward.normalize();
+      // up 要和 forward 正交：先把"屏幕上方"里平行于 forward 的分量去掉，
+      // 否则鱼朝上/下游时两根轴共线，基矩阵退化（鱼会歪成乱转）
+      tmpUp.set(0, 0, -1);
+      tmpUp.addScaledVector(tmpForward, -tmpUp.dot(tmpForward)).normalize();
+      tmpRight.crossVectors(tmpUp, tmpForward).normalize();
+      tmpBasis.makeBasis(tmpRight, tmpUp, tmpForward);
+      tmpQuat.setFromRotationMatrix(tmpBasis);
+      tmpQuatBank.setFromAxisAngle(AXIS_Z, this.bank);
+      this.el.object3D.quaternion.copy(tmpQuat).multiply(tmpQuatBank);
 
       // 摆尾：以游速为主，但别再压到半速——之前是 ratio(下限 0.5)×倍率，
       // 鱼在滑行时只有基准速度的 0.45 倍，看起来就是"尾巴慢吞吞"。
@@ -1125,12 +1141,11 @@
    * ========================================================================= */
   app = {
     markerActive: false,
-    targetMode: null,     // 'aoyu' | 'koi'
-    activeKeys: [],       // 当前在场的鱼（鲤鱼模式两条）
-    forceMode: null,      // 调试强制
+    activeKeys: ['koi', 'koi2'],   // 现在只有鲤鱼：两条同时在场
     offsetMs: 0,          // 调试时间偏移
-    adaptive: false,      // 自适应：整幅构图一定留在画面内（默认关，保持按卡宽的固定比例）
+    adaptive: true,       // 自适应：整幅构图（鱼缸 + 鱼）留在手机画面内（鱼缸视角默认开）
     pcMode: false,        // PC 模式：桌面端（OBS 抓窗口）用调好的 pcModelScale 大小
+    tankVisible: false,   // 调试：把鱼游动的立体范围（鱼缸）画出来
     hitBoxVisible: false, // 调试：把命中包围盒画出来
     transitionTimer: null,
     switchTimer: null,
@@ -1174,7 +1189,7 @@
       this.bindDebugPanel();
       this.startFpsCounter();
       this.applySavedTuning();
-      this.updateTimeMode();
+      this.enterKoi();
       console.log('AOYU_AR_READY');
     },
 
@@ -1281,7 +1296,7 @@
       var enable = function () {
         if (!button.disabled) return;
         button.disabled = false;
-        button.textContent = '“鳌运”请回家';
+        button.textContent = '进入鲤鱼世界';
         console.log('AOYU_START_READY');
       };
       if (assets) {
@@ -1660,7 +1675,7 @@
       this.errorEl.textContent = '';
       this.gateEl.classList.remove('show');
       this.hintEl.classList.remove('hidden');
-      this.hintEl.textContent = '把整张鳌鱼二维码放进画面';
+      this.hintEl.textContent = '把大屏上的鲤鱼码放进画面';
       console.log('AOYU_CAMERA_LIVE');
     },
 
@@ -1858,7 +1873,7 @@
     /** 主鱼（调试面板、锚点环、状态行用它；鲤鱼模式下还有第二条） */
     activeFish: function () {
       var key = this.activeKeys && this.activeKeys[0];
-      if (!key) key = this.targetMode === 'koi' ? 'koi' : 'aoyu';
+      if (!key) key = 'koi';
       return instances[key] || null;
     },
 
@@ -2054,65 +2069,60 @@
       if (!hint) return;
       if (active) hint.classList.add('hidden');
       else {
-        hint.textContent = '把整张鳌鱼二维码放进画面';
+        hint.textContent = '把大屏上的鲤鱼码放进画面';
         hint.classList.remove('hidden');
       }
     },
 
-    /* ---------- 按系统时间换鱼 ---------- */
-    effectiveNow: function () {
-      return new Date(Date.now() + this.offsetMs);
-    },
-
-    /** 当前时间算不算"鳌鱼时段"（切换点精确到分钟，默认 20:45） */
-    isAoyuTime: function (now) {
-      var minutes = now.getHours() * 60 + now.getMinutes();
-      var boundary = CONFIG.switchHour * 60 + CONFIG.switchMinute;
-      return minutes >= boundary;
-    },
-
-    updateTimeMode: function () {
-      if (this.forceMode) {
-        this.applyMode(this.forceMode);
-        return;
-      }
-      var now = this.effectiveNow();
-      // 这里必须是 this（函数里没有 self：写成 self.isAoyuTime 会抛 ReferenceError，
-      // 而且是在 init 里调用的，会把后面的初始化一起带崩）
-      this.applyMode(this.isAoyuTime(now) ? 'aoyu' : 'koi');
-      this.scheduleSwitch(now);
-    },
-
-    scheduleSwitch: function (now) {
-      if (this.switchTimer) clearTimeout(this.switchTimer);
-      var next = new Date(now.getTime());
-      next.setHours(CONFIG.switchHour, CONFIG.switchMinute, 0, 0);
-      if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
-      var delay = Math.max(1000, next.getTime() - now.getTime() + 100);
-      var self = this;
-      this.switchTimer = setTimeout(function () {
-        self.switchTimer = null;
-        self.updateTimeMode();
-      }, delay);
-    },
-
-    /**
-     * 切换模式：显示这个模式在场的鱼（鲤鱼模式是两条），隐藏其它。
-     * 这只决定"哪几条鱼在场"，和卡片在不在画面里无关（那个交给 AR.js 的 marker 可见性）。
-     */
-    applyMode: function (next) {
-      if (this.targetMode === next) return;
-      this.targetMode = next;
-      var keys = CONFIG.modeFish[next] || [next];
+    /* ---------- 只有两条鲤鱼 ---------- */
+    /** 两条鲤鱼同时入场（不再有鳌鱼、不再按时间切换） */
+    enterKoi: function () {
+      var keys = ['koi', 'koi2'];
       this.activeKeys = keys.slice();
-      Object.keys(instances).forEach(function (key) {
-        var fish = instances[key];
-        if (!fish) return;
-        if (keys.indexOf(key) >= 0) fish.enter();
-        else fish.hide();
-      });
-      console.log('AOYU_TIME_MODE', next, keys.join('+'));
-      this.syncModeButtons();
+      for (var i = 0; i < keys.length; i++) {
+        var fish = instances[keys[i]];
+        if (fish) fish.enter();
+      }
+      console.log('AOYU_MODE koi+koi2');
+    },
+
+    /** 鱼缸框（调试用）：把鱼游动的立体范围画出来，方便对空间 */
+    ensureTankBox: function () {
+      if (this.tankBoxEl) return this.tankBoxEl;
+      var marker = document.getElementById('ar-marker');
+      if (!marker) return null;
+      var el = document.createElement('a-entity');
+      el.setAttribute('geometry', 'primitive: box');
+      el.setAttribute('material',
+        'shader: flat; color: #6fd3ff; wireframe: true; transparent: true; opacity: 0.5; depthTest: false');
+      el.object3D.userData.aoyuDebug = true;
+      marker.appendChild(el);
+      this.tankBoxEl = el;
+      return el;
+    },
+
+    updateTankBox: function () {
+      var fish = this.activeFish();
+      if (!fish) return;
+      var el = this.tankVisible ? this.ensureTankBox() : this.tankBoxEl;
+      if (!el) return;
+      el.object3D.visible = !!this.tankVisible;
+      if (!this.tankVisible) return;
+      var r = fish.radii();
+      var y0 = fish.yMin(), y1 = fish.yMax();
+      el.object3D.position.set(0, (y0 + y1) / 2, 0);
+      el.object3D.scale.set(r.x * 2, y1 - y0, r.z * 2);
+    },
+
+    toggleTank: function () {
+      this.tankVisible = !this.tankVisible;
+      var btn = document.getElementById('db-tank');
+      if (btn) {
+        btn.classList.toggle('on', this.tankVisible);
+        btn.textContent = this.tankVisible ? '鱼缸框：开' : '鱼缸框：关';
+      }
+      this.updateTankBox();
+      console.log('AOYU_TANK_BOX', this.tankVisible ? 'on' : 'off');
     },
 
     /* ---------- 调试面板 ---------- */
@@ -2120,24 +2130,10 @@
       var self = this;
       var panel = document.getElementById('debug-panel');
       var toggle = document.getElementById('debug-toggle');
-      var clock = document.getElementById('debug-time');
-      var modeText = document.getElementById('debug-mode');
       var statusText = document.getElementById('debug-status');
 
-      var format = function (date) {
-        var pad = function (v) { return v < 10 ? '0' + v : '' + v; };
-        return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) + ' ' +
-          pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':' + pad(date.getSeconds());
-      };
-
       this.refreshDebug = function () {
-        var now = self.effectiveNow();
-        clock.textContent = format(now);
-        var natural = self.isAoyuTime(now) ? '鳌鱼' : '鲤鱼';
-        var text = self.forceMode
-          ? (self.forceMode === 'aoyu' ? '鳌鱼' : '鲤鱼') + '（强制）'
-          : natural;
-        modeText.textContent = '当前预设：' + text;
+        self.updateTankBox();
         var statusText2 = document.getElementById('debug-camera');
         if (statusText2) statusText2.textContent = self.cameraStatusText();
         var animLine = document.getElementById('debug-anim');
@@ -2177,19 +2173,13 @@
         toggle.click();
       });
 
-      var offset = function (minutes) { self.setOffset(self.offsetMs + minutes * 60000); };
-      document.getElementById('db-m60').addEventListener('click', function () { offset(-60); });
-      document.getElementById('db-m10').addEventListener('click', function () { offset(-10); });
-      document.getElementById('db-m1').addEventListener('click', function () { offset(-1); });
-      document.getElementById('db-real').addEventListener('click', function () { self.setOffset(0); });
-      document.getElementById('db-p1').addEventListener('click', function () { offset(1); });
-      document.getElementById('db-p10').addEventListener('click', function () { offset(10); });
-      document.getElementById('db-p60').addEventListener('click', function () { offset(60); });
-      document.getElementById('db-2044').addEventListener('click', function () { self.setClockAt(20, 44, 55); });
-      document.getElementById('db-2046').addEventListener('click', function () { self.setClockAt(20, 46, 0); });
-      document.getElementById('db-koi').addEventListener('click', function () { self.setForce('koi'); });
-      document.getElementById('db-aoyu').addEventListener('click', function () { self.setForce('aoyu'); });
-      document.getElementById('db-follow').addEventListener('click', function () { self.setForce(null); });
+      var adBtn0 = document.getElementById('db-adaptive');
+      if (adBtn0) {
+        adBtn0.classList.toggle('on', !!self.adaptive);
+        adBtn0.textContent = self.adaptive ? '自适应：开' : '自适应：关';
+      }
+      var tankBtn = document.getElementById('db-tank');
+      if (tankBtn) tankBtn.addEventListener('click', function () { self.toggleTank(); });
 
       var knob = function (key, delta) {
         var fish = self.activeFish();
@@ -2218,13 +2208,6 @@
       knobs.forEach(function (item) {
         document.getElementById(item[2]).addEventListener('click', function () { knob(item[0], item[1]); });
       });
-      // 底部一键切换：红鲤鱼 ↔ 水墨鳌鱼（调试模式才显示；顺手锁住模式，
-      // 免得刚好到切换时间又被系统时间规则切回去）
-      var modeSwitchEl = document.getElementById('mode-switch');
-      if (modeSwitchEl) modeSwitchEl.addEventListener('click', function () {
-        self.setForce(self.targetMode === 'koi' ? 'aoyu' : 'koi');
-      });
-
       var pcBtnEl = document.getElementById('db-pc');
       if (pcBtnEl) pcBtnEl.addEventListener('click', function () { self.togglePcMode(); });
       document.getElementById('db-material').addEventListener('click', function () { self.toggleLightweight(); });
@@ -2238,7 +2221,6 @@
         self.refreshDebug();
       });
 
-      this.syncModeButtons();
       this.refreshDebug();
     },
 
@@ -2406,47 +2388,6 @@
       }
     },
 
-    setOffset: function (offsetMs) {
-      this.offsetMs = offsetMs;
-      this.forceMode = null;
-      this.updateTimeMode();
-      if (this.refreshDebug) this.refreshDebug();
-      console.log('AOYU_DEBUG_TIME_OFFSET', offsetMs);
-    },
-
-    setClockAt: function (hours, minutes, seconds) {
-      var real = new Date();
-      var target = new Date(real.getTime());
-      target.setHours(hours, minutes, seconds || 0, 0);
-      this.setOffset(target.getTime() - real.getTime());
-    },
-
-    setForce: function (mode) {
-      this.forceMode = mode;
-      if (this.switchTimer) {
-        clearTimeout(this.switchTimer);
-        this.switchTimer = null;
-      }
-      if (mode) {
-        this.applyMode(mode);
-      } else {
-        this.updateTimeMode();
-      }
-      if (this.refreshDebug) this.refreshDebug();
-      console.log('AOYU_TIME_MODE_FORCE', mode || 'clear');
-    },
-
-    syncModeButtons: function () {
-      var sw = document.getElementById('mode-switch');
-      if (sw) sw.textContent = this.targetMode === 'koi' ? '切到鳌鱼' : '切到鲤鱼';
-      var koi = document.getElementById('db-koi');
-      var aoyu = document.getElementById('db-aoyu');
-      var follow = document.getElementById('db-follow');
-      if (!koi) return;
-      koi.classList.toggle('on', this.forceMode === 'koi');
-      aoyu.classList.toggle('on', this.forceMode === 'aoyu');
-      follow.classList.toggle('on', !this.forceMode);
-    }
   };
 
   window.AOYU = app;

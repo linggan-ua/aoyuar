@@ -72,6 +72,13 @@
     max-height: 58vh; max-width: min(86vw, 420px); width: auto;
     filter: drop-shadow(0 12px 44px rgba(5, 248, 171, .16));
   }
+  .start-hero {
+    margin: 8px 0 18px; padding: 46px 20px; border-radius: 14px;
+    background: radial-gradient(ellipse at 30% 30%, rgba(63,163,140,.22), rgba(8,11,16,.92) 70%);
+    border: 1px solid rgba(200,162,90,.45); text-align: center;
+  }
+  .start-hero-title { font: 700 44px/1.2 "Songti SC", serif; color: #f2ede2; }
+  .start-hero-sub { margin-top: 10px; font-size: 14px; color: #9aa89f; }
   .start-tips { color: #9fb3a9; font-size: 13px; line-height: 1.9; }
   .start-tips b { color: #05f8ab; font-weight: 600; }
   #start-ar-button {
@@ -117,18 +124,6 @@
     pointer-events: auto; opacity: .78;
   }
   body.aoyu-debug #debug-toggle { display: block; }
-  /* 调试模式：底部中央一键切换「红鲤鱼 / 水墨鳌鱼」（现场对灯光、走位时用） */
-  #mode-switch {
-    display: none;
-    position: absolute; left: 50%;
-    bottom: calc(16px + env(safe-area-inset-bottom));
-    transform: translateX(-50%);
-    padding: 10px 18px; border-radius: 999px;
-    border: 1px solid rgba(245, 194, 67, .65); background: rgba(8, 11, 16, .72);
-    color: #f5c243; font-size: 13px; font-weight: 700; font-family: inherit;
-    pointer-events: auto; -webkit-tap-highlight-color: transparent;
-  }
-  body.aoyu-debug #mode-switch { display: block; }
   #debug-panel {
     display: none;
     position: absolute; right: calc(14px + env(safe-area-inset-right));
@@ -200,7 +195,7 @@
 <script src="../aframe-ar.js"></script>
 <script src="../js/note-synth.js?v=1"></script>
 <script>window.AOYU_DEBUG = true;   // 工具页始终显示调试入口</script>
-<script src="../js/aoyu-ar.js?v=109"></script>
+<script src="../js/aoyu-ar.js?v=114"></script>
 </head>
 <body>
 
@@ -213,7 +208,6 @@
          arjs="sourceType: image; sourceUrl: ../assets/patterns/pattern-card-v4.png; debugUIEnabled: false; patternRatio: 0.5; cameraParametersUrl: ../assets/arjs/camera_para.dat; errorPopup: ar-error; sourceWidth: 1920; sourceHeight: 1080">
 
   <a-assets timeout="30000">
-    <a-asset-item id="aoyu-model" src="../assets/models/aoyu_ink.glb"></a-asset-item>
     <a-asset-item id="koi-model" src="../assets/models/koi_red.glb"></a-asset-item>
   </a-assets>
 
@@ -232,10 +226,6 @@
 
     <!-- 游动节点：位置和朝向每帧由 fish-swim 直接写 object3D，
          模型挂在下面，rotation="0 90 0" 让小程序的朝向约定（头朝局部 +Z）成立 -->
-    <a-entity id="aoyu-swim" fish-swim="key: aoyu; anim: #aoyu-anim" scale="0.64 0.64 0.64">
-      <a-entity id="aoyu-anim" fish-anim="clip: Ao_Swim_Loop_3.2s"
-                gltf-model="#aoyu-model" rotation="0 90 0"></a-entity>
-    </a-entity>
 
     <a-entity id="koi-swim" fish-swim="key: koi; anim: #koi-anim" scale="0.55 0.55 0.55">
       <a-entity id="koi-anim" fish-anim="clip: Feixia_Swim_Loop_2.8s"
@@ -255,7 +245,7 @@
 <div id="ui">
   <!-- 启动页（还原老版本）-->
   <div id="start-overlay" class="start-overlay">
-    <img id="start-poster" src="../assets/ui/start-poster-v2.png" alt="水墨與絲竹的對話 · 沉浸式国乐剧场">
+    <div class="start-hero"><div class="start-hero-title">鲤鱼 AR</div><div class="start-hero-sub">扫描大屏上的鲤鱼码 · 看鱼在水箱里游动</div></div>
     <div class="start-tips">扫描<b>鳌鱼二维码</b>，在二维码上方查看<b>鳌鱼</b><br>首次进入请点击「允许/Allow」授权摄像头</div>
     <button id="start-ar-button" type="button" disabled>资源准备中…</button>
     <div class="start-note">电脑上按 <b>F</b> 键可全屏 / 再按一次退出</div>
@@ -269,34 +259,13 @@
   <div id="ar-error"></div>
 
   <div id="debug-toggle">调试</div>
-  <button id="mode-switch" type="button">切到鳌鱼</button>
   <div id="debug-panel">
     <div class="db-head">
-      <span class="db-title">系统时间调试</span>
+      <span class="db-title">鲤鱼鱼缸调试</span>
       <span id="debug-close">×</span>
     </div>
-    <div id="debug-time" class="db-time"></div>
-    <div id="debug-mode" class="db-mode"></div>
-
     <div class="db-row">
-      <button id="db-m60">-1h</button>
-      <button id="db-m10">-10m</button>
-      <button id="db-m1">-1m</button>
-      <button id="db-real">真实</button>
-      <button id="db-p1">+1m</button>
-      <button id="db-p10">+10m</button>
-      <button id="db-p60">+1h</button>
-    </div>
-    <div class="db-row">
-      <button id="db-2044">20:44:55</button>
-      <button id="db-2046">20:46</button>
-    </div>
-    <div class="db-row">
-      <button id="db-koi">强制鲤鱼</button>
-      <button id="db-aoyu">强制鳌鱼</button>
-    </div>
-    <div class="db-row">
-      <button id="db-follow">跟随真实时间</button>
+      <button id="db-tank">鱼缸框：关</button>
     </div>
 
     <div id="debug-anim" class="db-status"></div>
@@ -334,7 +303,7 @@
       <button id="db-reset">恢复默认</button>
     </div>
 
-    <div class="db-hint">只改页面内部的时间，不动手机系统时间<br>各旋钮上限已解锁，调太大会不自然（范围本身最大只能铺满屏幕）</div>
+    <div class="db-hint">鱼缸框用来看清鱼游动的立体范围<br>各旋钮上限已解锁，调太大会不自然</div>
   </div>
 </div>
 
