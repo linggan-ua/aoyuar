@@ -197,7 +197,7 @@
 <script src="../js/tank-config.js?v=1"></script>
 <script src="../js/tank-cube.js?v=27"></script>
 <script>window.AOYU_DEBUG = true;   // 工具页始终显示调试入口</script>
-<script src="../js/aoyu-ar.js?v=142"></script>
+<script src="../js/aoyu-ar.js?v=143"></script>
 </head>
 <body>
 
@@ -228,7 +228,7 @@
 
     <!-- 调试鱼缸：和官方 AR.js cubemap demo 一样直接挂在 marker 下。
          父节点只做 position/scale，尺寸由三维编辑器同步写入。 -->
-    <a-box id="debug-tank" visible="false" position="0 0.28 0" scale="0.80 0.56 0.50" tank-cube="base: ../assets/cube-faces/; opacity: 0.25"></a-box>
+    <a-box id="debug-tank" visible="false" position="0 0.25 0" scale="0.80 0.50 0.56" tank-cube="base: ../assets/cube-faces/; opacity: 0.25"></a-box>
 
     <!-- 游动节点：位置和朝向每帧由 fish-swim 直接写 object3D，
          模型挂在下面，rotation="0 90 0" 让小程序的朝向约定（头朝局部 +Z）成立 -->

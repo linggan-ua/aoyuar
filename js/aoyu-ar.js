@@ -2047,8 +2047,8 @@
       if (el.getAttribute('visible') !== visible) el.setAttribute('visible', visible);
       if (!visible) return;
 
-      // 与官方 AR.js cubemap demo 一致的 marker-local 坐标：X=宽，Y=高，Z=纵深。
-      // cube 尺寸只来自三维调试器，不再跟鱼的屏幕自适应半径联动。
+      // 与已验证正常的 AR.js a-box 轴向一致：X=宽，Y=纵深，Z=卡面内高度。
+      // 这是 marker-local 的变换约定，不能按普通 A-Frame 场景的 Y-up 轴序改写。
       var w = Number(tankConfig.width);
       var h = Number(tankConfig.height);
       var d = Number(tankConfig.depth);
@@ -2056,9 +2056,9 @@
       var signature = [w, h, d].map(function (v) { return v.toFixed(5); }).join('|');
       if (this._tankBoxSignature === signature) return;
       this._tankBoxSignature = signature;
-      // 只写 A-Frame transform，不直接操作 object3D；鱼缸底面落在 marker 平面上。
-      el.setAttribute('position', '0 ' + (h / 2).toFixed(5) + ' 0');
-      el.setAttribute('scale', w.toFixed(5) + ' ' + h.toFixed(5) + ' ' + d.toFixed(5));
+      // 只写 A-Frame transform，不直接操作 object3D；鱼缸后墙落在 marker 平面上。
+      el.setAttribute('position', '0 ' + (d / 2).toFixed(5) + ' 0');
+      el.setAttribute('scale', w.toFixed(5) + ' ' + d.toFixed(5) + ' ' + h.toFixed(5));
     },
 
     toggleTank: function () {
