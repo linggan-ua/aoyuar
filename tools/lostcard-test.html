@@ -198,7 +198,7 @@
 <script src="../js/note-synth.js?v=1"></script>
 <script src="../js/tank-config.js?v=1"></script>
 <script>window.AOYU_DEBUG = true;   // 工具页始终显示调试入口</script>
-<script src="../js/aoyu-ar.js?v=117"></script>
+<script src="../js/aoyu-ar.js?v=118"></script>
 </head>
 <body>
 
@@ -224,9 +224,16 @@
 
   <!-- 识别用的 .patt：同名 .png 是要打印的卡片（黑方块占 80%、内图占黑方块 50%，
        所以 arjs 的 patternRatio 必须是 0.5；换卡就换这两个文件 + 下面这一行） -->
-  <!-- AR.js 原生 marker 矩阵平滑：只抑制位姿抖动，不改鱼的游动算法 -->
-  <a-marker id="ar-marker" smooth="true" smooth-count="6" smooth-tolerance="0.015" smooth-threshold="2" type="pattern" url="../assets/patterns/pattern-card-v4.patt"
+  <a-marker id="ar-marker" type="pattern" url="../assets/patterns/pattern-card-v4.patt"
             emitevents="true" size="1">
+
+    <!-- 调试鱼缸：和官方 AR.js cubemap demo 一样直接挂在 marker 下。
+         父节点只做 position/scale，尺寸由三维编辑器同步写入。 -->
+    <a-entity id="debug-tank" visible="false" position="0 0.25 0" scale="0.80 0.50 0.56">
+      <a-entity geometry="primitive: box; width: 1; height: 1; depth: 1"
+                material="shader: flat; color: #61d2ff; transparent: true; opacity: 0.055; depthWrite: false; side: double"></a-entity>
+      <a-entity debug-tank-box></a-entity>
+    </a-entity>
 
     <!-- 游动节点：位置和朝向每帧由 fish-swim 直接写 object3D，
          模型挂在下面，rotation="0 90 0" 让小程序的朝向约定（头朝局部 +Z）成立 -->

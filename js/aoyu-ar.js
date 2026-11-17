@@ -479,12 +479,10 @@
       var material = new THREE.LineBasicMaterial({
         color: 0x6fd3ff,
         transparent: true,
-        opacity: 0.9,
-        depthTest: false,
+        opacity: 0.88,
         depthWrite: false
       });
       var lines = new THREE.LineSegments(geometry, material);
-      lines.renderOrder = 999;
       this.el.setObject3D('mesh', lines);
     }
   });
@@ -2213,25 +2211,48 @@
       if (this.tankBoxEl) return this.tankBoxEl;
       var marker = document.getElementById('ar-marker');
       if (!marker) return null;
-      var el = document.createElement('a-entity');
-      el.setAttribute('debug-tank-box', '');
+      var el = document.getElementById('debug-tank');
+      if (!el) {
+        // 和官方 AR.js cubemap demo 一样：鱼缸是 marker 下的普通 A-Frame 子节点。
+        // 父节点负责 position/scale，子节点只负责透明体积和 12 条棱。
+        el = document.createElement('a-entity');
+        el.id = 'debug-tank';
+        el.setAttribute('visible', false);
+        var fill = document.createElement('a-entity');
+        fill.setAttribute('geometry', 'primitive: box; width: 1; height: 1; depth: 1');
+        fill.setAttribute('material', 'shader: flat; color: #61d2ff; transparent: true; opacity: 0.055; depthWrite: false; side: double');
+        el.appendChild(fill);
+        var edges = document.createElement('a-entity');
+        edges.setAttribute('debug-tank-box', '');
+        el.appendChild(edges);
+        marker.appendChild(el);
+      }
       el.object3D.userData.aoyuDebug = true;
-      marker.appendChild(el);
       this.tankBoxEl = el;
       return el;
     },
 
     updateTankBox: function () {
+      var el = this.tankBoxEl || this.ensureTankBox();
+      if (!el) return;
+      var visible = !!this.tankVisible;
+      if (el.getAttribute('visible') !== visible) el.setAttribute('visible', visible);
+      if (!visible) return;
+
       var fish = this.activeFish();
       if (!fish) return;
-      var el = this.tankVisible ? this.ensureTankBox() : this.tankBoxEl;
-      if (!el) return;
-      el.object3D.visible = !!this.tankVisible;
-      if (!this.tankVisible) return;
       var r = fish.radii();
       var y0 = fish.yMin(), y1 = fish.yMax();
-      el.object3D.position.set(0, (y0 + y1) / 2, 0);
-      el.object3D.scale.set(r.x * 2, y1 - y0, r.z * 2);
+      var sx = r.x * 2;
+      var sy = y1 - y0;
+      var sz = r.z * 2;
+      var py = (y0 + y1) / 2;
+      var signature = [sx, sy, sz, py].map(function (v) { return v.toFixed(5); }).join('|');
+      if (this._tankBoxSignature === signature) return;
+      this._tankBoxSignature = signature;
+      // 只写 A-Frame transform，不直接操作 object3D；稳定性和官方 a-box 同一条路径。
+      el.setAttribute('position', '0 ' + py.toFixed(5) + ' 0');
+      el.setAttribute('scale', sx.toFixed(5) + ' ' + sy.toFixed(5) + ' ' + sz.toFixed(5));
     },
 
     toggleTank: function () {
