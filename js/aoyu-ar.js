@@ -5,8 +5,8 @@
  *   游动（随机巡游/冲刺/滑行/悬停、限速转向、软边界、绕重力姿态、摆尾联动）
  *   入场/退场、丢卡隐藏、点鱼身播五声音阶、点空白惊吓、20:00 自动换鱼
  *
- * 坐标系沿用小程序那一套：卡片局部空间里 X = 卡宽方向，Y = 卡面法线，Z = 卡高方向。
- * AR.js 的 marker 局部空间正好也是这个朝向（+Y 垂直于卡面），所以数学部分不用改。
+ * 坐标系按官方 AR.js cubemap demo：marker 局部空间 X = 鱼缸宽，Y = 从码平面向上，
+ * Z = 鱼缸纵深。鱼缸和鱼都使用同一组 marker-local 坐标，不再依赖手机视角或屏幕方向。
  */
 (function () {
   'use strict';
@@ -54,14 +54,8 @@
   // 自适应缩放允许游动范围碰到画面的这个边界（0.8 = 四周各留 10% 余量），以及最小倍率
   var SCREEN_FIT_LIMIT = 0.8;
   var SCREEN_FIT_MIN = 0.1;
-  // 屏幕填充：范围按"占屏幕多大"来定。这里是最外圈的 NDC 边界（0.92 ≈ 四周各留 4%）
-  var SCREEN_FILL_MAX_X = 0.92;
-  var SCREEN_FILL_MAX_Y = 0.88;
+  // 自适应缩放采样点数：只用于检查鱼模型是否还在手机画面内。
   var SCREEN_FILL_SAMPLES = 24;
-  // 卡片在画面里至少要有这么多 NDC（≈ 屏幕短的 2%）才认这次位姿：
-  // 斜看/离得远时卡片投影像素极少，按"铺满屏幕"外推出来的范围会大到离谱（实测 1000+ 卡宽），
-  // 鱼会拿到一个屏幕外的目标一路飞出去。低于这个值就不更新范围，沿用上一次的好值。
-  var MIN_NDC_PER_CARD = 0.02;
   // 两条鱼"不许交叉叠在一起"的间距：中心距离 ≥ PAIR_GAP_K × 平均身长。
   // 1.0 正好是两个"包围圆"相切（每条鱼的包围圆半径 = 身长的一半），留 15% 余量。
   var PAIR_GAP_K = 1.15;
@@ -93,14 +87,6 @@
     }
     return tankConfig;
   }
-
-  function tankScale(axis) {
-    var base = Number(TANK_DEFAULTS[axis]) || 1;
-    var value = Number(tankConfig[axis]);
-    if (!(value > 0) || !isFinite(value)) value = base;
-    return value / base;
-  }
-
   refreshTankConfig();
 
   // 鱼大小的默认基准（面板「鱼大一点/小一点」的起点，三条鱼共用同一套 modelScale）
@@ -453,54 +439,15 @@
    *   6) 每帧积分之后再做一次硬投影：出圈就按比例拉回、高度夹到区间内
    *      —— 所以无论受惊冲刺、掉帧、改范围、改大小，都不可能游出范围
    */
-  /**
-   * 调试用的鱼缸边框：只画 12 条棱，不画 BoxGeometry wireframe 的面片对角线。
-   * 盒体单位尺寸为 1，由 updateTankBox() 按横/高/深三个真实尺寸缩放。
-   */
-  AFRAME.registerComponent('debug-tank-box', {
-    init: function () {
-      var points = [];
-      var corners = [
-        [-0.5, -0.5, -0.5], [ 0.5, -0.5, -0.5], [ 0.5,  0.5, -0.5], [-0.5,  0.5, -0.5],
-        [-0.5, -0.5,  0.5], [ 0.5, -0.5,  0.5], [ 0.5,  0.5,  0.5], [-0.5,  0.5,  0.5]
-      ];
-      var edges = [
-        [0, 1], [1, 2], [2, 3], [3, 0],
-        [4, 5], [5, 6], [6, 7], [7, 4],
-        [0, 4], [1, 5], [2, 6], [3, 7]
-      ];
-      for (var i = 0; i < edges.length; i++) {
-        var a = corners[edges[i][0]];
-        var b = corners[edges[i][1]];
-        points.push(a[0], a[1], a[2], b[0], b[1], b[2]);
-      }
-      var geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-      var material = new THREE.LineBasicMaterial({
-        color: 0x6fd3ff,
-        transparent: true,
-        opacity: 0.88,
-        depthWrite: false
-      });
-      var lines = new THREE.LineSegments(geometry, material);
-      this.el.setObject3D('mesh', lines);
-    }
-  });
-
   AFRAME.registerComponent('fish-swim', {
     schema: {
       key: { type: 'string' },
       anim: { type: 'selector' },
-      radius: { type: 'number', default: 0.50 },    // 游动范围半径（卡片 = 1 单位；圆形）
-      // 鱼缸纵深（marker 的 +Y 指向观众）：从大屏往观众方向的深度范围。
-      // 之前 0.30~1.25 经自适应缩放后只剩约 0.23 卡宽，看起来是一块薄板；
-      // 这里把纵深拉到约 2.4 卡宽，再交给自适应整体缩放，鱼缸才有正常水体厚度。
-      yMin: { type: 'number', default: 0.20 },
-      yMax: { type: 'number', default: 2.60 },
+      radius: { type: 'number', default: 0.50 },    // 速度参考用的基准卡宽
       speed: { type: 'number', default: 0.30 },     // 基准速度（单位/秒）
       turnRate: { type: 'number', default: 1.6 },   // 转弯系数：弧度/单位位移；1.6 ≈ 转弯半径 0.63 卡宽
       maxBank: { type: 'number', default: 10 * Math.PI / 180 },
-      bobSpeed: { type: 'number', default: 0.22 }   // 前后（纵深）起伏的快慢
+      bobSpeed: { type: 'number', default: 0.22 }   // 鱼在 cube 高度方向起伏的快慢
     },
     init: function () {
       var self = this;
@@ -511,7 +458,7 @@
       var startK = 0.3 + this.rng() * 0.4;
       this.pos = {
         x: Math.cos(startA) * startR.x * startK,
-        y: (this.data.yMin + this.data.yMax) / 2,
+        y: (this.yMin() + this.yMax()) / 2,
         z: Math.sin(startA) * startR.z * startK
       };
       this.head = { x: 0, z: 1 };
@@ -528,7 +475,6 @@
       this.startleBurstUntil = 0;
       this.edgeTime = 0;        // 贴在边界上多久了（超过阈值就掉头，不让它一直磨边）
       this.edgeHit = false;     // 上一帧是不是被硬约束按回边界了（= 这一帧刚到边）
-      this.screenR = null;      // 屏幕适配出来的椭圆半径（卡宽），每 100ms 更新一次
       this.tuning = { speedScale: 1, turnScale: 1, rangeScale: DEFAULT_RANGE_SCALE, animSpeedMax: 1, modelScale: DEFAULT_MODEL_SCALE, pcModelScale: DEFAULT_MODEL_SCALE, startleSpeed: 4 };
       this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 鲤鱼 0.55）
       this.appliedScale = 0;   // 0 表示还没写过缩放，第一帧一定会写一次
@@ -613,40 +559,29 @@
     baseRadius: function () { return this.data.radius; },
 
     /**
-     * 这一帧真正用的活动范围（卡片平面内的椭圆，单位＝卡宽）。
-     * 默认模式仍由当前画面自动算范围；三维调试器有保存值时，
-     * 直接使用编辑器里的宽/高卡宽尺寸，不再被屏幕倍率改掉。
+     * 鱼在 cube 内的水平活动范围。
+     * 坐标系完全按官方 cubemap demo：
+     *   X = cube 宽度，Z = cube 纵深，Y = 从鲤鱼码向上的高度。
      */
     radii: function () {
-      // 三维调试器保存后，宽/高就是编辑器里显示的卡宽，按原尺寸进 AR。
-      // 否则继续使用原有的屏幕自适应范围，保持旧页面行为不变。
-      if (tankConfig.custom) {
-        return {
-          x: Math.max(0.05, Number(tankConfig.width) / 2),
-          z: Math.max(0.05, Number(tankConfig.height) / 2)
-        };
-      }
-      var r = this.screenR;
-      if (r && isFinite(r.x) && isFinite(r.z) && r.x > 0.05 && r.z > 0.05) {
-        return { x: r.x, z: r.z };
-      }
-      var b = this.baseRadius() * 5;               // 还没算出来时的兜底（≈ 老范围）
-      return { x: b, z: b * 0.86 };
+      var w = Math.max(0.05, Number(tankConfig.width) || 0.80);
+      var d = Math.max(0.05, Number(tankConfig.depth) || 0.50);
+      var marginX = Math.min(0.07, w * 0.12);
+      var marginZ = Math.min(0.07, d * 0.12);
+      return {
+        x: Math.max(0.04, w / 2 - marginX),
+        z: Math.max(0.04, d / 2 - marginZ)
+      };
     },
 
-    /**
-     * 鱼缸纵深区间。
-     * - 默认模式：沿用旧的屏幕自适应构图；
-     * - 三维调试器模式：后墙与 marker 平面重合，按编辑器保存的卡宽尺寸向前展开。
-     */
+    /** 鱼在 cube 内的垂直活动范围（marker 的 local +Y = 向上）。 */
     yMin: function () {
-      return tankConfig.custom ? 0 : this.data.yMin * this.fit;
+      var h = Math.max(0.05, Number(tankConfig.height) || 0.56);
+      return Math.max(0.02, h * 0.12);
     },
     yMax: function () {
-      if (tankConfig.custom) return Number(tankConfig.depth);
-      var min = this.data.yMin;
-      var range = this.data.yMax - min;
-      return (min + range * tankScale('depth')) * this.fit;
+      var h = Math.max(0.05, Number(tankConfig.height) || 0.56);
+      return Math.max(this.yMin() + 0.04, h * 0.88);
     },
 
     /** 模型最终缩放 = HTML 基准 × 手调大小 × 自适应缩放 */
@@ -661,12 +596,11 @@
     },
 
     /**
-     * 以 k 倍画游动范围（连同悬浮高度），检查整圈是不是都在镜头前方并且留在画面内。
-     * 采样 24 个点：任何一点跑到镜头后面或者出画面都算装不下。
+     * 采样校验：给定 cube 的水平半径和顶部高度，整圈是否都在画面内。
+     * 任何一点跑到镜头后面或出画面都算装不下。
      */
-    /** 采样校验：给定椭圆半径（卡宽）是否整圈都在画面内（相机前方 + NDC 不超上限） */
     fitsRadii: function (rx, rz, camera, limitX, limitY) {
-      var y = this.yMax();                          // 纵深最靠前（画面里最大）的位置做最坏情况校验
+      var y = this.yMax();                          // cube 顶部，投影通常最靠外
       var space = this.markerSpace();
       if (!space) return false;
       for (var i = 0; i < SCREEN_FILL_SAMPLES; i++) {
@@ -681,21 +615,10 @@
       return true;
     },
 
-    /** 范围被判定不可信时的日志：同一原因 2 秒内只打一条，方便真机上抓现场 */
-    warnField: function (why, dxPerUnit, dyPerUnit) {
-      var now = performance.now();
-      if (this._fieldWarnAt && now - this._fieldWarnAt < 2000 && this._fieldWarnWhy === why) return;
-      this._fieldWarnAt = now;
-      this._fieldWarnWhy = why;
-      console.warn('AOYU_FIELD_SKIP ' + why +
-        ' 每卡宽NDC=' + dxPerUnit.toFixed(4) + '/' + dyPerUnit.toFixed(4) +
-        ' 当前范围=' + (this.screenR ? this.screenR.x.toFixed(2) + '×' + this.screenR.z.toFixed(2) : '无'));
-    },
-
     /**
      * 「两条鱼要放得下」的缩放上限（≤1；只有一条鱼时是 1）。
      *
-     * 卡片占满画面时，按屏幕反推出来的活动范围可能只有 0.4 卡宽，而鱼有 1.45 卡宽长：
+     * cube 宽度较小时，两条鱼可能挤不下：
      * 这种场地里两条鱼无论怎么游都会交叉叠在一起（物理上塞不下），只能把鱼按比例缩小到
      * "两条鱼 + 一条间距"能塞进长轴。这条不受「自适应」开关影响 —— 它管的是会不会叠在一起。
      */
@@ -711,9 +634,8 @@
     },
 
     /**
-     * 自适应缩放（调试面板的「自适应」开关）：把"活动范围 + 鱼身"整幅构图缩到画面内。
-     * 只影响鱼的大小和悬浮高度 —— 活动范围本身已经按屏幕算好了（screenRadii），
-     * 这个开关是给"卡片在画面里占得太满"那种情况兜底的。
+     * 自适应缩放（调试面板的「自适应」开关）：鱼缸尺寸固定后，
+     * 只在鱼模型可能超出手机画面时缩小模型，不改 cube 尺寸和锚点。
      */
     screenFit: function () {
       var sceneEl = document.querySelector('a-scene');
@@ -729,52 +651,6 @@
         if (this.fitsRadii(needX * k, needZ * k, camera, SCREEN_FIT_LIMIT, SCREEN_FIT_LIMIT)) return k;
       }
       return k;
-    },
-
-    /**
-     * 按当前相机位姿算"刚好铺到指定屏幕比例"的椭圆半径（单位＝卡宽）。
-     *
-     * 做法：量出"卡片中心 + 沿卡面 x / z 各一个基准半径"这三个点投影到屏幕后的跨度，
-     * 得到"每卡宽对应多少 NDC"，再反推横、纵各自能铺多宽 —— 所以椭圆会自己长成屏幕的形状
-     * （竖屏就是竖向长、横向短），并且永远贴着屏幕的边而不越界。
-     * 透视下线性外推会略偏大，所以留 10% 余量，再用采样校验兜一次。
-     */
-    screenRadii: function (limitX, limitY) {
-      var sceneEl = document.querySelector('a-scene');
-      var camera = sceneEl && sceneEl.camera;
-      var space = this.markerSpace();
-      if (!camera || !space) return null;
-      var unit = this.baseRadius();
-      var y = (this.yMin() + this.yMax()) / 2;
-      var o = new THREE.Vector3(0, y, 0);
-      var px = new THREE.Vector3(unit, y, 0);
-      var pz = new THREE.Vector3(0, y, unit);
-      space.localToWorld(o); space.localToWorld(px); space.localToWorld(pz);
-      if (tmpVec2.copy(o).applyMatrix4(camera.matrixWorldInverse).z > -0.01) return null;
-      o.project(camera); px.project(camera); pz.project(camera);
-      if (!isFinite(o.x) || !isFinite(px.x) || !isFinite(pz.y)) return null;
-      var dxPerUnit = Math.abs(px.x - o.x) / unit;      // 每卡宽 -> NDC x
-      var dyPerUnit = Math.abs(pz.y - o.y) / unit;      // 每卡宽 -> NDC y
-      if (dxPerUnit < MIN_NDC_PER_CARD || dyPerUnit < MIN_NDC_PER_CARD) {
-        this.warnField('卡片太小/位姿不可信', dxPerUnit, dyPerUnit);
-        return null;                                     // 不更新，沿用上一次的好值
-      }
-      var rx = dxPerUnit > 1e-6 ? limitX / dxPerUnit : unit;
-      var rz = dyPerUnit > 1e-6 ? limitY / dyPerUnit : unit;
-      // 透视外推偏大 + 手指/画面安全边距
-      rx *= 0.9; rz *= 0.9;
-      // 采样校验：整圈必须真的在画面里。以前只缩三次就收工，斜看时能返回 1000+ 卡宽的范围
-      // （鱼随后就顺着目标飞出去了），所以这里一直缩到装得下为止。
-      for (var i = 0; i < 40 && !this.fitsRadii(rx, rz, camera, limitX, limitY); i++) {
-        rx *= 0.85; rz *= 0.85;
-      }
-      if (!this.fitsRadii(rx, rz, camera, limitX, limitY)) {
-        this.warnField('怎么缩都装不下', dxPerUnit, dyPerUnit);
-        return null;
-      }
-      if (!(rx > 0.05) || !isFinite(rx)) rx = unit;
-      if (!(rz > 0.05) || !isFinite(rz)) rz = unit;
-      return { x: rx, z: rz };
     },
 
     /**
@@ -901,28 +777,8 @@
         this.fit = fitWant;
       }
 
-      // 活动范围按屏幕来：每 100ms 重算一次"铺满屏幕又不越界"的倍率（平滑跟随，避免抖）
-      this.screenTimer = (this.screenTimer || 0) + d;
-      if (this.screenTimer >= 0.1) {
-        this.screenTimer = 0;
-        // 旋钮含义：5（默认）≈ 铺到屏幕的 85%，8 ≈ 贴着安全边距的最大范围（0.92 / 0.88）
-        var fill = Math.max(0.15, Math.min(1, this.tuning.rangeScale / 5.9));
-        var want = this.screenRadii(SCREEN_FILL_MAX_X * fill, SCREEN_FILL_MAX_Y * fill);
-        if (want) {
-          if (!this.screenR) {
-            this.screenR = { x: want.x, z: want.z };
-          } else {
-            var k = Math.min(1, d * 6);          // 平滑跟随，避免镜头一动范围就跳
-            this.screenR.x += (want.x - this.screenR.x) * k;
-            this.screenR.z += (want.z - this.screenR.z) * k;
-          }
-        }
-      }
-
       var r = this.radii();
-      // 目标点必须落在当前活动范围内。活动范围是每 100ms 跟着镜头重算的，
-      // 范围一缩小，之前挑的目标点就会跑到椭圆外面：鱼会一直顶着边界磨，
-      // 两条鱼还特别容易一起被挤到同一条边上（看着就是"黏在一起"）。
+      // 目标点必须落在固定 cube 的水平活动范围内；避免鱼长期贴着边界游。
       var tn = Math.sqrt((this.target.x / r.x) * (this.target.x / r.x) +
                          (this.target.z / r.z) * (this.target.z / r.z));
       if (tn > 0.85) {
@@ -1092,14 +948,14 @@
       // 写进场景：朝向 = 航向，侧倾 = 转弯
       this.applyModelScale();
       this.el.object3D.position.set(this.pos.x, this.pos.y, this.pos.z);
-      // 大屏竖直摆放：鱼的 up 对齐 marker 的 -Z（屏幕上方），头沿屏幕平面内的航向；
-      // 观众正对大屏看到的是鲤鱼侧面（不是从水面看下去的俯视）。
+      // 使用官方 cube 的坐标轴：鱼头沿水平 X/Z 航向，鱼背朝 cube 的 +Y 面；
+      // 这样从斜视、俯视等不同角度看，鱼和鱼缸共用同一个 marker 坐标系。
       tmpForward.set(this.head.x, 0, this.head.z);
       if (tmpForward.lengthSq() < 1e-6) tmpForward.set(0, 0, 1);
       tmpForward.normalize();
-      // up 要和 forward 正交：先把"屏幕上方"里平行于 forward 的分量去掉，
+      // up 和 forward 做正交处理，避免某些角度下基矩阵退化。
       // 否则鱼朝上/下游时两根轴共线，基矩阵退化（鱼会歪成乱转）
-      tmpUp.set(0, 0, -1);
+      tmpUp.set(0, 1, 0);
       tmpUp.addScaledVector(tmpForward, -tmpUp.dot(tmpForward)).normalize();
       tmpRight.crossVectors(tmpUp, tmpForward).normalize();
       tmpBasis.makeBasis(tmpRight, tmpUp, tmpForward);
@@ -1211,17 +1067,17 @@
     status: function () {
       var r = this.radii();
       return {
-        posture: { name: '贴卡平面（有界漫游）', tiltDeg: 0 },
+        posture: { name: '鱼缸内三维漫游', tiltDeg: 0 },
         tuning: this.tuning,
         state: this.boosting ? '受惊冲刺' : (this.moving ? '巡游' : '悬停'),
         radius: r.x.toFixed(2),
         fit: this.fit,
         bodyLen: this.measureBodyLength(),
         turnRadius: (this.turnRadius || 0) / Math.max(0.2, this.tuning.turnScale),
-        depth: this.yMin().toFixed(2) + '~' + this.yMax().toFixed(2),
-        tankWidth: (r.x * 2).toFixed(2),
-        tankHeight: (r.z * 2).toFixed(2),
-        tankDepth: (this.yMax() - this.yMin()).toFixed(2),
+        heightRange: this.yMin().toFixed(2) + '~' + this.yMax().toFixed(2),
+        tankWidth: Number(tankConfig.width).toFixed(2),
+        tankHeight: Number(tankConfig.height).toFixed(2),
+        tankDepth: Number(tankConfig.depth).toFixed(2),
         tankBaseWidth: Number(tankConfig.width).toFixed(2),
         tankBaseHeight: Number(tankConfig.height).toFixed(2),
         tankBaseDepth: Number(tankConfig.depth).toFixed(2),
@@ -2214,17 +2070,13 @@
       var el = document.getElementById('debug-tank');
       if (!el) {
         // 和官方 AR.js cubemap demo 一样：鱼缸是 marker 下的普通 A-Frame 子节点。
-        // 父节点负责 position/scale，子节点只负责透明体积和 12 条棱。
+        // 父节点负责 position/scale，子节点用和官方同款的六面方向贴图 cube。
         el = document.createElement('a-entity');
         el.id = 'debug-tank';
         el.setAttribute('visible', false);
-        var fill = document.createElement('a-entity');
-        fill.setAttribute('geometry', 'primitive: box; width: 1; height: 1; depth: 1');
-        fill.setAttribute('material', 'shader: flat; color: #61d2ff; transparent: true; opacity: 0.055; depthWrite: false; side: double');
-        el.appendChild(fill);
-        var edges = document.createElement('a-entity');
-        edges.setAttribute('debug-tank-box', '');
-        el.appendChild(edges);
+        var cube = document.createElement('a-entity');
+        cube.setAttribute('tank-cube', 'opacity: 0.88');
+        el.appendChild(cube);
         marker.appendChild(el);
       }
       el.object3D.userData.aoyuDebug = true;
@@ -2239,20 +2091,18 @@
       if (el.getAttribute('visible') !== visible) el.setAttribute('visible', visible);
       if (!visible) return;
 
-      var fish = this.activeFish();
-      if (!fish) return;
-      var r = fish.radii();
-      var y0 = fish.yMin(), y1 = fish.yMax();
-      var sx = r.x * 2;
-      var sy = y1 - y0;
-      var sz = r.z * 2;
-      var py = (y0 + y1) / 2;
-      var signature = [sx, sy, sz, py].map(function (v) { return v.toFixed(5); }).join('|');
+      // 官方 cube 坐标：X=宽，Y=高（从码平面向上），Z=纵深。
+      // cube 尺寸只来自三维调试器，不再跟 fish 的屏幕自适应半径联动。
+      var w = Number(tankConfig.width);
+      var h = Number(tankConfig.height);
+      var d = Number(tankConfig.depth);
+      if (!(w > 0.01) || !(h > 0.01) || !(d > 0.01)) return;
+      var signature = [w, h, d].map(function (v) { return v.toFixed(5); }).join('|');
       if (this._tankBoxSignature === signature) return;
       this._tankBoxSignature = signature;
-      // 只写 A-Frame transform，不直接操作 object3D；稳定性和官方 a-box 同一条路径。
-      el.setAttribute('position', '0 ' + py.toFixed(5) + ' 0');
-      el.setAttribute('scale', sx.toFixed(5) + ' ' + sy.toFixed(5) + ' ' + sz.toFixed(5));
+      // 只写 A-Frame transform，不直接操作 object3D；鱼缸底面始终落在 marker 平面上。
+      el.setAttribute('position', '0 ' + (h / 2).toFixed(5) + ' 0');
+      el.setAttribute('scale', w.toFixed(5) + ' ' + h.toFixed(5) + ' ' + d.toFixed(5));
     },
 
     toggleTank: function () {
@@ -2260,7 +2110,7 @@
       var btn = document.getElementById('db-tank');
       if (btn) {
         btn.classList.toggle('on', this.tankVisible);
-        btn.textContent = this.tankVisible ? '鱼缸框：开' : '鱼缸框：关';
+        btn.textContent = this.tankVisible ? '鱼缸 cube：开' : '鱼缸 cube：关';
       }
       this.updateTankBox();
       console.log('AOYU_TANK_BOX', this.tankVisible ? 'on' : 'off');
@@ -2286,22 +2136,19 @@
         self.syncAnchorRing(fish);
         var tankEditorState = document.getElementById('db-tank-editor');
         if (tankEditorState) tankEditorState.classList.toggle('on', !!status.tankCustom);
-        // 立体尺寸启用后，宽/高/深由三维编辑器完全控制，旧的“范围±”不能再偷偷改尺寸。
+        // 现在鱼的活动范围就是固定 cube，旧的“范围±”不再参与几何。
         var rangeMin = document.getElementById('db-range-m');
         var rangeMax = document.getElementById('db-range-p');
-        if (rangeMin) rangeMin.disabled = !!status.tankCustom;
-        if (rangeMax) rangeMax.disabled = !!status.tankCustom;
-        var rangeInfo = status.tankCustom
-          ? ' 范围：三维尺寸固定'
-          : ' 范围×' + status.tuning.rangeScale.toFixed(2) +
-            '（目标占屏' + Math.round(Math.min(1, status.tuning.rangeScale / 5.9) * 100) + '%）';
+        if (rangeMin) rangeMin.disabled = true;
+        if (rangeMax) rangeMax.disabled = true;
+        var rangeInfo = ' 范围：Cube 固定';
         statusText.textContent = 'FPS ' + (self.fps || '--') +
           '（渲染×' + (self.pixelRatio ? self.pixelRatio.toFixed(2) : '--') + '）　' +
           '游动：有界漫游　半径 ' + status.radius + ' 张卡宽（圆）' +
-          '　纵深 ' + status.depth + '　' + status.state + '　' +
+          '　高度 ' + status.heightRange + '　' + status.state + '　' +
           '鱼缸 ' + status.tankWidth + '×' + status.tankHeight + '×' + status.tankDepth +
           ' 卡宽（横×高×深）' +
-          (status.tankCustom ? ' [三维调试器]' : ' [默认]') + '　' +
+          (status.tankCustom ? ' [三维调试器]' : ' [默认 cube]') + '　' +
           '设置 ' + status.tankBaseWidth + '×' + status.tankBaseHeight + '×' + status.tankBaseDepth + '　' +
           '速度×' + status.tuning.speedScale.toFixed(2) +
           ' 转向×' + status.tuning.turnScale.toFixed(2) + rangeInfo +
@@ -2463,7 +2310,7 @@
       if (!marker) return;
       var fish = this.activeFish();
       var r = fish ? fish.radii() : { x: 2.5, z: 2.5 };
-      var h = fish && fish.data.centerY != null ? fish.data.centerY : 0.5;
+      var h = fish ? (fish.yMin() + fish.yMax()) / 2 : 0.28;
       var el = document.createElement('a-entity');
       el.id = 'anchor-ring';
       el.setAttribute('geometry', 'primitive: torus; radius: 1; radiusTubular: 0.012; segmentsTubular: 96; segmentsRadial: 4');

@@ -197,8 +197,9 @@
 <script src="../aframe-ar.js"></script>
 <script src="../js/note-synth.js?v=1"></script>
 <script src="../js/tank-config.js?v=1"></script>
+<script src="../js/tank-cube.js?v=13"></script>
 <script>window.AOYU_DEBUG = true;   // 工具页始终显示调试入口</script>
-<script src="../js/aoyu-ar.js?v=118"></script>
+<script src="../js/aoyu-ar.js?v=122"></script>
 </head>
 <body>
 
@@ -229,10 +230,8 @@
 
     <!-- 调试鱼缸：和官方 AR.js cubemap demo 一样直接挂在 marker 下。
          父节点只做 position/scale，尺寸由三维编辑器同步写入。 -->
-    <a-entity id="debug-tank" visible="false" position="0 0.25 0" scale="0.80 0.50 0.56">
-      <a-entity geometry="primitive: box; width: 1; height: 1; depth: 1"
-                material="shader: flat; color: #61d2ff; transparent: true; opacity: 0.055; depthWrite: false; side: double"></a-entity>
-      <a-entity debug-tank-box></a-entity>
+    <a-entity id="debug-tank" visible="false" position="0 0.28 0" scale="0.80 0.56 0.50">
+      <a-entity tank-cube="opacity: 0.88"></a-entity>
     </a-entity>
 
     <!-- 游动节点：位置和朝向每帧由 fish-swim 直接写 object3D，
@@ -277,7 +276,7 @@
       <span id="debug-close">×</span>
     </div>
     <div class="db-row">
-      <button id="db-tank">鱼缸框：关</button>
+      <button id="db-tank">鱼缸 cube：关</button>
       <button id="db-tank-editor">三维调鱼缸</button>
     </div>
 
@@ -316,7 +315,7 @@
       <button id="db-reset">恢复默认</button>
     </div>
 
-    <div class="db-hint">鱼缸框看游动范围；点「三维调鱼缸」调宽/高/深并应用到 AR<br>启用三维尺寸后，范围±会锁定；各旋钮上限已解锁</div>
+    <div class="db-hint">鱼缸就是与官方 demo 同坐标的方向 cube；点「三维调鱼缸」调宽/高/深<br>尺寸由 cube 固定，范围±已锁定</div>
   </div>
 </div>
 

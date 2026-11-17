@@ -200,6 +200,7 @@
 </style>
 <script src="../aframe.min.js"></script>
 <script src="../js/tank-config.js?v=1"></script>
+<script src="../js/tank-cube.js?v=13"></script>
 </head>
 <body>
 <div id="app">
@@ -229,7 +230,7 @@
   <aside id="sidebar">
     <header class="panel-head">
       <h1>鱼缸尺寸</h1>
-      <p>鲤鱼码是鱼缸的后墙。拖动参数会实时改变三维体积，并自动保存到本机；回到 AR 刷新或切回页面后生效。</p>
+      <p>鲤鱼码是鱼缸的底面。拖动参数会实时改变三维体积，并自动保存到本机；回到 AR 刷新或切回页面后生效。</p>
     </header>
 
     <section class="section">
@@ -246,7 +247,7 @@
           <input data-number type="number" min="0.10" max="3.00" step="0.01" value="0.80" aria-label="鱼缸宽度数值">
           <button type="button" data-step="0.05" aria-label="宽度增加">+</button>
         </div>
-        <div class="mini-note">横向宽度：左右两墙的距离</div>
+        <div class="mini-note">左右两墙的距离（X 轴）</div>
       </div>
 
       <div class="dimension" data-axis="height" style="--axis-color:var(--green)">
@@ -260,7 +261,7 @@
           <input data-number type="number" min="0.10" max="3.00" step="0.01" value="0.56" aria-label="鱼缸高度数值">
           <button type="button" data-step="0.05" aria-label="高度增加">+</button>
         </div>
-        <div class="mini-note">纵向高度：上下两面玻璃的距离</div>
+        <div class="mini-note">上下两面玻璃的距离（Y 轴）</div>
       </div>
 
       <div class="dimension" data-axis="depth" style="--axis-color:var(--blue)">
@@ -274,7 +275,7 @@
           <input data-number type="number" min="0.05" max="3.00" step="0.01" value="0.50" aria-label="鱼缸纵深数值">
           <button type="button" data-step="0.05" aria-label="纵深增加">+</button>
         </div>
-        <div class="mini-note">从鲤鱼码墙面向观众方向的厚度</div>
+        <div class="mini-note">鱼缸前后方向的厚度（Z 轴）</div>
       </div>
     </section>
 
@@ -340,10 +341,10 @@
 
   var camera = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
   var orbit = {
-    target: new THREE.Vector3(0, 0, 0.26),
-    radius: 2.65,
-    theta: 0.58,
-    phi: 1.17
+    target: new THREE.Vector3(0, 0.28, 0),
+    radius: 2.9,
+    theta: 0.62,
+    phi: 0.95
   };
 
   function updateCamera() {
@@ -369,15 +370,8 @@
   var gridGroup = new THREE.Group();
   scene.add(gridGroup);
 
-  var backGrid = new THREE.GridHelper(4.2, 42, 0x4a5361, 0x303640);
-  backGrid.rotation.x = Math.PI / 2;
-  backGrid.position.z = -0.012;
-  backGrid.material.transparent = true;
-  backGrid.material.opacity = 0.78;
-  gridGroup.add(backGrid);
-
   var floorGrid = new THREE.GridHelper(4.2, 42, 0x3b424d, 0x282e37);
-  floorGrid.position.set(0, -0.82, 0.25);
+  floorGrid.position.set(0, 0, 0);
   floorGrid.material.transparent = true;
   floorGrid.material.opacity = 0.72;
   gridGroup.add(floorGrid);
@@ -390,7 +384,7 @@
     new THREE.SphereGeometry(0.018, 12, 8),
     new THREE.MeshBasicMaterial({ color: 0xffb35f })
   );
-  originDot.position.set(0, 0, 0.01);
+  originDot.position.set(0, 0.01, 0);
   scene.add(originDot);
 
   /* ---------- 鲤鱼码卡面 ---------- */
@@ -400,7 +394,8 @@
     new THREE.PlaneGeometry(1.08, 1.08),
     new THREE.MeshBasicMaterial({ color: 0x07090c, side: THREE.DoubleSide })
   );
-  markerBack.position.z = -0.004;
+  markerBack.rotation.x = -Math.PI / 2;
+  markerBack.position.y = -0.004;
   markerGroup.add(markerBack);
 
   var markerTexture = new THREE.TextureLoader().load('../assets/patterns/pattern-card-v4.png', function (texture) {
@@ -415,34 +410,23 @@
     side: THREE.DoubleSide
   });
   var markerPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), patternMaterial);
+  markerPlane.rotation.x = -Math.PI / 2;
+  markerPlane.position.y = 0.001;
   markerGroup.add(markerPlane);
 
   var markerOutline = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.PlaneGeometry(1.06, 1.06)),
     new THREE.LineBasicMaterial({ color: 0xd6b26a, transparent: true, opacity: 0.9 })
   );
-  markerOutline.position.z = 0.002;
+  markerOutline.rotation.x = -Math.PI / 2;
+  markerOutline.position.y = 0.002;
   markerGroup.add(markerOutline);
 
   /* ---------- 鱼缸体积 ---------- */
   var tankGroup = new THREE.Group();
   scene.add(tankGroup);
-  var tankFill = new THREE.Mesh(
-    new THREE.BoxGeometry(1, 1, 1),
-    new THREE.MeshBasicMaterial({
-      color: 0x61d2ff,
-      transparent: true,
-      opacity: 0.052,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    })
-  );
-  tankGroup.add(tankFill);
-  var tankEdges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
-    new THREE.LineBasicMaterial({ color: 0x6ddcff, transparent: true, opacity: 0.96 })
-  );
-  tankGroup.add(tankEdges);
+  var tankCube = window.AOYU_TANK_CUBE.createMesh(THREE, 0.88);
+  tankGroup.add(tankCube);
 
   var dimensionGroup = new THREE.Group();
   scene.add(dimensionGroup);
@@ -502,14 +486,6 @@
     }
   }
 
-  function addTick(x, y, z, horizontal) {
-    if (horizontal) {
-      makeLine([new THREE.Vector3(x, y - 0.035, z), new THREE.Vector3(x, y + 0.035, z)], 0xff6e7b, 0.9);
-    } else {
-      makeLine([new THREE.Vector3(x - 0.035, y, z), new THREE.Vector3(x + 0.035, y, z)], 0x7bd88f, 0.9);
-    }
-  }
-
   function rebuildDimensions() {
     clearGroup(dimensionGroup);
     var w = config.width;
@@ -517,34 +493,32 @@
     var d = config.depth;
     var left = -w / 2;
     var right = w / 2;
-    var bottom = -h / 2;
-    var top = h / 2;
-    var front = d + 0.045;
+    var front = d / 2 + 0.08;
+    var bottom = 0.025;
 
-    // 宽度尺寸线：放在鱼缸下沿外侧
-    var widthY = bottom - 0.12;
-    makeLine([new THREE.Vector3(left, widthY, front), new THREE.Vector3(right, widthY, front)], 0xff6e7b, 0.9);
-    addTick(left, widthY, front, true);
-    addTick(right, widthY, front, true);
+    // 宽度 X：沿 cube 底部前沿
+    makeLine([new THREE.Vector3(left, bottom, front), new THREE.Vector3(right, bottom, front)], 0xff6e7b, 0.9);
+    makeLine([new THREE.Vector3(left, 0, front), new THREE.Vector3(left, 0.08, front)], 0xff6e7b, 0.9);
+    makeLine([new THREE.Vector3(right, 0, front), new THREE.Vector3(right, 0.08, front)], 0xff6e7b, 0.9);
     var widthLabel = makeLabel('W  ' + w.toFixed(2), '#ff6e7b', 0.70);
-    widthLabel.position.set(0, widthY - 0.11, front + 0.012);
+    widthLabel.position.set(0, 0.10, d / 2 + 0.22);
 
-    // 高度尺寸线：放在鱼缸右侧
-    var heightX = right + 0.12;
-    makeLine([new THREE.Vector3(heightX, bottom, front), new THREE.Vector3(heightX, top, front)], 0x7bd88f, 0.9);
-    addTick(heightX, bottom, front, false);
-    addTick(heightX, top, front, false);
+    // 高度 Y：沿 cube 右侧前缘
+    var heightX = right + 0.10;
+    makeLine([new THREE.Vector3(heightX, 0, front), new THREE.Vector3(heightX, h, front)], 0x7bd88f, 0.9);
+    makeLine([new THREE.Vector3(heightX - 0.04, 0, front), new THREE.Vector3(heightX + 0.04, 0, front)], 0x7bd88f, 0.9);
+    makeLine([new THREE.Vector3(heightX - 0.04, h, front), new THREE.Vector3(heightX + 0.04, h, front)], 0x7bd88f, 0.9);
     var heightLabel = makeLabel('H  ' + h.toFixed(2), '#7bd88f', 0.70);
-    heightLabel.position.set(heightX + 0.17, 0, front + 0.012);
+    heightLabel.position.set(heightX + 0.20, h / 2, front + 0.02);
 
-    // 纵深尺寸线：放在鱼缸右侧靠下沿，从卡面往观众方向
-    var depthX = right + 0.12;
-    var depthY = bottom - 0.03;
-    makeLine([new THREE.Vector3(depthX, depthY, 0.012), new THREE.Vector3(depthX, depthY, d + 0.012)], 0x70a8ff, 0.94);
-    makeLine([new THREE.Vector3(depthX - 0.035, depthY, 0.012), new THREE.Vector3(depthX + 0.035, depthY, 0.012)], 0x70a8ff, 0.9);
-    makeLine([new THREE.Vector3(depthX - 0.035, depthY, d + 0.012), new THREE.Vector3(depthX + 0.035, depthY, d + 0.012)], 0x70a8ff, 0.9);
+    // 纵深 Z：沿 cube 右侧底边，从后向前
+    var depthX = right + 0.10;
+    var depthY = 0.025;
+    makeLine([new THREE.Vector3(depthX, depthY, -d / 2), new THREE.Vector3(depthX, depthY, d / 2)], 0x70a8ff, 0.94);
+    makeLine([new THREE.Vector3(depthX - 0.04, depthY, -d / 2), new THREE.Vector3(depthX + 0.04, depthY, -d / 2)], 0x70a8ff, 0.9);
+    makeLine([new THREE.Vector3(depthX - 0.04, depthY, d / 2), new THREE.Vector3(depthX + 0.04, depthY, d / 2)], 0x70a8ff, 0.9);
     var depthLabel = makeLabel('D  ' + d.toFixed(2), '#70a8ff', 0.70);
-    depthLabel.position.set(depthX + 0.20, depthY, d / 2 + 0.02);
+    depthLabel.position.set(depthX + 0.20, 0.10, 0);
   }
 
   function applyTank(config, opts) {
@@ -553,8 +527,7 @@
     var h = config.height;
     var d = config.depth;
     tankGroup.scale.set(w, h, d);
-    tankGroup.position.set(0, 0, d / 2 + 0.008);
-    tankFill.material.opacity = 0.052;
+    tankGroup.position.set(0, h / 2, 0);
     rebuildDimensions();
     updateControls(config);
     document.getElementById('summary-size').textContent = w.toFixed(2) + ' × ' + h.toFixed(2) + ' × ' + d.toFixed(2);
@@ -652,10 +625,10 @@
   });
 
   document.getElementById('frame-btn').addEventListener('click', function () {
-    orbit.target.set(0, 0, config.depth / 2);
-    orbit.radius = Math.max(2.25, Math.max(config.width, config.height, config.depth) * 2.15);
-    orbit.theta = 0.58;
-    orbit.phi = 1.17;
+    orbit.target.set(0, config.height / 2, 0);
+    orbit.radius = Math.max(2.45, Math.max(config.width, config.height, config.depth) * 2.35);
+    orbit.theta = 0.62;
+    orbit.phi = 0.95;
     updateCamera();
     updateViewActive('persp');
   });
@@ -703,11 +676,11 @@
       orbit.phi = 1.36;
       orbit.radius = 2.6;
     } else {
-      orbit.theta = 0.58;
-      orbit.phi = 1.17;
-      orbit.radius = 2.65;
+      orbit.theta = 0.62;
+      orbit.phi = 0.95;
+      orbit.radius = 2.9;
     }
-    orbit.target.set(0, 0, config.depth / 2);
+    orbit.target.set(0, config.height / 2, 0);
     updateCamera();
   }
   document.querySelectorAll('[data-view]').forEach(function (button) {
@@ -769,7 +742,7 @@
     if (event.key === '3') setView('top');
     if (event.key === '4') setView('side');
     if (event.key.toLowerCase() === 'f') {
-      orbit.target.set(0, 0, config.depth / 2);
+      orbit.target.set(0, config.height / 2, 0);
       orbit.radius = Math.max(2.25, Math.max(config.width, config.height, config.depth) * 2.15);
       updateCamera();
     }
