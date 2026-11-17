@@ -51,11 +51,6 @@
   // 算轮廓/包围盒时每个网格抽多少个顶点
   var HIT_SAMPLES = 96;
 
-  // 自适应缩放允许游动范围碰到画面的这个边界（0.8 = 四周各留 10% 余量），以及最小倍率
-  var SCREEN_FIT_LIMIT = 0.8;
-  var SCREEN_FIT_MIN = 0.1;
-  // 自适应缩放采样点数：只用于检查鱼模型是否还在手机画面内。
-  var SCREEN_FILL_SAMPLES = 24;
   // 两条鱼"不许交叉叠在一起"的间距：中心距离 ≥ PAIR_GAP_K × 平均身长。
   // 1.0 正好是两个"包围圆"相切（每条鱼的包围圆半径 = 身长的一半），留 15% 余量。
   var PAIR_GAP_K = 1.15;
@@ -63,7 +58,7 @@
   var PAIR_ROOM_K = 0.8;
 
   // 三维调试器保存的鱼缸尺寸（单位：识别码卡宽）。
-  // 没有保存值时保持原来的屏幕自适应范围；有保存值时按编辑器里的卡宽尺寸精确生效。
+  // 鱼的活动范围直接使用这组鱼缸尺寸，不再从屏幕投影反算范围。
   var TANK_DEFAULTS = (window.AOYU_TANK && window.AOYU_TANK.DEFAULTS) || {
     width: 0.80, height: 0.56, depth: 0.50
   };
@@ -89,7 +84,7 @@
   }
   refreshTankConfig();
 
-  // 鱼大小的默认基准（面板「鱼大一点/小一点」的起点，三条鱼共用同一套 modelScale）
+  // 鱼大小的固定基准（面板「鱼大一点/小一点」只改手调倍率，不再做屏幕自适应）
   var DEFAULT_MODEL_SCALE = 1.0;
   // 活动范围：5 ≈ 铺满屏幕 85%，6 起就到 100%（0.92/0.88 安全边距）封顶（7 和 6 视觉上一样）
   var DEFAULT_RANGE_SCALE = 7.0;
@@ -102,7 +97,7 @@
     notes: ['note-c6', 'note-d6', 'note-e6', 'note-g6', 'note-a6'].map(function (name) {
       return 'assets/audio/' + name + '.mp3';
     }),
-    storageKey: 'aoyu-tuning-v4',   // v1/v2 的『摆尾上限』语义已变成『摆尾倍率』，换键避免旧值生效
+    storageKey: 'aoyu-tuning-v5',   // v5：改为固定鱼模缩放 + 鱼缸内三维航点，旧的自适应值不再混用
     // 惊吓（点空白让鱼窜出去）：速度倍率可调（默认 4×），冲刺 1.1 秒。
     // 关键点是冲刺期间**转弯半径跟着速度一起放大**，角速度不跟着飙，所以是"直线窜走"，
     // 不会像旧版那样在原地快速打转。
@@ -122,7 +117,7 @@
       rangeScale: [0.5, UNLOCKED_MAX],   // 活动范围：5 ≈ 铺满屏幕 85%，再往上也只是贴到安全边距（屏幕封顶）
       animSpeedMax: [0.5, UNLOCKED_MAX], // 摆尾倍率（游动时它就是骨骼动画的速度倍率）
       startleSpeed: [1.5, UNLOCKED_MAX], // 惊吓冲刺速度倍率（相对巡航速度）
-      modelScale: [0.05, UNLOCKED_MAX],  // 鱼的大小（默认基准已是 6 倍，所以下限放到 0.05 方便往回收）
+      modelScale: [0.05, UNLOCKED_MAX],  // 固定 HTML 基准上的手动大小倍率
       pcModelScale: [0.05, UNLOCKED_MAX] // PC 模式专用大小：桌面端/OBS 用它，和现场那套互不影响
     }
   };
@@ -141,7 +136,6 @@
   var tmpRight = new THREE.Vector3();
   var tmpBasis = new THREE.Matrix4();
   var tmpQuatBank = new THREE.Quaternion();
-  var tmpQuatPitch = new THREE.Quaternion();
   var AXIS_Z = new THREE.Vector3(0, 0, 1);
 
   function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
@@ -219,7 +213,7 @@
    * BufferAttribute.getX() 不处理 normalized —— 权重在 GPU 上会被归一化（所以渲染正常），
    * JS 侧却拿到 65535 这种原始整数。双鱼.glb 的 WEIGHTS_0 正是 normalized 的 ushort，
    * 用它算出来的位置被放大几万倍（盒子 7 万卡宽、体长量成 1 万），
-   * 点击判定和"鱼大小自适应"全跟着错。这里按权重和归一化，两种格式都算得对。
+   * 点击判定和鱼模型尺寸全跟着错。这里按权重和归一化，两种格式都算得对。
    */
   function skinnedVertex(node, index, target) {
     var geo = node.geometry;
@@ -418,26 +412,16 @@
    * 一条鱼：游动 + 入场退场 + 惊吓
    * ========================================================================= */
   /**
-   * 鱼的游动：沿用老版本 index.html 的那套椭圆轨道。
-   *
-   * 老版本的做法是"绕卡片中心的固定椭圆 + 贴卡平面 + 固定高度 + 轻微起伏"，
-   * 朝向永远跟着轨道的切线走。它比之前那套状态机（随机巡游/冲刺/滑行/悬停 + 重力对齐）
-   * 可控得多：鱼始终在卡片附近，不会突然跑远、也不会自己立起来。
-   * 摆尾交给 GLB 自带的骨骼动画，这里只按受惊状态给它提速。
-   */
-  /**
    * 鱼的游动：自己写的「有界漫游」。
    *
    * 目标：像鱼，但**永远不越界**。不照搬小程序那套状态机，也不用固定轨道。
    *
-   *   1) 活动范围 = 卡片平面内的一个圆 + 高度区间，两个都是硬约束
-   *      （原来是 0.70×0.50 的椭圆，宽了以后横向容易顶出画面，所以改成圆）
-   *   2) 目标点只在圆内部 0.72 半径内随机取（留出余量，不贴边）
-   *   3) 朝目标游 + 限速转向（鱼不会原地拐弯），转弯时轻微侧倾
-   *   4) 越靠近边界，"向内"的修正越强（软约束，避免贴着边撞）
+   *   1) 活动范围 = 鱼缸水平面 X/Z + 高度 Y，三个方向都是硬约束
+   *   2) 航点只在鱼缸内部取，偶尔换高度和纵深，不让鱼永远贴着同一层游
+   *   3) 朝航点游 + 限速转向（鱼不会原地拐弯），转弯时轻微侧倾
+   *   4) 靠近玻璃提前向内打舵；靠近另一条鱼时做 3D 避让
    *   5) 速度有快有慢（滑行/巡游/冲刺随机切换），摆尾速度跟游速联动
-   *   6) 每帧积分之后再做一次硬投影：出圈就按比例拉回、高度夹到区间内
-   *      —— 所以无论受惊冲刺、掉帧、改范围、改大小，都不可能游出范围
+   *   6) 每帧积分后夹回鱼缸内部；模型缩放固定，不受屏幕投影影响
    */
   AFRAME.registerComponent('fish-swim', {
     schema: {
@@ -447,25 +431,31 @@
       speed: { type: 'number', default: 0.30 },     // 基准速度（单位/秒）
       turnRate: { type: 'number', default: 1.6 },   // 转弯系数：弧度/单位位移；1.6 ≈ 转弯半径 0.63 卡宽
       maxBank: { type: 'number', default: 10 * Math.PI / 180 },
-      bobSpeed: { type: 'number', default: 0.22 }   // 鱼在 cube 高度方向起伏的快慢
+      bobSpeed: { type: 'number', default: 0.22 }   // 鱼在鱼缸高度方向换层的快慢
     },
     init: function () {
       var self = this;
       this.rng = Math.random;
-      // 随机初始落点：同场两条鱼不会从圆心同一点冒出来
+      // 随机初始落点：同场两条鱼各自在不同高度、不同纵深出现，避免同时从中心冒出来。
       var startR = this.radii();
       var startA = this.rng() * Math.PI * 2;
-      var startK = 0.3 + this.rng() * 0.4;
+      var startK = 0.25 + this.rng() * 0.35;
+      var yLo = this.yMin();
+      var yHi = this.yMax();
+      var lane = this.data.key === 'koi2' ? 0.68 : 0.34;
       this.pos = {
         x: Math.cos(startA) * startR.x * startK,
-        y: (this.yMin() + this.yMax()) / 2,
+        y: yLo + (yHi - yLo) * lane,
         z: Math.sin(startA) * startR.z * startK
       };
-      this.head = { x: 0, z: 1 };
-      this.target = { x: 0, z: 0 };
+      // head 只表示水平面 X/Z 上的航向；垂直变化由 pitch 单独控制。
+      this.head = { x: -Math.sin(startA), z: Math.cos(startA) };
+      this.target = { x: 0, y: this.pos.y, z: 0 };
       this.targetTime = 0;
-      this.targetDuration = 3;
+      this.targetDuration = 4;
       this.heightPhase = this.rng() * Math.PI * 2;
+      this.verticalVelocity = 0;
+      this.pitch = 0;
       this.speed = this.data.speed * 0.6;
       this.speedTarget = this.data.speed;
       this.stateTime = 0;
@@ -473,10 +463,10 @@
       this.bank = 0;
       this.startleUntil = 0;
       this.startleBurstUntil = 0;
-      this.edgeTime = 0;        // 贴在边界上多久了（超过阈值就掉头，不让它一直磨边）
-      this.edgeHit = false;     // 上一帧是不是被硬约束按回边界了（= 这一帧刚到边）
+      this.edgeTime = 0;        // 贴在水平边界上多久了（超过阈值就换目标，不让它一直磨边）
+      this.edgeHit = false;     // 上一帧是不是被硬约束按回边界了
       this.tuning = { speedScale: 1, turnScale: 1, rangeScale: DEFAULT_RANGE_SCALE, animSpeedMax: 1, modelScale: DEFAULT_MODEL_SCALE, pcModelScale: DEFAULT_MODEL_SCALE, startleSpeed: 4 };
-      this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的模型大小（鳌鱼 0.64 / 鲤鱼 0.55）
+      this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的固定模型大小
       this.appliedScale = 0;   // 0 表示还没写过缩放，第一帧一定会写一次
       this.hidden = true;
       // 隐藏这条鱼有两个坑，都不能踩：
@@ -487,10 +477,11 @@
       // 正确做法：只关掉 gltf 那一层（three 的 mesh）的渲染。渲染器不画它，tick 和骨骼
       // 动画照常跑，重新找到卡时一开就接着游。
       this.wantModelVisible = false;
-      this.fit = 1;          // 自适应缩放倍率（见 screenFit），只有打开自适应开关才会 < 1
-      this.adaptive = !!(app && app.adaptive);  // 「自适应：整幅构图一定留在画面内」，默认跟随主控（鱼缸视角默认开）
       this.pickTarget();
       instances[this.data.key] = this;
+      // 如果主控已经先一步进入鲤鱼/鳌鱼模式，组件晚初始化时也要自己亮起来，
+      // 否则会出现“只看到一条鱼/鱼缸里没有鱼”，刷新后才恢复的竞态。
+      if (app && app.activeKeys && app.activeKeys.indexOf(this.data.key) !== -1) this.show();
     },
     remove: function () {
       if (instances[this.data.key] === this) delete instances[this.data.key];
@@ -505,7 +496,7 @@
       var root = el && el.getObject3D('mesh');
       // 模型还没加载完时不要缓存兜底值，否则会永久停在 1.00
       if (!root) return 1;
-      // 每帧要问好几次（规避、间距、转弯半径、自适应），采样一次算好缓存 0.25 秒。
+      // 每帧要问好几次（规避、间距、转弯半径、点击判定），采样一次算好缓存 0.25 秒。
       // 不能长缓存：模型加载完、换模型、改缩放都会变。
       var now = performance.now();
       if (this.bodyLenAt && this.bodyLenValue && now - this.bodyLenAt < 250) return this.bodyLenValue;
@@ -534,11 +525,9 @@
      */
     dashSpeed: function () {
       var r = this.radii();
-      // 速度按"实际能游的范围"放大：范围是屏幕适配出来的，卡片小的时候范围会变大，
-      // 速度不跟着放大就会显得鱼在原地磨。基准＝0.5 卡宽（= 旋钮 5 时的老范围）。
-      var rangeBoost = Math.max(0.25, r.x / Math.max(0.05, this.baseRadius()));
-      var v = this.data.speed * this.tuning.startleSpeed * this.tuning.speedScale * rangeBoost;
-      return Math.min(v, Math.min(r.x, r.z) * 4);
+      // 活动范围就是鱼缸本身，不再乘屏幕自适应倍率；只按鱼缸短边做安全封顶。
+      var v = this.data.speed * this.tuning.startleSpeed * this.tuning.speedScale;
+      return Math.min(v, Math.min(r.x, r.z) * 4.5);
     },
 
     /** 爆冲速度：受惊那一瞬间的瞬时速度（比持续冲刺快一截，然后很快落回来） */
@@ -547,108 +536,41 @@
       return Math.min(this.dashSpeed() * CONFIG.startleBurstMul, Math.min(r.x, r.z) * 6);
     },
 
-    /** 卡片坐标系（AR.js 的 marker）：活动范围是绕卡片中心算的 */
-    markerSpace: function () {
-      if (this._markerSpace && this._markerSpace.parent) return this._markerSpace;
-      var marker = document.getElementById('ar-marker');
-      this._markerSpace = (marker && marker.object3D) || null;
-      return this._markerSpace;
-    },
-
-    /** 基准半径（卡片单位）：屏幕适配算出来的倍率都乘在它上面 */
-    baseRadius: function () { return this.data.radius; },
-
     /**
-     * 与官方 AR.js cubemap demo 相同的 marker-local 活动范围：
-     *   X = 宽度，Y = 卡面法线方向的纵深，Z = 卡面内高度。
+     * 鱼缸的水平活动范围（marker-local）：
+     *   X = 宽，Z = 纵深；Y 单独表示高度。
+     * 这里的半径只负责鱼中心点，四周留出安全边距，避免鱼头/鱼尾视觉上碰到玻璃。
      */
     radii: function () {
       var w = Math.max(0.05, Number(tankConfig.width) || 0.80);
-      var h = Math.max(0.05, Number(tankConfig.height) || 0.56);
-      var marginX = Math.min(0.07, w * 0.12);
-      var marginZ = Math.min(0.07, h * 0.12);
+      var d = Math.max(0.05, Number(tankConfig.depth) || 0.50);
+      var marginX = Math.min(0.08, w * 0.14);
+      var marginZ = Math.min(0.075, d * 0.16);
       return {
         x: Math.max(0.04, w / 2 - marginX),
-        z: Math.max(0.04, h / 2 - marginZ)
+        z: Math.max(0.04, d / 2 - marginZ)
       };
     },
 
-    /** 鱼在 marker +Y 方向（卡面法线纵深）内活动。 */
+    /** 鱼在鱼缸高度方向（marker-local +Y）内活动。 */
     yMin: function () {
-      var d = Math.max(0.05, Number(tankConfig.depth) || 0.50);
-      return Math.min(0.04, d * 0.12);
+      var h = Math.max(0.05, Number(tankConfig.height) || 0.56);
+      return Math.max(0.045, h * 0.16);
     },
     yMax: function () {
-      var d = Math.max(0.05, Number(tankConfig.depth) || 0.50);
-      return Math.max(this.yMin() + 0.04, d - Math.min(0.04, d * 0.12));
+      var h = Math.max(0.05, Number(tankConfig.height) || 0.56);
+      return Math.max(this.yMin() + 0.04, h * 0.84);
     },
 
-    /** 模型最终缩放 = HTML 基准 × 手调大小 × 自适应缩放 */
+    /** 模型最终缩放 = HTML 固定基准 × 手调大小；不再跟随屏幕、邻居或范围变化。 */
     applyModelScale: function () {
       // PC 模式：桌面端（OBS 抓窗口那种）用 pcModelScale，现场用 modelScale，两边互不影响
       var scale = (app && app.pcMode) ? this.tuning.pcModelScale : this.tuning.modelScale;
-      var want = this.baseScale * scale * this.fit;
+      var want = this.baseScale * scale;
       if (Math.abs(want - this.appliedScale) > 1e-4) {
         this.appliedScale = want;
         this.el.object3D.scale.setScalar(want);
       }
-    },
-
-    /**
-     * 采样校验：给定卡面内 X/Z 半径，在鱼缸顶部 Y 位置检查是否在画面内。
-     */
-    fitsRadii: function (rx, rz, camera, limitX, limitY) {
-      var y = this.yMax();                          // 顶部高度，投影通常最靠外
-      var space = this.markerSpace();
-      if (!space) return false;
-      for (var i = 0; i < SCREEN_FILL_SAMPLES; i++) {
-        var a = (i / SCREEN_FILL_SAMPLES) * Math.PI * 2;
-        tmpVec.set(Math.cos(a) * rx, y, Math.sin(a) * rz);
-        space.localToWorld(tmpVec);
-        // 镜头后面（相机空间 z >= 0）的点投影会翻号，不能拿来算
-        if (tmpVec2.copy(tmpVec).applyMatrix4(camera.matrixWorldInverse).z > -0.01) return false;
-        tmpVec.project(camera);
-        if (Math.abs(tmpVec.x) > limitX || Math.abs(tmpVec.y) > limitY) return false;
-      }
-      return true;
-    },
-
-    /**
-     * 「两条鱼要放得下」的缩放上限（≤1；只有一条鱼时是 1）。
-     *
-     * cube 宽度较小时，两条鱼可能挤不下：
-     * 这种场地里两条鱼无论怎么游都会交叉叠在一起（物理上塞不下），只能把鱼按比例缩小到
-     * "两条鱼 + 一条间距"能塞进长轴。这条不受「自适应」开关影响 —— 它管的是会不会叠在一起。
-     */
-    pairFit: function () {
-      if (!this.neighbors().length) return 1;
-      var fit = (this.fit > 0.05 && isFinite(this.fit)) ? this.fit : 1;
-      var lenBase = Math.max(0.1, this.measureBodyLength() / fit);   // 折算回 fit=1 时的身长
-      var r = this.radii();
-      var room = Math.max(r.x, r.z) * PAIR_ROOM_K * 2;
-      var want = room / (lenBase * PAIR_GAP_K);
-      if (!isFinite(want) || !(want > 0.12)) want = 0.12;
-      return want < 1 ? want : 1;
-    },
-
-    /**
-     * 自适应缩放（调试面板的「自适应」开关）：鱼缸尺寸固定后，
-     * 只在鱼模型可能超出手机画面时缩小模型，不改 cube 尺寸和锚点。
-     */
-    screenFit: function () {
-      var sceneEl = document.querySelector('a-scene');
-      var camera = sceneEl && sceneEl.camera;
-      if (!camera) return 1;
-      var r = this.radii();
-      var half = Math.max(0.1, this.measureBodyLength()) * 0.5;
-      var needX = r.x + half, needZ = r.z + half;
-      if (this.fitsRadii(needX, needZ, camera, SCREEN_FIT_LIMIT, SCREEN_FIT_LIMIT)) return 1;
-      var k = 1;
-      for (var i = 0; i < 12; i++) {
-        k *= 0.85;
-        if (this.fitsRadii(needX * k, needZ * k, camera, SCREEN_FIT_LIMIT, SCREEN_FIT_LIMIT)) return k;
-      }
-      return k;
     },
 
     /**
@@ -672,23 +594,46 @@
      * 权重>0 时会在转向方向里叠加这个分量，让两条鱼自己绕开，而不是硬顶。
      */
     separation: function (r) {
-      var out = { x: 0, z: 0, w: 0 };
+      var out = { x: 0, y: 0, z: 0, w: 0 };
       var others = this.neighbors();
       if (!others.length) return out;
       var bodyLen = this.measureBodyLength();
-      // 避让半径：约 2.2 个身长；场地小的时候按场地收一下，免得全场都在互相躲
-      var avoid = Math.max(0.6, Math.min(bodyLen * 2.2, Math.min(r.x, r.z) * 1.5));
+      // 3D 避让半径：鱼缸不大时不能把整缸都算成禁区，按体长和鱼缸对角线取折中值。
+      var avoid = Math.max(0.28, Math.min(bodyLen * 1.8, Math.hypot(r.x, r.z) * 1.15));
       for (var i = 0; i < others.length; i++) {
         var dx = this.pos.x - others[i].pos.x;
+        var dy = this.pos.y - others[i].pos.y;
         var dz = this.pos.z - others[i].pos.z;
-        var dy = this.pos.y - others[i].pos.y;           // 纵深也算进距离
         var d = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (d > avoid) continue;
-        if (d < 1e-4) { dx = 1; dz = 0; d = 1e-4; }      // 完全重合时给一个确定方向
+        if (d < 1e-4) { dx = 1; dy = 0.35; dz = -0.25; d = Math.sqrt(1.1825); }
         var w = 1 - d / avoid;                            // 0（刚好在边界）→ 1（贴在一起）
         out.x += (dx / d) * w;
+        out.y += (dy / d) * w;
         out.z += (dz / d) * w;
         out.w += w;
+      }
+      return out;
+    },
+
+    /** 靠近鱼缸玻璃时产生的向内转向分量，提前打舵，不靠撞墙后硬拽。 */
+    wallSteer: function (r) {
+      var out = { x: 0, z: 0, w: 0 };
+      var marginX = Math.max(0.035, r.x * 0.22);
+      var marginZ = Math.max(0.028, r.z * 0.24);
+      if (this.pos.x > r.x - marginX) {
+        out.x -= (this.pos.x - (r.x - marginX)) / marginX;
+        out.w = Math.max(out.w, Math.abs(out.x));
+      } else if (this.pos.x < -r.x + marginX) {
+        out.x += ((-r.x + marginX) - this.pos.x) / marginX;
+        out.w = Math.max(out.w, Math.abs(out.x));
+      }
+      if (this.pos.z > r.z - marginZ) {
+        out.z -= (this.pos.z - (r.z - marginZ)) / marginZ;
+        out.w = Math.max(out.w, Math.abs(out.z));
+      } else if (this.pos.z < -r.z + marginZ) {
+        out.z += ((-r.z + marginZ) - this.pos.z) / marginZ;
+        out.w = Math.max(out.w, Math.abs(out.z));
       }
       return out;
     },
@@ -707,7 +652,7 @@
         // 不许交叉叠在一起：中心距离 ≥ 1.05 × 两条鱼的平均身长。
         // 以前是"身长×1.25 再被长半轴 0.85 封顶"，卡片离得近时封顶后只有 0.7 个身长，
         // 两条 1.45 卡宽长的鱼照样能交叉叠在一起（用户截图里那样）。
-        var minGap = Math.max(0.45,
+        var minGap = Math.max(0.32,
           Math.min(PAIR_GAP_K * (bodyLen + others[i].measureBodyLength()) * 0.5, cap));
         var dx = this.pos.x - others[i].pos.x;
         var dz = this.pos.z - others[i].pos.z;
@@ -715,44 +660,69 @@
         var d = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (d >= minGap) continue;
         if (d < 1e-4) { dx = 1; dz = 0; d = 1e-4; }
-        var push = (minGap - d) * 0.7;                    // 两边各自往外推；这里已经是常态约束，推太狠会抖
+        var push = (minGap - d) * 0.65;                   // 沿完整 3D 方向推开，必要时一条鱼从另一条上方/后方绕过去
         this.pos.x += (dx / d) * push;
+        this.pos.y += (dy / d) * push;
         this.pos.z += (dz / d) * push;
       }
     },
 
     /**
-     * 在椭圆内取一个目标点（默认 0.72 半径内）；maxK 给"已经贴边了，往中间瞄"用。
+     * 在鱼缸内部取下一个航点。
      *
-     * 同场有别的鱼时瞄"它对面那一侧"：以圆心为参照，挑跟邻居正好相反的方向，
-     * 所以两条鱼会各自守着一头，而不是都在中间绕来绕去（中间绕着绕着就贴一起了）。
-     * 邻居正好在圆心附近时方向没意义，这时退回随机方向。
+     * 不使用固定轨道，也不每帧追着一个点硬拐弯。每次换目标时只在当前航向的前方扇区内取点，
+     * 同时随机换一个高度和纵深，让鱼在鱼缸里真正三维穿行；如果目标点跑到玻璃附近，
+     * 会主动往缸内收，而不是等撞墙后硬拽。
      */
     pickTarget: function (maxK) {
       var r = this.radii();
-      var kMax = maxK || 0.72;
+      var yLo = this.yMin();
+      var yHi = this.yMax();
+      var kMax = maxK || 0.88;
+      var heading = Math.atan2(this.head.x, this.head.z);
+      var ang = heading + (this.rng() - 0.5) * 2.45;
+      var k = kMax * (0.42 + Math.sqrt(this.rng()) * 0.58);
+      var tx = Math.cos(ang) * r.x * k;
+      var tz = Math.sin(ang) * r.z * k;
+
+      // 靠墙时不要把下一个目标继续选到墙外，直接把它拉回鱼缸内部。
+      if (this.pos.x > r.x * 0.64 && tx > this.pos.x) tx = r.x * (0.20 + this.rng() * 0.28);
+      if (this.pos.x < -r.x * 0.64 && tx < this.pos.x) tx = -r.x * (0.20 + this.rng() * 0.28);
+      if (this.pos.z > r.z * 0.64 && tz > this.pos.z) tz = r.z * (0.20 + this.rng() * 0.28);
+      if (this.pos.z < -r.z * 0.64 && tz < this.pos.z) tz = -r.z * (0.20 + this.rng() * 0.28);
+
+      // 两条鱼各自换层、换纵深，避免都挤在同一条水平线上。
       var others = this.neighbors();
-      var ang = this.rng() * Math.PI * 2;
-      var k = Math.sqrt(this.rng()) * kMax;
       if (others.length) {
         var nx = 0, nz = 0;
-        for (var j = 0; j < others.length; j++) { nx += others[j].pos.x; nz += others[j].pos.z; }
-        nx /= others.length; nz /= others.length;
-        var un = nx / r.x, vn = nz / r.z;            // 邻居在椭圆归一化坐标里的位置
+        for (var j = 0; j < others.length; j++) {
+          nx += others[j].pos.x;
+          nz += others[j].pos.z;
+        }
+        nx /= others.length;
+        nz /= others.length;
+        var un = nx / r.x;
+        var vn = nz / r.z;
         var ul = Math.sqrt(un * un + vn * vn);
-        // 目标点往外拉（别再往中间凑），方向按 maxK 等比缩放，贴边改瞄中间时依然有效
-        k = kMax * (0.72 + this.rng() * 0.28);
-        if (ul > 0.25) ang = Math.atan2(-vn, -un) + (this.rng() - 0.5) * 0.8;
+        if (ul > 0.22) {
+          ang = Math.atan2(-vn, -un) + (this.rng() - 0.5) * 0.75;
+          tx = Math.cos(ang) * r.x * k;
+          tz = Math.sin(ang) * r.z * k;
+        }
       }
-      this.target.x = Math.cos(ang) * r.x * k;
-      this.target.z = Math.sin(ang) * r.z * k;
-      this.targetRn = k;                 // 目标点相对半径的位置（0=圆心 1=边界）
+
+      this.target.x = clamp(tx, -r.x * 0.9, r.x * 0.9);
+      this.target.z = clamp(tz, -r.z * 0.9, r.z * 0.9);
+      this.target.y = yLo + (yHi - yLo) * (0.18 + this.rng() * 0.64);
+      this.targetRn = k;
       this.targetTime = 0;
-      // 时限按"游到那儿要多久"来定，另给 2.5 倍余量；范围放大后不再半路换目标。
-      var speedNow0 = Math.max(0.05, this.speed);
-      var far = Math.sqrt(this.target.x * this.target.x + this.target.z * this.target.z);
-      this.targetDuration = Math.max(3, (far / speedNow0) * 2.5);
+
+      var dx = this.target.x - this.pos.x;
+      var dz = this.target.z - this.pos.z;
+      var far = Math.sqrt(dx * dx + dz * dz);
+      this.targetDuration = Math.max(3.2, Math.min(11, (far / Math.max(0.08, this.speed)) * 1.8 + 1.3));
     },
+
     tick: function (time, delta) {
       // 每帧对齐一次"这条鱼要不要画"。必须放在最前面：隐藏期间也要跑，
       // 因为模型是异步加载的，加载完成时这一行才能把它立刻关掉。
@@ -765,54 +735,53 @@
       if (!d) return;
       if (this.hidden) return;    // 位置保持不动，重新找到卡时接着往下游
 
-      // 装不下就较快地收（约 0.3 秒），装得下就慢慢放回去——放太快会看到范围忽大忽小。
-      // 「两条鱼放得下」这条永远生效，「自适应」开关只管屏幕构图那一条。
-      var fitWant = this.adaptive ? Math.min(this.screenFit(), this.pairFit()) : this.pairFit();
-      if (Math.abs(fitWant - this.fit) > 0.004) {
-        this.fit += (fitWant - this.fit) * Math.min(1, d * (fitWant < this.fit ? 6 : 1));
-        if (!(this.fit > 0.05) || !isFinite(this.fit)) this.fit = fitWant;
-      } else if (this.fit !== fitWant) {
-        this.fit = fitWant;
-      }
+      // 固定缩放：只在手动大小倍率变化时写一次，不再被屏幕、邻居或活动范围带跑。
+      this.applyModelScale();
 
       var r = this.radii();
-      // 目标点必须落在固定 cube 的水平活动范围内；避免鱼长期贴着边界游。
+      var yLo = this.yMin();
+      var yHi = this.yMax();
+
+      // 目标点收紧到鱼缸内部 90% 的可用空间，给鱼身和转弯留余量。
       var tn = Math.sqrt((this.target.x / r.x) * (this.target.x / r.x) +
                          (this.target.z / r.z) * (this.target.z / r.z));
-      if (tn > 0.85) {
-        var tk = 0.85 / tn;
+      if (tn > 0.9) {
+        var tk = 0.9 / tn;
         this.target.x *= tk;
         this.target.z *= tk;
         this.targetRn *= tk;
       }
+      this.target.y = clamp(this.target.y, yLo, yHi);
+
       // 注意：这里统一用 performance.now()，不要用 tick 的 time——
       // 两者时间原点在某些 WebView 里不一致，混用会把 1.1 秒的惊吓拖成十几秒。
       var nowMs = performance.now();
+      var wasBoosting = this.boosting;
       var boosting = nowMs < this.startleUntil;
-      if (this.boosting && !boosting) {
+      if (wasBoosting && !boosting) {
         console.log('AOYU_STARTLE_END 实际持续=' +
           Math.round(nowMs - (this.startleStartedAt || nowMs)) + 'ms 弹跳=' + (this.startleBounces || 0));
+        this.pickTarget();
       }
+
       var rn = Math.sqrt((this.pos.x / r.x) * (this.pos.x / r.x) +
-                         (this.pos.z / r.z) * (this.pos.z / r.z));   // 0=中心 1=边界
-      if (rn > 0.97) this.edgeTime += d; else this.edgeTime = 0;
-      // 上一帧被硬约束按回边界 = 真的撞到范围边了（比只看 rn 更准，尤其是自适应在缩放时）
-      var hitEdge = this.edgeHit || rn > 0.95;
+                         (this.pos.z / r.z) * (this.pos.z / r.z));   // 0=中心 1=水平边界
+      if (rn > 0.9) this.edgeTime += d; else this.edgeTime = 0;
+      var hitEdge = this.edgeHit || rn > 0.97;
       this.edgeHit = false;
-      var snapTurn = false;      // true = 这一帧原地掉头（不走"转弯半径"限制）
+      var snapTurn = false;
       var dx = this.target.x - this.pos.x;
       var dz = this.target.z - this.pos.z;
       var dist = Math.sqrt(dx * dx + dz * dz);
       this.targetTime += d;
       var dirX, dirZ;
+
       if (boosting && this.startleDir) {
-        // 冲刺：不追目标点，朝逃跑方向直着窜；窜到活动边界的 95% 就收
+        // 冲刺：不追目标点，朝逃跑方向直着窜；窜到活动边界的 95% 就收。
         dirX = this.startleDir.x;
         dirZ = this.startleDir.z;
-        // 受惊期间撞到边界：**马上**原地掉头，换一个朝内的随机方向接着窜。
-        // 不再等爆冲结束——之前要等 180ms 才掉头，看着就是贴着边磨一小会儿。
-        // 加一个"当前方向朝外"的判断：掉头之后方向已经朝内，就不会在边上反复翻。
-        var outNX = this.pos.x / (r.x * r.x), outNZ = this.pos.z / (r.z * r.z);
+        var outNX = this.pos.x / (r.x * r.x);
+        var outNZ = this.pos.z / (r.z * r.z);
         if (hitEdge && (this.startleDir.x * outNX + this.startleDir.z * outNZ) > 0) {
           var bounce = this.bounceDirection();
           this.startleDir = { x: bounce.x, z: bounce.z };
@@ -820,139 +789,133 @@
           dirZ = bounce.z;
           snapTurn = true;
           this.edgeTime = 0;
-          this.startleBurstUntil = nowMs + 120;   // 掉头后再给一小下爆冲，像弹开一样
+          this.startleBurstUntil = nowMs + 120;
           this.startleBounces = (this.startleBounces || 0) + 1;
           console.log('AOYU_BOUNCE 受惊撞边界掉头');
         }
       } else {
-        // 正常巡游：朝目标 + 越靠边越强的向内修正
-        if (dist < 0.12 || this.targetTime > this.targetDuration) {
+        // 正常巡游：朝下一个航点游，并在靠近玻璃/另一条鱼时提前打舵。
+        if ((dist < 0.12 && Math.abs(this.target.y - this.pos.y) < 0.08) ||
+            this.targetTime > this.targetDuration) {
           this.pickTarget();
-        } else if (rn > 0.9 && this.targetRn > 0.6) {
-          // 已经贴在边上了，而目标点也偏外——直接改瞄中心附近，别在边上游来游去
+          dx = this.target.x - this.pos.x;
+          dz = this.target.z - this.pos.z;
+          dist = Math.sqrt(dx * dx + dz * dz);
+        } else if (rn > 0.88 && this.targetRn > 0.56) {
           this.pickTarget(0.45);
+          dx = this.target.x - this.pos.x;
+          dz = this.target.z - this.pos.z;
+          dist = Math.sqrt(dx * dx + dz * dz);
         }
         dirX = dist > 1e-4 ? dx / dist : this.head.x;
         dirZ = dist > 1e-4 ? dz / dist : this.head.z;
-        if (rn > 0.75) {
-          var back = Math.min(1, (rn - 0.75) / 0.25) * 2.0;
-          var len = Math.sqrt(this.pos.x * this.pos.x + this.pos.z * this.pos.z) || 1;
-          dirX -= (this.pos.x / len) * back;
-          dirZ -= (this.pos.z / len) * back;
+
+        var wall = this.wallSteer(r);
+        if (wall.w > 0) {
+          dirX += wall.x * 1.65;
+          dirZ += wall.z * 1.65;
         }
-        if (this.edgeTime > 0.35) {
-          // 贴边磨了 0.35 秒还出不来：直接原地掉头游回中间（受惊时同理，只是更快）
-          var bounce2 = this.bounceDirection();
-          dirX = bounce2.x;
-          dirZ = bounce2.z;
-          snapTurn = true;
+        if (this.edgeTime > 0.8) {
+          // 不是瞬间硬掰 180°，而是把目标拉回缸内，并给转向一个明显的向内偏置。
+          this.pickTarget(0.40);
+          dirX = -this.pos.x / Math.max(0.01, r.x) + this.head.x * 0.35;
+          dirZ = -this.pos.z / Math.max(0.01, r.z) + this.head.z * 0.35;
           this.edgeTime = 0;
-          console.log('AOYU_BOUNCE 贴边掉头');
         }
       }
-      if (this.boosting && !boosting) this.pickTarget();   // 冲刺刚结束：挑个新目标继续巡游
-      // 互相规避：把"远离另一条鱼"的分量叠加进期望方向（越近越强）
+
+      // 两条鱼互相避让：把远离另一条鱼的分量叠加到水平转向里。
       var sep = this.separation(r);
       if (sep.w > 0) {
-        dirX += sep.x * 1.7;
-        dirZ += sep.z * 1.7;
+        dirX += sep.x * 1.8;
+        dirZ += sep.z * 1.8;
+        // 另一条鱼离得很近时，同时让目标高度错开，避免两条鱼永远在同一层打转。
+        if (Math.abs(sep.y) > 0.01) {
+          this.target.y = clamp(this.target.y + sep.y * 0.32, yLo, yHi);
+        }
       }
       var dl = Math.sqrt(dirX * dirX + dirZ * dirZ) || 1;
-      dirX /= dl; dirZ /= dl;
+      dirX /= dl;
+      dirZ /= dl;
 
-      // 限速转向 + 侧倾。
-      // 关键：最大转向角速度**跟游速挂钩**（≈ 恒定转弯半径），不再用固定角速度——
-      // 固定角速度的毛病是鱼慢下来时也能原地掉头，像死鱼；真实鱼速度越低转得越缓。
+      // 限速转向 + 侧倾：转弯半径跟鱼的身长/鱼缸大小关联，不再原地瞬间掉头。
       var cur = Math.atan2(this.head.x, this.head.z);
       var want = Math.atan2(dirX, dirZ);
       var diff = ((want - cur + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
       var speedNow = Math.max(this.speed, 0.04);
-      // 转弯半径跟**鱼自己的身长**挂钩：鱼有多大，转弯半径就该有多大。
-      // 之前半径固定 0.63 卡宽，而这条鱼放大后身长 2.9 卡宽——一条 2.9 长的鱼在
-      // 半径 0.63 的圈里掉头，看着就是"原地 180°"。
-      var bodyLen = this.measureBodyLength();          // 卡宽
-      // 半径两头都要顾：
-      //   上限：身长 × 1.25（鱼越大转弯半径越大，才不像原地掉头）
-      //   下限：场地短半轴 × 0.6（场地小的时候必须能在里面转弯，
-      //         否则半径超过场地，鱼就只会绕着码转圈——实测半径 4.07 > 场地 2.5 就是这样）
-      var turnRadius = Math.min(bodyLen * 1.25, Math.min(r.x, r.z) * 0.6);
-      if (!(turnRadius > 0.05) || !isFinite(turnRadius)) turnRadius = 0.6;
-      // 冲刺时转弯半径跟速度一起放大：角速度≈不变，所以是"直线窜出去"，
-      // 而不是旧版那样在原地快速打转（角速度也乘 3.2）。
-      if (boosting) turnRadius *= Math.max(1.5, this.tuning.startleSpeed * 0.7);
-      this.turnRadius = turnRadius;                    // 调试面板显示真实值
-      var maxTurn = Math.max(0.12, speedNow / turnRadius) * this.tuning.turnScale * d;
-      // 贴边时给一个固定角速度兜底：正常巡游转角速度跟速度挂钩（转弯半径恒定，才不像原地转），
-      // 但贴到边界上速度已经很低，那时转不过来，就会被硬约束按在边上蹭很久。
-      if (rn > 0.85) {
-        var edgeTurn = Math.min(1, (rn - 0.85) / 0.15) * EDGE_TURN_RATE * d;
-        if (edgeTurn > maxTurn) maxTurn = edgeTurn;
-      }
+      var bodyLen = this.measureBodyLength();
+      var turnRadius = Math.max(0.12,
+        Math.min(bodyLen * 0.82, Math.max(0.18, Math.min(r.x, r.z) * 1.25)));
+      if (!(turnRadius > 0.05) || !isFinite(turnRadius)) turnRadius = 0.24;
+      if (boosting) turnRadius *= Math.max(1.4, this.tuning.startleSpeed * 0.55);
+      this.turnRadius = turnRadius;
+      var maxTurn = Math.max(0.16, speedNow / turnRadius) * this.tuning.turnScale * d;
+      // 靠玻璃时允许稍微快一点的转向修正，但不使用整帧硬跳变。
+      if (rn > 0.85) maxTurn = Math.max(maxTurn, 2.4 * d);
       var turn = Math.max(-maxTurn, Math.min(maxTurn, diff));
-      if (snapTurn) { turn = diff; this.bank = 0; }   // 原地掉头：这一帧直接转过去
+      if (snapTurn) { turn = diff; this.bank = 0; }
       var ang = cur + turn;
       this.head.x = Math.sin(ang);
       this.head.z = Math.cos(ang);
       var bankTarget = maxTurn > 1e-6 ? (turn / maxTurn) * this.data.maxBank : 0;
       this.bank += (bankTarget - this.bank) * Math.min(1, d / 0.25);
 
-      // 速度：滑行/巡游/冲刺随机切换；受惊时整体加速
+      // 速度：巡游/滑行随机切换，转弯时自动收一点油；速度只影响运动，不影响模型缩放。
       this.stateTime += d;
       if (this.stateTime >= this.stateDuration) {
         this.stateTime = 0;
-        this.stateDuration = 1.2 + this.rng() * 2.5;
-        this.speedTarget = this.data.speed * (0.45 + this.rng() * 1.1);
+        this.stateDuration = 1.8 + this.rng() * 3.2;
+        this.speedTarget = this.data.speed * (0.58 + this.rng() * 0.72);
       }
-      // 速度按"实际能游的范围"线性放大：范围是按卡片宽度算的，卡片印小、范围调到 8 倍时，
-      // 若速度不变，鱼要花 8 倍时间才能游完一圈——看着就是"卡在原地游不起来"；
-      // 反过来，自适应把范围缩小之后速度也要跟着缩，否则鱼会在缩小的圈里狂转。
-      // 两种情况都靠这一个系数，保证"游完一圈的时间"与范围无关。
-      var rangeBoost = Math.max(0.25, r.x / Math.max(0.05, this.baseRadius()));
       var dash = this.dashSpeed();
+      var turnSlow = 1 - Math.min(0.32, Math.abs(diff) / Math.PI * 0.38);
       if (boosting && nowMs < this.startleBurstUntil) {
-        // 爆冲阶段：速度按曲线从爆冲值落回持续冲刺值。
-        // 这一段直接写速度、不走加速度积分——积分出来的曲线开头不够陡。
-        var kBurst = (this.startleBurstUntil - nowMs) / CONFIG.startleBurstMs;   // 1 → 0
+        var kBurst = (this.startleBurstUntil - nowMs) / CONFIG.startleBurstMs;
         this.speed = dash + (this.burstSpeed() - dash) * Math.max(0, Math.min(1, kBurst));
       } else {
-        var want_speed = boosting
-          ? Math.max(dash, this.speedTarget * this.tuning.speedScale * rangeBoost * 1.5)
-          : this.speedTarget * this.tuning.speedScale * rangeBoost;
-        // 冲刺时加速要猛；冲刺结束后速度远高于巡航，收油也要明显，不然会一路滑出去
-        var over = this.speed > want_speed * 1.3;
-        var accel = (want_speed > this.speed ? (boosting ? 9 : 1.2) : (over ? 3.2 : 0.9)) *
-          Math.max(1, rangeBoost * 0.6);
-        this.speed += Math.max(-accel * d, Math.min(accel * d, want_speed - this.speed));
+        var wantSpeed = boosting
+          ? Math.max(dash, this.speedTarget * this.tuning.speedScale * 1.35)
+          : this.speedTarget * this.tuning.speedScale * turnSlow;
+        var over = this.speed > wantSpeed * 1.3;
+        var accel = wantSpeed > this.speed ? (boosting ? 8 : 1.15) : (over ? 2.8 : 0.8);
+        this.speed += Math.max(-accel * d, Math.min(accel * d, wantSpeed - this.speed));
       }
-      if (!(this.speed > 0)) this.speed = 0;            // 同时挡住 NaN 与负数
+      if (!(this.speed > 0)) this.speed = 0;
 
-      // 积分 + 高度起伏
+      // 垂直换层：目标是缓慢变化的高度，不让鱼像浮标一样机械上下摆。
+      this.heightPhase += d * this.data.bobSpeed * 0.8;
+      var heightWave = Math.sin(this.heightPhase) * Math.min(0.018, (yHi - yLo) * 0.035);
+      var wantY = clamp(this.target.y + heightWave, yLo, yHi);
+      var wantVy = clamp((wantY - this.pos.y) * 1.8, -0.28, 0.28);
+      this.verticalVelocity += (wantVy - this.verticalVelocity) * Math.min(1, d * 2.2);
+
+      // 积分。
       this.pos.x += this.head.x * this.speed * d;
       this.pos.z += this.head.z * this.speed * d;
-      this.heightPhase += d * this.data.bobSpeed;
-      var mid = (this.yMin() + this.yMax()) / 2;
-      var amp = (this.yMax() - this.yMin()) / 2 * 0.8;
-      this.pos.y = mid + Math.sin(this.heightPhase) * amp;
+      this.pos.y += this.verticalVelocity * d;
 
-      // 硬约束：出圈按比例拉回，高度夹进区间
-      var out = Math.sqrt((this.pos.x / r.x) * (this.pos.x / r.x) +
-                          (this.pos.z / r.z) * (this.pos.z / r.z));
-      if (out > 1) { this.pos.x /= out; this.pos.z /= out; this.edgeHit = true; }
-      this.pos.y = Math.max(this.yMin(), Math.min(this.yMax(), this.pos.y));
-      // 最后一道保底：两条鱼不许叠在一起。放在夹紧之后 —— 夹紧会把它俩拉近，
-      // 放在前面等于白做。间距上限由 pairFit 保证塞得下，所以最多只是略微出圈一点点。
+      // 硬约束：鱼中心始终留在鱼缸内；碰到玻璃后把下一个航点拉回缸内。
+      if (this.pos.x > r.x) { this.pos.x = r.x; this.edgeHit = true; this.target.x = -r.x * 0.35; }
+      else if (this.pos.x < -r.x) { this.pos.x = -r.x; this.edgeHit = true; this.target.x = r.x * 0.35; }
+      if (this.pos.z > r.z) { this.pos.z = r.z; this.edgeHit = true; this.target.z = -r.z * 0.35; }
+      else if (this.pos.z < -r.z) { this.pos.z = -r.z; this.edgeHit = true; this.target.z = r.z * 0.35; }
+      if (this.pos.y > yHi) { this.pos.y = yHi; this.verticalVelocity = Math.min(0, this.verticalVelocity); this.target.y = yLo + (yHi - yLo) * 0.45; }
+      else if (this.pos.y < yLo) { this.pos.y = yLo; this.verticalVelocity = Math.max(0, this.verticalVelocity); this.target.y = yLo + (yHi - yLo) * 0.55; }
+
+      // 最后一道保底：两条鱼不许叠在一起。用完整 3D 方向推开，然后再夹回鱼缸。
       this.enforceGap(r);
+      this.pos.x = Math.max(-r.x, Math.min(r.x, this.pos.x));
+      this.pos.z = Math.max(-r.z, Math.min(r.z, this.pos.z));
+      this.pos.y = clamp(this.pos.y, yLo, yHi);
 
-      // 写进场景：朝向 = 航向，侧倾 = 转弯
-      this.applyModelScale();
+      // 写进场景：鱼头朝水平航向，机头随高度变化轻微俯仰；鱼背始终朝世界 +Y。
+      var pitchTarget = Math.atan2(this.verticalVelocity, Math.max(this.speed, 0.12)) * 0.55;
+      this.pitch += (pitchTarget - this.pitch) * Math.min(1, d * 4);
       this.el.object3D.position.set(this.pos.x, this.pos.y, this.pos.z);
-      // marker-local：鱼头沿卡片 X/Z 航向，鱼背朝 -Z，+Y 是鱼缸纵深。
-      tmpForward.set(this.head.x, 0, this.head.z);
+      tmpForward.set(this.head.x, this.pitch, this.head.z);
       if (tmpForward.lengthSq() < 1e-6) tmpForward.set(0, 0, 1);
       tmpForward.normalize();
-      // up 和 forward 做正交处理，避免某些角度下基矩阵退化。
-      // 否则鱼朝上/下游时两根轴共线，基矩阵退化（鱼会歪成乱转）
-      tmpUp.set(0, 0, -1);
+      tmpUp.set(0, 1, 0);
       tmpUp.addScaledVector(tmpForward, -tmpUp.dot(tmpForward)).normalize();
       tmpRight.crossVectors(tmpUp, tmpForward).normalize();
       tmpBasis.makeBasis(tmpRight, tmpUp, tmpForward);
@@ -960,14 +923,12 @@
       tmpQuatBank.setFromAxisAngle(AXIS_Z, this.bank);
       this.el.object3D.quaternion.copy(tmpQuat).multiply(tmpQuatBank);
 
-      // 摆尾：以游速为主，但别再压到半速——之前是 ratio(下限 0.5)×倍率，
-      // 鱼在滑行时只有基准速度的 0.45 倍，看起来就是"尾巴慢吞吞"。
-      // 现在改成 0.9 + ratio×0.8（滑行也至少 1.2 倍），上限放到 3.4。
+      // 摆尾速度跟实际游速联动；模型缩放不变。
       var animator = this.animator();
       var ratio = this.speed / (this.data.speed || 1);
-      var tail = Math.max(1.2, Math.min(3.4, 0.9 + ratio * 0.8)) * this.tuning.animSpeedMax;
-      if (!(tail > 0) || !isFinite(tail)) tail = 1;      // 摆尾倍率绝不能是 NaN/0：混音器时间一旦变 NaN 就永久停住
-      if (animator) animator.data.speed = tail * (boosting ? 1.6 : 1);
+      var tail = Math.max(1.15, Math.min(3.4, 0.85 + ratio * 0.85)) * this.tuning.animSpeedMax;
+      if (!(tail > 0) || !isFinite(tail)) tail = 1;
+      if (animator) animator.data.speed = tail * (boosting ? 1.55 : 1);
 
       this.boosting = boosting;
       this.moving = this.speed > 0.02;
@@ -1068,10 +1029,10 @@
         tuning: this.tuning,
         state: this.boosting ? '受惊冲刺' : (this.moving ? '巡游' : '悬停'),
         radius: r.x.toFixed(2),
-        fit: this.fit,
+        radiusZ: r.z.toFixed(2),
         bodyLen: this.measureBodyLength(),
         turnRadius: (this.turnRadius || 0) / Math.max(0.2, this.tuning.turnScale),
-        depthRange: this.yMin().toFixed(2) + '~' + this.yMax().toFixed(2),
+        heightRange: this.yMin().toFixed(2) + '~' + this.yMax().toFixed(2),
         tankWidth: Number(tankConfig.width).toFixed(2),
         tankHeight: Number(tankConfig.height).toFixed(2),
         tankDepth: Number(tankConfig.depth).toFixed(2),
@@ -1092,7 +1053,6 @@
     markerActive: false,
     activeKeys: ['koi', 'koi2'],   // 现在只有鲤鱼：两条同时在场
     offsetMs: 0,          // 调试时间偏移
-    adaptive: true,       // 自适应：整幅构图（鱼缸 + 鱼）留在手机画面内（鱼缸视角默认开）
     pcMode: false,        // PC 模式：桌面端（OBS 抓窗口）用调好的 pcModelScale 大小
     tankVisible: false,   // 调试：把鱼游动的立体范围（鱼缸）画出来
     hitBoxVisible: false, // 调试：把命中包围盒画出来
@@ -2040,7 +2000,7 @@
     /** 打开独立的鱼缸三维调试器。工具页和主页面都能用同一个入口。 */
     openTankEditor: function () {
       var path = window.location.pathname;
-      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=17';
+      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=18';
       window.open(editor, '_blank', 'noopener');
     },
 
@@ -2087,8 +2047,8 @@
       if (el.getAttribute('visible') !== visible) el.setAttribute('visible', visible);
       if (!visible) return;
 
-      // 与官方 AR.js cubemap demo 一致的 marker-local 坐标：X=宽，Y=纵深，Z=卡面内高度。
-      // cube 尺寸只来自三维调试器，不再跟 fish 的屏幕自适应半径联动。
+      // 与官方 AR.js cubemap demo 一致的 marker-local 坐标：X=宽，Y=高，Z=纵深。
+      // cube 尺寸只来自三维调试器，不再跟鱼的屏幕自适应半径联动。
       var w = Number(tankConfig.width);
       var h = Number(tankConfig.height);
       var d = Number(tankConfig.depth);
@@ -2096,9 +2056,9 @@
       var signature = [w, h, d].map(function (v) { return v.toFixed(5); }).join('|');
       if (this._tankBoxSignature === signature) return;
       this._tankBoxSignature = signature;
-      // 只写 A-Frame transform，不直接操作 object3D；鱼缸后墙落在 marker 平面上。
-      el.setAttribute('position', '0 ' + (d / 2).toFixed(5) + ' 0');
-      el.setAttribute('scale', w.toFixed(5) + ' ' + d.toFixed(5) + ' ' + h.toFixed(5));
+      // 只写 A-Frame transform，不直接操作 object3D；鱼缸底面落在 marker 平面上。
+      el.setAttribute('position', '0 ' + (h / 2).toFixed(5) + ' 0');
+      el.setAttribute('scale', w.toFixed(5) + ' ' + h.toFixed(5) + ' ' + d.toFixed(5));
     },
 
     toggleTank: function () {
@@ -2140,8 +2100,8 @@
         var rangeInfo = ' 范围：Cube 固定';
         statusText.textContent = 'FPS ' + (self.fps || '--') +
           '（渲染×' + (self.pixelRatio ? self.pixelRatio.toFixed(2) : '--') + '）　' +
-          '游动：有界漫游　半径 ' + status.radius + ' 张卡宽（圆）' +
-          '　纵深 ' + status.depthRange + '　' + status.state + '　' +
+          '游动：鱼缸内航点漫游　水平范围 ' + status.radius + '×' + status.radiusZ + ' 卡宽' +
+          '　高度 ' + status.heightRange + '　' + status.state + '　' +
           '鱼缸 ' + status.tankWidth + '×' + status.tankHeight + '×' + status.tankDepth +
           ' 卡宽（横×高×深）' +
           (status.tankCustom ? ' [三维调试器]' : ' [默认 cube]') + '　' +
@@ -2149,7 +2109,6 @@
           '速度×' + status.tuning.speedScale.toFixed(2) +
           ' 转向×' + status.tuning.turnScale.toFixed(2) + rangeInfo +
           ' 实半径' + status.radius +
-          (fish.adaptive ? ' 自适×' + status.fit.toFixed(2) : '') +
           ' 摆尾×' + status.tuning.animSpeedMax.toFixed(2) +
           ' 大小×' + (self.pcMode ? status.tuning.pcModelScale : status.tuning.modelScale).toFixed(2) +
           (self.pcMode ? '(PC)' : '') +
@@ -2170,11 +2129,6 @@
         toggle.click();
       });
 
-      var adBtn0 = document.getElementById('db-adaptive');
-      if (adBtn0) {
-        adBtn0.classList.toggle('on', !!self.adaptive);
-        adBtn0.textContent = self.adaptive ? '自适应：开' : '自适应：关';
-      }
       var tankBtn = document.getElementById('db-tank');
       if (tankBtn) tankBtn.addEventListener('click', function () { self.toggleTank(); });
       var tankEditorBtn = document.getElementById('db-tank-editor');
@@ -2210,7 +2164,6 @@
       var pcBtnEl = document.getElementById('db-pc');
       if (pcBtnEl) pcBtnEl.addEventListener('click', function () { self.togglePcMode(); });
       document.getElementById('db-material').addEventListener('click', function () { self.toggleLightweight(); });
-      document.getElementById('db-adaptive').addEventListener('click', function () { self.toggleAdaptive(); });
       document.getElementById('db-hitbox').addEventListener('click', function () { self.toggleHitBox(); });
       document.getElementById('db-anchor').addEventListener('click', function () { self.toggleAnchorRing(); });
       document.getElementById('db-reset').addEventListener('click', function () {
@@ -2240,7 +2193,6 @@
         localStorage.setItem(CONFIG.storageKey, JSON.stringify({
           tuning: fish.tuning,
           lightweight: !!this.lightweight,
-          adaptive: !!this.adaptive,
           pcMode: !!this.pcMode,
           hitBoxVisible: !!this.hitBoxVisible
         }));
@@ -2264,9 +2216,6 @@
         var pcBtn = document.getElementById('db-pc');
         if (pcBtn) { pcBtn.classList.add('on'); pcBtn.textContent = 'PC 模式：开'; }
       }
-      if (saved.adaptive) {
-        this.toggleAdaptive();
-      }
       if (saved.hitBoxVisible) {
         this.toggleHitBox();
       }
@@ -2285,7 +2234,7 @@
      * 用途：一眼看出"鱼的活动空间到底有没有锚在码上"——环应该稳稳套在码上，
      * 鱼一直在环内游；如果环本身就跑偏了，那是跟踪/标定的问题，不是鱼的逻辑。
      */
-    /** 锚点环跟着当前范围（含自适应缩放）走，调试面板刷新时同步一次 */
+    /** 锚点环跟着当前鱼缸水平范围走，调试面板刷新时同步一次 */
     syncAnchorRing: function (fish) {
       var ring = document.getElementById('anchor-ring');
       if (!ring || !fish) return;
@@ -2339,26 +2288,6 @@
       }
       this.saveTuning();
       console.log('AOYU_HITBOX_DEBUG', this.hitBoxVisible ? 'on' : 'off');
-    },
-
-    /**
-     * 自适应开关：打开后，卡片在画面里占得太满时，鱼的大小／活动范围／悬浮高度
-     * 一起等比缩小，保证整幅构图留在画面内；卡片在画面里本来就不大时倍率是 1，
-     * 和自己调好的参数完全一样。关掉就是纯粹按卡宽算（默认）。
-     */
-    toggleAdaptive: function () {
-      this.adaptive = !this.adaptive;
-      Object.keys(instances).forEach(function (key) {
-        if (instances[key]) instances[key].adaptive = this.adaptive;
-      }, this);
-      var btn = document.getElementById('db-adaptive');
-      if (btn) {
-        btn.classList.toggle('on', this.adaptive);
-        btn.textContent = this.adaptive ? '自适应：开' : '自适应：关';
-      }
-      this.saveTuning();
-      this.refreshDebug();
-      console.log('AOYU_ADAPTIVE', this.adaptive ? 'on' : 'off');
     },
 
     /** PC 模式开关：桌面端用 pcModelScale 这条大小，现场那套 modelScale 保持不动 */

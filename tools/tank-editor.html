@@ -567,7 +567,7 @@
 
   function applyTank(config, opts) {
     // 墙面编辑器坐标：X = 宽，Y = 高，Z = 从后墙向观众展开。
-    // AR 层仍使用 marker-local 坐标，并在写入 a-box 时把这里的高/深映射到 AR 的 Z/Y。
+    // AR 层使用相同的 X=宽、Y=高、Z=纵深轴向，只把后墙原点映射到 marker 底面中心。
     config = api.normalize(config);
     var w = config.width;
     var h = config.height;
