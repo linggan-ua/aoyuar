@@ -145,6 +145,7 @@
     color: #f4f7f8; font-size: 12px; font-family: inherit;
   }
   .db-row button.on { border-color: #f5c243; color: #f5c243; }
+  .db-row button:disabled { opacity: .34; cursor: not-allowed; }
   .db-status { margin: 8px 0 4px; color: #8b98a9; font-size: 11px; line-height: 1.6; }
   .db-hint { margin-top: 6px; color: #5d6b7d; font-size: 11px; text-align: center; }
 </style>
@@ -193,7 +194,8 @@
 <script src="aframe.min.js"></script>
 <script src="aframe-ar.js"></script>
 <script src="js/note-synth.js?v=1"></script>
-<script src="js/aoyu-ar.js?v=115"></script>
+<script src="js/tank-config.js?v=1"></script>
+<script src="js/aoyu-ar.js?v=116"></script>
 </head>
 <body>
 
@@ -265,6 +267,7 @@
     </div>
     <div class="db-row">
       <button id="db-tank">鱼缸框：关</button>
+      <button id="db-tank-editor">三维调鱼缸</button>
     </div>
 
     <div id="debug-anim" class="db-status"></div>
@@ -302,7 +305,7 @@
       <button id="db-reset">恢复默认</button>
     </div>
 
-    <div class="db-hint">鱼缸框用来看清鱼游动的立体范围<br>各旋钮上限已解锁，调太大会不自然</div>
+    <div class="db-hint">鱼缸框看游动范围；点「三维调鱼缸」调宽/高/深并应用到 AR<br>启用三维尺寸后，范围±会锁定；各旋钮上限已解锁</div>
   </div>
 </div>
 

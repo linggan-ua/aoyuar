@@ -68,6 +68,41 @@
   // 两条鱼最多各自占到长半轴的 80%（于是间距上限 = 1.6 × 长半轴）
   var PAIR_ROOM_K = 0.8;
 
+  // 三维调试器保存的鱼缸尺寸（单位：鲤鱼码卡宽）。
+  // 没有保存值时保持原来的屏幕自适应范围；有保存值时按编辑器里的卡宽尺寸精确生效。
+  var TANK_DEFAULTS = (window.AOYU_TANK && window.AOYU_TANK.DEFAULTS) || {
+    width: 0.80, height: 0.56, depth: 0.50
+  };
+  var tankConfig = {
+    width: TANK_DEFAULTS.width,
+    height: TANK_DEFAULTS.height,
+    depth: TANK_DEFAULTS.depth,
+    custom: false
+  };
+
+  function refreshTankConfig() {
+    if (window.AOYU_TANK && window.AOYU_TANK.load) {
+      tankConfig = window.AOYU_TANK.load();
+    } else {
+      tankConfig = {
+        width: TANK_DEFAULTS.width,
+        height: TANK_DEFAULTS.height,
+        depth: TANK_DEFAULTS.depth,
+        custom: false
+      };
+    }
+    return tankConfig;
+  }
+
+  function tankScale(axis) {
+    var base = Number(TANK_DEFAULTS[axis]) || 1;
+    var value = Number(tankConfig[axis]);
+    if (!(value > 0) || !isFinite(value)) value = base;
+    return value / base;
+  }
+
+  refreshTankConfig();
+
   // 鱼大小的默认基准（面板「鱼大一点/小一点」的起点，三条鱼共用同一套 modelScale）
   var DEFAULT_MODEL_SCALE = 1.0;
   // 活动范围：5 ≈ 铺满屏幕 85%，6 起就到 100%（0.92/0.88 安全边距）封顶（7 和 6 视觉上一样）
@@ -581,11 +616,18 @@
 
     /**
      * 这一帧真正用的活动范围（卡片平面内的椭圆，单位＝卡宽）。
-     * 由 screenK 决定：screenK 是"按当前画面算出、尽量铺满屏幕又不越界"的倍率，
-     * 所以卡片在画面里小的时候范围会自动变大、凑近到占满画面时又会自动收回来——
-     * 永远是"宽一点但不超出屏幕"。范围旋钮改的是目标占屏比例。
+     * 默认模式仍由当前画面自动算范围；三维调试器有保存值时，
+     * 直接使用编辑器里的宽/高卡宽尺寸，不再被屏幕倍率改掉。
      */
     radii: function () {
+      // 三维调试器保存后，宽/高就是编辑器里显示的卡宽，按原尺寸进 AR。
+      // 否则继续使用原有的屏幕自适应范围，保持旧页面行为不变。
+      if (tankConfig.custom) {
+        return {
+          x: Math.max(0.05, Number(tankConfig.width) / 2),
+          z: Math.max(0.05, Number(tankConfig.height) / 2)
+        };
+      }
       var r = this.screenR;
       if (r && isFinite(r.x) && isFinite(r.z) && r.x > 0.05 && r.z > 0.05) {
         return { x: r.x, z: r.z };
@@ -594,9 +636,20 @@
       return { x: b, z: b * 0.86 };
     },
 
-    /** 悬浮高度区间 × 自适应缩放（构图整体等比缩放，比例不变） */
-    yMin: function () { return this.data.yMin * this.fit; },
-    yMax: function () { return this.data.yMax * this.fit; },
+    /**
+     * 鱼缸纵深区间。
+     * - 默认模式：沿用旧的屏幕自适应构图；
+     * - 三维调试器模式：按编辑器保存的卡宽尺寸精确摆放在 marker 前方。
+     */
+    yMin: function () {
+      return tankConfig.custom ? 0.04 : this.data.yMin * this.fit;
+    },
+    yMax: function () {
+      if (tankConfig.custom) return 0.04 + Number(tankConfig.depth);
+      var min = this.data.yMin;
+      var range = this.data.yMax - min;
+      return (min + range * tankScale('depth')) * this.fit;
+    },
 
     /** 模型最终缩放 = HTML 基准 × 手调大小 × 自适应缩放 */
     applyModelScale: function () {
@@ -1171,6 +1224,10 @@
         tankWidth: (r.x * 2).toFixed(2),
         tankHeight: (r.z * 2).toFixed(2),
         tankDepth: (this.yMax() - this.yMin()).toFixed(2),
+        tankBaseWidth: Number(tankConfig.width).toFixed(2),
+        tankBaseHeight: Number(tankConfig.height).toFixed(2),
+        tankBaseDepth: Number(tankConfig.depth).toFixed(2),
+        tankCustom: !!tankConfig.custom,
         t: this.speed.toFixed(2),
         pos: this.el.object3D.position
       };
@@ -1228,6 +1285,7 @@
       this.initCamera();
       this.bindStartOverlay();
       this.bindDebugPanel();
+      this.bindTankConfigLive();
       this.startFpsCounter();
       this.applySavedTuning();
       this.enterKoi();
@@ -2127,6 +2185,29 @@
       console.log('AOYU_MODE koi+koi2');
     },
 
+    /** 打开独立的鱼缸三维调试器。工具页和主页面都能用同一个入口。 */
+    openTankEditor: function () {
+      var path = window.location.pathname;
+      var editor = /\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html';
+      window.open(editor, '_blank', 'noopener');
+    },
+
+    /** 编辑器写入 localStorage 后，AR 页面实时同步（同一浏览器的另一个标签页也生效）。 */
+    bindTankConfigLive: function () {
+      var self = this;
+      var reload = function () {
+        refreshTankConfig();
+        if (self.refreshDebug) self.refreshDebug();
+        self.updateTankBox();
+        console.log('AOYU_TANK_CONFIG', JSON.stringify(tankConfig));
+      };
+      window.addEventListener('storage', function (event) {
+        if (!event.key || event.key === 'aoyu-tank-v1' ||
+            (window.AOYU_TANK && event.key === window.AOYU_TANK.KEY)) reload();
+      });
+      window.addEventListener('aoyu-tank-change', reload);
+    },
+
     /** 鱼缸框（调试用）：把鱼游动的立体范围画出来，方便对空间 */
     ensureTankBox: function () {
       if (this.tankBoxEl) return this.tankBoxEl;
@@ -2182,16 +2263,27 @@
         if (!fish) return;
         var status = fish.status();
         self.syncAnchorRing(fish);
+        var tankEditorState = document.getElementById('db-tank-editor');
+        if (tankEditorState) tankEditorState.classList.toggle('on', !!status.tankCustom);
+        // 立体尺寸启用后，宽/高/深由三维编辑器完全控制，旧的“范围±”不能再偷偷改尺寸。
+        var rangeMin = document.getElementById('db-range-m');
+        var rangeMax = document.getElementById('db-range-p');
+        if (rangeMin) rangeMin.disabled = !!status.tankCustom;
+        if (rangeMax) rangeMax.disabled = !!status.tankCustom;
+        var rangeInfo = status.tankCustom
+          ? ' 范围：三维尺寸固定'
+          : ' 范围×' + status.tuning.rangeScale.toFixed(2) +
+            '（目标占屏' + Math.round(Math.min(1, status.tuning.rangeScale / 5.9) * 100) + '%）';
         statusText.textContent = 'FPS ' + (self.fps || '--') +
           '（渲染×' + (self.pixelRatio ? self.pixelRatio.toFixed(2) : '--') + '）　' +
           '游动：有界漫游　半径 ' + status.radius + ' 张卡宽（圆）' +
           '　纵深 ' + status.depth + '　' + status.state + '　' +
           '鱼缸 ' + status.tankWidth + '×' + status.tankHeight + '×' + status.tankDepth +
-          ' 卡宽（横×高×深）　' +
+          ' 卡宽（横×高×深）' +
+          (status.tankCustom ? ' [三维调试器]' : ' [默认]') + '　' +
+          '设置 ' + status.tankBaseWidth + '×' + status.tankBaseHeight + '×' + status.tankBaseDepth + '　' +
           '速度×' + status.tuning.speedScale.toFixed(2) +
-          ' 转向×' + status.tuning.turnScale.toFixed(2) +
-          ' 范围×' + status.tuning.rangeScale.toFixed(2) +
-          '（目标占屏' + Math.round(Math.min(1, status.tuning.rangeScale / 5.9) * 100) + '%）' +
+          ' 转向×' + status.tuning.turnScale.toFixed(2) + rangeInfo +
           ' 实半径' + status.radius +
           (fish.adaptive ? ' 自适×' + status.fit.toFixed(2) : '') +
           ' 摆尾×' + status.tuning.animSpeedMax.toFixed(2) +
@@ -2221,6 +2313,8 @@
       }
       var tankBtn = document.getElementById('db-tank');
       if (tankBtn) tankBtn.addEventListener('click', function () { self.toggleTank(); });
+      var tankEditorBtn = document.getElementById('db-tank-editor');
+      if (tankEditorBtn) tankEditorBtn.addEventListener('click', function () { self.openTankEditor(); });
 
       var knob = function (key, delta) {
         var fish = self.activeFish();

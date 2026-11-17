@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1a1c21">
+<title>鱼缸三维调试器</title>
+<style>
+  :root {
+    --bg: #1a1c21;
+    --panel: rgba(35, 38, 45, .96);
+    --panel-2: #2b2f37;
+    --line: rgba(255,255,255,.12);
+    --text: #eef1f4;
+    --muted: #929aa6;
+    --orange: #ff9f43;
+    --cyan: #61d2ff;
+    --red: #ff6e7b;
+    --green: #7bd88f;
+    --blue: #70a8ff;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; margin: 0; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+    -webkit-user-select: none; user-select: none;
+  }
+  button, input { font: inherit; }
+  button { -webkit-tap-highlight-color: transparent; }
+  #app { position: fixed; inset: 0; display: flex; }
+  #viewport {
+    position: relative; flex: 1; min-width: 0; overflow: hidden;
+    background: radial-gradient(ellipse at 46% 34%, #2b2f37 0%, #1a1c21 58%, #14161a 100%);
+  }
+  #viewport canvas { display: block; width: 100%; height: 100%; }
+
+  #topbar {
+    position: absolute; top: 18px; left: 20px; right: 20px;
+    display: flex; align-items: center; gap: 12px; pointer-events: none;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px;
+    background: rgba(22, 24, 29, .78); backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(0,0,0,.22); pointer-events: auto;
+  }
+  .brand-mark {
+    width: 24px; height: 24px; border: 1px solid rgba(255,159,67,.7); border-radius: 6px;
+    position: relative; transform: rotate(8deg);
+  }
+  .brand-mark:before, .brand-mark:after {
+    content: ""; position: absolute; background: rgba(97,210,255,.72);
+  }
+  .brand-mark:before { width: 1px; height: 17px; left: 7px; top: 3px; }
+  .brand-mark:after { height: 1px; width: 17px; left: 3px; top: 7px; }
+  .brand b { display: block; font-size: 13px; letter-spacing: .4px; }
+  .brand small { display: block; color: var(--muted); font-size: 10px; letter-spacing: .8px; margin-top: 1px; }
+  #view-actions {
+    display: flex; gap: 5px; padding: 4px; border: 1px solid var(--line); border-radius: 9px;
+    background: rgba(22, 24, 29, .74); backdrop-filter: blur(10px); pointer-events: auto;
+  }
+  #view-actions button {
+    border: 0; border-radius: 6px; background: transparent; color: #c6cbd3;
+    padding: 6px 10px; cursor: pointer; font-size: 11px;
+  }
+  #view-actions button:hover { background: rgba(255,255,255,.07); color: #fff; }
+  #view-actions button.on { background: rgba(255,159,67,.16); color: #ffb35f; }
+  #help {
+    position: absolute; left: 20px; bottom: 18px;
+    padding: 8px 11px; border-radius: 8px; border: 1px solid var(--line);
+    background: rgba(18,20,24,.7); color: #7f8793; font-size: 11px;
+    pointer-events: none; backdrop-filter: blur(8px);
+  }
+  #axis-key {
+    position: absolute; left: 20px; top: 74px;
+    display: flex; gap: 10px; color: #838b97; font-size: 10px;
+    pointer-events: none;
+  }
+  #axis-key span { display: inline-flex; align-items: center; gap: 4px; }
+  #axis-key i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+
+  #sidebar {
+    width: 360px; flex: 0 0 360px; height: 100%; overflow-y: auto;
+    padding: 18px 18px 24px; background: var(--panel);
+    border-left: 1px solid var(--line); box-shadow: -20px 0 50px rgba(0,0,0,.18);
+    position: relative; z-index: 4;
+  }
+  #sidebar::-webkit-scrollbar { width: 6px; }
+  #sidebar::-webkit-scrollbar-thumb { background: #4b515c; border-radius: 20px; }
+  .panel-head { padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+  .panel-head h1 { margin: 0; font-size: 17px; letter-spacing: .2px; font-weight: 700; }
+  .panel-head p { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+  .section { margin-top: 18px; }
+  .section-label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    color: #7e8794; font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .section-label span:last-child { color: #aab1bc; letter-spacing: 0; text-transform: none; }
+  .dimension {
+    padding: 12px; margin-bottom: 10px; border: 1px solid var(--line);
+    border-radius: 10px; background: rgba(255,255,255,.018);
+  }
+  .dimension:focus-within { border-color: rgba(255,159,67,.55); }
+  .dim-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .dim-name { display: flex; align-items: center; gap: 8px; color: #e4e8ed; font-weight: 600; }
+  .dim-name em { font-style: normal; color: #78818e; font-size: 10px; font-weight: 500; }
+  .axis-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dim-readout { color: #c6cbd3; font-variant-numeric: tabular-nums; font-size: 12px; }
+  .dim-readout b { color: #fff; font-size: 14px; }
+  .dim-readout small { color: #727b88; font-size: 10px; margin-left: 2px; }
+  input[type=range] {
+    width: 100%; height: 18px; margin: 11px 0 6px; appearance: none; -webkit-appearance: none;
+    background: transparent; cursor: ew-resize;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 4px; border-radius: 99px; background: #454b55;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    margin-top: -5px; background: var(--axis-color, var(--orange)); border: 2px solid #20232a;
+    box-shadow: 0 0 0 1px var(--axis-color, var(--orange));
+  }
+  input[type=range]::-moz-range-track { height: 4px; border-radius: 99px; background: #454b55; }
+  input[type=range]::-moz-range-thumb {
+    width: 12px; height: 12px; border: 2px solid #20232a; border-radius: 50%;
+    background: var(--axis-color, var(--orange));
+  }
+  .dim-controls { display: grid; grid-template-columns: 42px 1fr 42px; gap: 6px; align-items: center; }
+  .dim-controls button {
+    height: 32px; border-radius: 7px; border: 1px solid var(--line);
+    color: #d7dce3; background: #242830; cursor: pointer; font-size: 18px; line-height: 1;
+  }
+  .dim-controls button:hover { border-color: rgba(255,159,67,.5); color: #ffb25d; background: #2c3038; }
+  .dim-controls button:active { transform: translateY(1px); }
+  .dim-controls input[type=number] {
+    width: 100%; height: 32px; padding: 0 9px; text-align: center; outline: none;
+    border-radius: 7px; border: 1px solid var(--line); color: #fff;
+    background: #191c21; font-variant-numeric: tabular-nums;
+  }
+  .dim-controls input[type=number]:focus { border-color: var(--orange); }
+  .dim-controls input[type=number]::-webkit-inner-spin-button { opacity: .35; }
+  .mini-note { margin-top: 7px; color: #6f7884; font-size: 10px; }
+  .preset-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .preset-row button, .utility-row button, .primary-btn {
+    min-height: 34px; border-radius: 8px; border: 1px solid var(--line);
+    background: #272b33; color: #cfd5dd; cursor: pointer; font-size: 11px;
+  }
+  .preset-row button:hover, .utility-row button:hover { border-color: rgba(97,210,255,.5); color: #8bddff; }
+  .utility-row { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 9px; }
+  .utility-row .danger:hover { border-color: rgba(255,110,123,.6); color: #ff8f99; }
+  .primary-btn {
+    width: 100%; margin-top: 10px; min-height: 40px; border-color: rgba(255,159,67,.7);
+    color: #191307; background: linear-gradient(180deg, #ffb35f, #f29132); font-weight: 800;
+  }
+  .primary-btn:hover { filter: brightness(1.07); }
+  .toggle-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 7px; }
+  .toggle-row button {
+    min-height: 31px; border-radius: 7px; border: 1px solid var(--line);
+    background: #22262d; color: #8f98a4; cursor: pointer; font-size: 10px;
+  }
+  .toggle-row button.on { color: #82dcff; border-color: rgba(97,210,255,.45); background: rgba(97,210,255,.08); }
+  .summary {
+    display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;
+    padding: 12px; border-radius: 9px; border: 1px solid rgba(97,210,255,.28);
+    background: rgba(97,210,255,.06); color: #c1eafa;
+  }
+  .summary b { display: block; font-size: 15px; font-variant-numeric: tabular-nums; color: #e8f8ff; }
+  .summary small { display: block; color: #7594a3; font-size: 10px; margin-top: 2px; }
+  .save-state { color: #71808b; font-size: 10px; text-align: right; white-space: nowrap; }
+  .save-state.on { color: #80d7a0; }
+  .panel-footer { padding-top: 14px; margin-top: 16px; border-top: 1px solid var(--line); color: #656e7a; font-size: 10px; line-height: 1.7; }
+  #toast {
+    position: absolute; left: 50%; bottom: 24px; transform: translate(-50%, 14px);
+    padding: 8px 13px; border-radius: 8px; border: 1px solid rgba(97,210,255,.4);
+    background: rgba(18,26,32,.92); color: #9de5ff; font-size: 11px;
+    opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease;
+    z-index: 8; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .screen-note {
+    position: absolute; right: 20px; bottom: 18px; z-index: 3;
+    color: #6d7682; font-size: 10px; pointer-events: none;
+  }
+  @media (max-width: 760px) {
+    #app { flex-direction: column; }
+    #viewport { flex: 1 1 53%; min-height: 250px; }
+    #sidebar { width: 100%; flex: 0 0 47%; height: 47%; border-left: 0; border-top: 1px solid var(--line); padding: 13px 14px 18px; }
+    #topbar { top: 10px; left: 10px; right: 10px; gap: 6px; }
+    .brand { padding: 6px 8px; }
+    .brand small { display: none; }
+    #view-actions button { padding: 5px 7px; font-size: 10px; }
+    #axis-key { top: 54px; left: 12px; }
+    #help { left: 12px; bottom: 12px; font-size: 9px; }
+    .screen-note { display: none; }
+    .section { margin-top: 13px; }
+  }
+</style>
+<script src="../aframe.min.js"></script>
+<script src="../js/tank-config.js?v=1"></script>
+</head>
+<body>
+<div id="app">
+  <main id="viewport" aria-label="三维鱼缸编辑器">
+    <div id="topbar">
+      <div class="brand">
+        <span class="brand-mark"></span>
+        <div><b>鱼缸空间调试器</b><small>TANK VOLUME / AR SCALE LAB</small></div>
+      </div>
+      <div id="view-actions">
+        <button type="button" data-view="persp" class="on">透视</button>
+        <button type="button" data-view="front">正面</button>
+        <button type="button" data-view="top">顶视</button>
+        <button type="button" data-view="side">侧视</button>
+      </div>
+    </div>
+    <div id="axis-key">
+      <span><i style="background:var(--red)"></i>X 宽</span>
+      <span><i style="background:var(--green)"></i>Y 高</span>
+      <span><i style="background:var(--blue)"></i>Z 深</span>
+    </div>
+    <div id="help">左键旋转 · 右键 / Shift 拖拽平移 · 滚轮缩放 · 双击复位</div>
+    <div class="screen-note">单位：鲤鱼码卡宽</div>
+    <div id="toast"></div>
+  </main>
+
+  <aside id="sidebar">
+    <header class="panel-head">
+      <h1>鱼缸尺寸</h1>
+      <p>鲤鱼码是鱼缸的后墙。拖动参数会实时改变三维体积，并自动保存到本机；回到 AR 刷新或切回页面后生效。</p>
+    </header>
+
+    <section class="section">
+      <div class="section-label"><span>DIMENSIONS</span><span>卡宽单位</span></div>
+
+      <div class="dimension" data-axis="width" style="--axis-color:var(--red)">
+        <div class="dim-head">
+          <div class="dim-name"><i class="axis-dot" style="background:var(--red)"></i>宽度 <em>X</em></div>
+          <div class="dim-readout"><b data-readout>0.80</b><small>卡宽</small></div>
+        </div>
+        <input data-slider type="range" min="0.10" max="3.00" step="0.01" value="0.80" aria-label="鱼缸宽度">
+        <div class="dim-controls">
+          <button type="button" data-step="-0.05" aria-label="宽度减小">−</button>
+          <input data-number type="number" min="0.10" max="3.00" step="0.01" value="0.80" aria-label="鱼缸宽度数值">
+          <button type="button" data-step="0.05" aria-label="宽度增加">+</button>
+        </div>
+        <div class="mini-note">横向宽度：左右两墙的距离</div>
+      </div>
+
+      <div class="dimension" data-axis="height" style="--axis-color:var(--green)">
+        <div class="dim-head">
+          <div class="dim-name"><i class="axis-dot" style="background:var(--green)"></i>高度 <em>Y</em></div>
+          <div class="dim-readout"><b data-readout>0.56</b><small>卡宽</small></div>
+        </div>
+        <input data-slider type="range" min="0.10" max="3.00" step="0.01" value="0.56" aria-label="鱼缸高度">
+        <div class="dim-controls">
+          <button type="button" data-step="-0.05" aria-label="高度减小">−</button>
+          <input data-number type="number" min="0.10" max="3.00" step="0.01" value="0.56" aria-label="鱼缸高度数值">
+          <button type="button" data-step="0.05" aria-label="高度增加">+</button>
+        </div>
+        <div class="mini-note">纵向高度：上下两面玻璃的距离</div>
+      </div>
+
+      <div class="dimension" data-axis="depth" style="--axis-color:var(--blue)">
+        <div class="dim-head">
+          <div class="dim-name"><i class="axis-dot" style="background:var(--blue)"></i>纵深 <em>Z</em></div>
+          <div class="dim-readout"><b data-readout>0.50</b><small>卡宽</small></div>
+        </div>
+        <input data-slider type="range" min="0.05" max="3.00" step="0.01" value="0.50" aria-label="鱼缸纵深">
+        <div class="dim-controls">
+          <button type="button" data-step="-0.05" aria-label="纵深减小">−</button>
+          <input data-number type="number" min="0.05" max="3.00" step="0.01" value="0.50" aria-label="鱼缸纵深数值">
+          <button type="button" data-step="0.05" aria-label="纵深增加">+</button>
+        </div>
+        <div class="mini-note">从鲤鱼码墙面向观众方向的厚度</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-label"><span>PRESETS</span><span>快速比例</span></div>
+      <div class="preset-row">
+        <button type="button" data-preset="wide">宽屏缸</button>
+        <button type="button" data-preset="cube">方缸</button>
+        <button type="button" data-preset="tall">竖缸</button>
+      </div>
+      <div class="utility-row">
+        <button type="button" class="danger" id="reset-btn">恢复默认</button>
+        <button type="button" id="frame-btn">聚焦鱼缸</button>
+      </div>
+      <button type="button" class="primary-btn" id="open-ar-btn">打开 AR 调试页</button>
+    </section>
+
+    <section class="section">
+      <div class="section-label"><span>VIEW</span><span>显示对象</span></div>
+      <div class="toggle-row">
+        <button type="button" class="on" data-toggle="grid">网格</button>
+        <button type="button" class="on" data-toggle="pattern">鲤鱼码</button>
+        <button type="button" class="on" data-toggle="labels">尺寸标签</button>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="summary">
+        <div><b id="summary-size">0.80 × 0.56 × 0.50</b><small>宽 × 高 × 深 / 卡宽</small></div>
+        <div class="save-state" id="save-state">本地自动保存</div>
+      </div>
+    </section>
+
+    <footer class="panel-footer">
+      保存的是这台浏览器里的鱼缸参数。AR 页面会读取同一份参数，不用重新生成鲤鱼码。<br>
+      键盘：1 透视 · 2 正面 · 3 顶视 · 4 侧视 · F 聚焦
+    </footer>
+  </aside>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var THREE = AFRAME.THREE;
+  var api = window.AOYU_TANK;
+  var viewport = document.getElementById('viewport');
+  var sidebar = document.getElementById('sidebar');
+  var toastTimer = null;
+  var saveTimer = null;
+  var config = api.load();
+
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(Math.max(1, viewport.clientWidth), Math.max(1, viewport.clientHeight));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.06;
+  viewport.appendChild(renderer.domElement);
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x191b20);
+
+  var camera = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
+  var orbit = {
+    target: new THREE.Vector3(0, 0, 0.26),
+    radius: 2.65,
+    theta: 0.58,
+    phi: 1.17
+  };
+
+  function updateCamera() {
+    var sinPhi = Math.sin(orbit.phi);
+    camera.position.set(
+      orbit.target.x + orbit.radius * sinPhi * Math.sin(orbit.theta),
+      orbit.target.y + orbit.radius * Math.cos(orbit.phi),
+      orbit.target.z + orbit.radius * sinPhi * Math.cos(orbit.theta)
+    );
+    camera.lookAt(orbit.target);
+  }
+  updateCamera();
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.88));
+  var keyLight = new THREE.DirectionalLight(0xffffff, 0.72);
+  keyLight.position.set(2.5, 4, 4);
+  scene.add(keyLight);
+  var rimLight = new THREE.DirectionalLight(0x75cfff, 0.34);
+  rimLight.position.set(-3, 1.5, -2);
+  scene.add(rimLight);
+
+  /* ---------- Blender 风格的参考网格和坐标轴 ---------- */
+  var gridGroup = new THREE.Group();
+  scene.add(gridGroup);
+
+  var backGrid = new THREE.GridHelper(4.2, 42, 0x4a5361, 0x303640);
+  backGrid.rotation.x = Math.PI / 2;
+  backGrid.position.z = -0.012;
+  backGrid.material.transparent = true;
+  backGrid.material.opacity = 0.78;
+  gridGroup.add(backGrid);
+
+  var floorGrid = new THREE.GridHelper(4.2, 42, 0x3b424d, 0x282e37);
+  floorGrid.position.set(0, -0.82, 0.25);
+  floorGrid.material.transparent = true;
+  floorGrid.material.opacity = 0.72;
+  gridGroup.add(floorGrid);
+
+  var axes = new THREE.AxesHelper(0.9);
+  axes.position.set(0, 0, 0.006);
+  scene.add(axes);
+
+  var originDot = new THREE.Mesh(
+    new THREE.SphereGeometry(0.018, 12, 8),
+    new THREE.MeshBasicMaterial({ color: 0xffb35f })
+  );
+  originDot.position.set(0, 0, 0.01);
+  scene.add(originDot);
+
+  /* ---------- 鲤鱼码卡面 ---------- */
+  var markerGroup = new THREE.Group();
+  scene.add(markerGroup);
+  var markerBack = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.08, 1.08),
+    new THREE.MeshBasicMaterial({ color: 0x07090c, side: THREE.DoubleSide })
+  );
+  markerBack.position.z = -0.004;
+  markerGroup.add(markerBack);
+
+  var markerTexture = new THREE.TextureLoader().load('../assets/patterns/pattern-card-v4.png', function (texture) {
+    texture.encoding = THREE.sRGBEncoding;
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    patternMaterial.map = texture;
+    patternMaterial.needsUpdate = true;
+  });
+  var patternMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    map: markerTexture,
+    side: THREE.DoubleSide
+  });
+  var markerPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), patternMaterial);
+  markerGroup.add(markerPlane);
+
+  var markerOutline = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.PlaneGeometry(1.06, 1.06)),
+    new THREE.LineBasicMaterial({ color: 0xd6b26a, transparent: true, opacity: 0.9 })
+  );
+  markerOutline.position.z = 0.002;
+  markerGroup.add(markerOutline);
+
+  /* ---------- 鱼缸体积 ---------- */
+  var tankGroup = new THREE.Group();
+  scene.add(tankGroup);
+  var tankFill = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshBasicMaterial({
+      color: 0x61d2ff,
+      transparent: true,
+      opacity: 0.052,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    })
+  );
+  tankGroup.add(tankFill);
+  var tankEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+    new THREE.LineBasicMaterial({ color: 0x6ddcff, transparent: true, opacity: 0.96 })
+  );
+  tankGroup.add(tankEdges);
+
+  var dimensionGroup = new THREE.Group();
+  scene.add(dimensionGroup);
+
+  function makeLine(points, color, opacity) {
+    var geometry = new THREE.BufferGeometry().setFromPoints(points);
+    var line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
+      color: color, transparent: true, opacity: opacity == null ? 0.78 : opacity
+    }));
+    dimensionGroup.add(line);
+    return line;
+  }
+
+  function makeLabel(text, color, scale) {
+    var canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 128;
+    var ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(15,18,23,.92)';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    var x = 6, y = 20, w = canvas.width - 12, h = 88, r = 18;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#f3f6f8';
+    ctx.font = '600 38px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, canvas.width / 2, 65);
+    var texture = new THREE.CanvasTexture(canvas);
+    texture.encoding = THREE.sRGBEncoding;
+    var material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+    var sprite = new THREE.Sprite(material);
+    var s = scale || 0.62;
+    sprite.scale.set(s, s / 4, 1);
+    sprite.renderOrder = 20;
+    dimensionGroup.add(sprite);
+    return sprite;
+  }
+
+  function clearGroup(group) {
+    while (group.children.length) {
+      var child = group.children.pop();
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        if (child.material.map) child.material.map.dispose();
+        child.material.dispose();
+      }
+    }
+  }
+
+  function addTick(x, y, z, horizontal) {
+    if (horizontal) {
+      makeLine([new THREE.Vector3(x, y - 0.035, z), new THREE.Vector3(x, y + 0.035, z)], 0xff6e7b, 0.9);
+    } else {
+      makeLine([new THREE.Vector3(x - 0.035, y, z), new THREE.Vector3(x + 0.035, y, z)], 0x7bd88f, 0.9);
+    }
+  }
+
+  function rebuildDimensions() {
+    clearGroup(dimensionGroup);
+    var w = config.width;
+    var h = config.height;
+    var d = config.depth;
+    var left = -w / 2;
+    var right = w / 2;
+    var bottom = -h / 2;
+    var top = h / 2;
+    var front = d + 0.045;
+
+    // 宽度尺寸线：放在鱼缸下沿外侧
+    var widthY = bottom - 0.12;
+    makeLine([new THREE.Vector3(left, widthY, front), new THREE.Vector3(right, widthY, front)], 0xff6e7b, 0.9);
+    addTick(left, widthY, front, true);
+    addTick(right, widthY, front, true);
+    var widthLabel = makeLabel('W  ' + w.toFixed(2), '#ff6e7b', 0.70);
+    widthLabel.position.set(0, widthY - 0.11, front + 0.012);
+
+    // 高度尺寸线：放在鱼缸右侧
+    var heightX = right + 0.12;
+    makeLine([new THREE.Vector3(heightX, bottom, front), new THREE.Vector3(heightX, top, front)], 0x7bd88f, 0.9);
+    addTick(heightX, bottom, front, false);
+    addTick(heightX, top, front, false);
+    var heightLabel = makeLabel('H  ' + h.toFixed(2), '#7bd88f', 0.70);
+    heightLabel.position.set(heightX + 0.17, 0, front + 0.012);
+
+    // 纵深尺寸线：放在鱼缸右侧靠下沿，从卡面往观众方向
+    var depthX = right + 0.12;
+    var depthY = bottom - 0.03;
+    makeLine([new THREE.Vector3(depthX, depthY, 0.012), new THREE.Vector3(depthX, depthY, d + 0.012)], 0x70a8ff, 0.94);
+    makeLine([new THREE.Vector3(depthX - 0.035, depthY, 0.012), new THREE.Vector3(depthX + 0.035, depthY, 0.012)], 0x70a8ff, 0.9);
+    makeLine([new THREE.Vector3(depthX - 0.035, depthY, d + 0.012), new THREE.Vector3(depthX + 0.035, depthY, d + 0.012)], 0x70a8ff, 0.9);
+    var depthLabel = makeLabel('D  ' + d.toFixed(2), '#70a8ff', 0.70);
+    depthLabel.position.set(depthX + 0.20, depthY, d / 2 + 0.02);
+  }
+
+  function applyTank(config, opts) {
+    config = api.normalize(config);
+    var w = config.width;
+    var h = config.height;
+    var d = config.depth;
+    tankGroup.scale.set(w, h, d);
+    tankGroup.position.set(0, 0, d / 2 + 0.008);
+    tankFill.material.opacity = 0.052;
+    rebuildDimensions();
+    updateControls(config);
+    document.getElementById('summary-size').textContent = w.toFixed(2) + ' × ' + h.toFixed(2) + ' × ' + d.toFixed(2);
+    if (opts && opts.persist) persist(config);
+  }
+
+  function updateControls(next) {
+    Object.keys(next).forEach(function (key) {
+      if (key === 'custom') return;
+      var box = document.querySelector('[data-axis="' + key + '"]');
+      if (!box) return;
+      var value = Number(next[key]).toFixed(2);
+      var slider = box.querySelector('[data-slider]');
+      var number = box.querySelector('[data-number]');
+      var readout = box.querySelector('[data-readout]');
+      if (slider && document.activeElement !== slider) slider.value = value;
+      if (number && document.activeElement !== number) number.value = value;
+      if (readout) readout.textContent = value;
+    });
+  }
+
+  function persist(next) {
+    config = api.save(next);
+    var state = document.getElementById('save-state');
+    state.textContent = '已保存 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    state.classList.add('on');
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      state.textContent = '本地自动保存';
+      state.classList.remove('on');
+    }, 1800);
+  }
+
+  function saveSoon(next) {
+    config = api.normalize(next);
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () { persist(config); }, 90);
+  }
+
+  function changeDimension(key, value) {
+    var limits = api.LIMITS[key];
+    var n = Number(value);
+    if (!isFinite(n)) n = api.DEFAULTS[key];
+    n = Math.max(limits[0], Math.min(limits[1], n));
+    n = Math.round(n * 100) / 100;
+    config[key] = n;
+    applyTank(config);
+    saveSoon(config);
+  }
+
+  function setupDimensionControls() {
+    document.querySelectorAll('.dimension').forEach(function (box) {
+      var key = box.getAttribute('data-axis');
+      box.querySelector('[data-slider]').addEventListener('input', function (event) {
+        changeDimension(key, event.target.value);
+      });
+      box.querySelector('[data-number]').addEventListener('input', function (event) {
+        if (event.target.value === '') return;
+        changeDimension(key, event.target.value);
+      });
+      box.querySelector('[data-number]').addEventListener('blur', function (event) {
+        var limits = api.LIMITS[key];
+        var n = Number(event.target.value);
+        if (!isFinite(n)) n = config[key];
+        event.target.value = Math.max(limits[0], Math.min(limits[1], n)).toFixed(2);
+      });
+      box.querySelectorAll('[data-step]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          changeDimension(key, Number(config[key]) + Number(button.getAttribute('data-step')));
+        });
+      });
+    });
+  }
+
+  function setupPresets() {
+    document.querySelectorAll('[data-preset]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var preset = button.getAttribute('data-preset');
+        var next = preset === 'cube'
+          ? { width: 0.72, height: 0.72, depth: 0.72 }
+          : preset === 'tall'
+            ? { width: 0.58, height: 0.94, depth: 0.56 }
+            : { width: 0.98, height: 0.56, depth: 0.58 };
+        config = api.normalize(next);
+        applyTank(config, { persist: true });
+        showToast('已套用' + (preset === 'cube' ? '方缸' : preset === 'tall' ? '竖缸' : '宽屏缸') + '比例');
+      });
+    });
+  }
+
+  document.getElementById('reset-btn').addEventListener('click', function () {
+    config = api.clear();
+    applyTank(config);
+    showToast('已恢复默认鱼缸尺寸');
+  });
+
+  document.getElementById('frame-btn').addEventListener('click', function () {
+    orbit.target.set(0, 0, config.depth / 2);
+    orbit.radius = Math.max(2.25, Math.max(config.width, config.height, config.depth) * 2.15);
+    orbit.theta = 0.58;
+    orbit.phi = 1.17;
+    updateCamera();
+    updateViewActive('persp');
+  });
+
+  document.getElementById('open-ar-btn').addEventListener('click', function () {
+    var path = location.pathname;
+    var target = /\/tools\//.test(path) ? '../?debug=1' : 'index.html?debug=1';
+    window.open(target, '_blank', 'noopener');
+  });
+
+  var visible = { grid: true, pattern: true, labels: true };
+  document.querySelectorAll('[data-toggle]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var key = button.getAttribute('data-toggle');
+      visible[key] = !visible[key];
+      button.classList.toggle('on', visible[key]);
+      if (key === 'grid') gridGroup.visible = visible.grid;
+      if (key === 'pattern') markerGroup.visible = visible.pattern;
+      if (key === 'labels') {
+        dimensionGroup.children.forEach(function (child) {
+          if (child.isSprite) child.visible = visible.labels;
+        });
+      }
+    });
+  });
+
+  function updateViewActive(name) {
+    document.querySelectorAll('[data-view]').forEach(function (button) {
+      button.classList.toggle('on', button.getAttribute('data-view') === name);
+    });
+  }
+
+  function setView(name) {
+    updateViewActive(name);
+    if (name === 'front') {
+      orbit.theta = 0;
+      orbit.phi = 1.44;
+      orbit.radius = 2.6;
+    } else if (name === 'top') {
+      orbit.theta = 0;
+      orbit.phi = 0.16;
+      orbit.radius = 2.7;
+    } else if (name === 'side') {
+      orbit.theta = Math.PI / 2;
+      orbit.phi = 1.36;
+      orbit.radius = 2.6;
+    } else {
+      orbit.theta = 0.58;
+      orbit.phi = 1.17;
+      orbit.radius = 2.65;
+    }
+    orbit.target.set(0, 0, config.depth / 2);
+    updateCamera();
+  }
+  document.querySelectorAll('[data-view]').forEach(function (button) {
+    button.addEventListener('click', function () { setView(button.getAttribute('data-view')); });
+  });
+
+  /* ---------- 轨道相机：左键转、右键/Shift 平移、滚轮缩放 ---------- */
+  var drag = null;
+  renderer.domElement.addEventListener('pointerdown', function (event) {
+    if (event.pointerType === 'mouse' && event.button !== 0 && event.button !== 2) return;
+    drag = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      mode: (event.button === 2 || event.shiftKey) ? 'pan' : 'orbit'
+    };
+    renderer.domElement.setPointerCapture(event.pointerId);
+    renderer.domElement.style.cursor = drag.mode === 'pan' ? 'grabbing' : 'move';
+  });
+  renderer.domElement.addEventListener('pointermove', function (event) {
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    var dx = event.clientX - drag.x;
+    var dy = event.clientY - drag.y;
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    if (drag.mode === 'orbit') {
+      orbit.theta -= dx * 0.006;
+      orbit.phi = Math.max(0.12, Math.min(Math.PI - 0.12, orbit.phi - dy * 0.006));
+    } else {
+      var scale = orbit.radius * 0.00145;
+      var right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+      var up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+      orbit.target.addScaledVector(right, -dx * scale);
+      orbit.target.addScaledVector(up, dy * scale);
+    }
+    updateCamera();
+  });
+  function endDrag(event) {
+    if (drag && drag.pointerId === event.pointerId) {
+      drag = null;
+      renderer.domElement.style.cursor = '';
+    }
+  }
+  renderer.domElement.addEventListener('pointerup', endDrag);
+  renderer.domElement.addEventListener('pointercancel', endDrag);
+  renderer.domElement.addEventListener('contextmenu', function (event) { event.preventDefault(); });
+  renderer.domElement.addEventListener('wheel', function (event) {
+    event.preventDefault();
+    orbit.radius *= Math.exp(event.deltaY * 0.001);
+    orbit.radius = Math.max(0.8, Math.min(7.5, orbit.radius));
+    updateCamera();
+  }, { passive: false });
+  renderer.domElement.addEventListener('dblclick', function () { setView('persp'); });
+
+  window.addEventListener('keydown', function (event) {
+    if (/INPUT|TEXTAREA/.test((event.target && event.target.tagName) || '')) return;
+    if (event.key === '1') setView('persp');
+    if (event.key === '2') setView('front');
+    if (event.key === '3') setView('top');
+    if (event.key === '4') setView('side');
+    if (event.key.toLowerCase() === 'f') {
+      orbit.target.set(0, 0, config.depth / 2);
+      orbit.radius = Math.max(2.25, Math.max(config.width, config.height, config.depth) * 2.15);
+      updateCamera();
+    }
+  });
+
+  function resize() {
+    var w = Math.max(1, viewport.clientWidth);
+    var h = Math.max(1, viewport.clientHeight);
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(viewport);
+  resize();
+
+  function showToast(text) {
+    var toast = document.getElementById('toast');
+    toast.textContent = text;
+    toast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 1800);
+  }
+
+  setupDimensionControls();
+  setupPresets();
+  applyTank(config);
+  updateViewActive('persp');
+
+  // 同一页面内发生变化时，编辑器自身也立即同步；跨标签页由 storage 事件同步。
+  api.subscribe(function (next) {
+    config = api.normalize(next);
+    applyTank(config);
+  });
+
+  function animate() {
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+  }
+  animate();
+})();
+</script>
+</body>
+</html>
