@@ -559,35 +559,28 @@
     baseRadius: function () { return this.data.radius; },
 
     /**
-     * 和空间调试器完全相同的 tank-local 活动范围：
-     *   X = 宽度，Y = 高度，Z = 从鱼缸后墙向观众方向的纵深。
+     * 与官方 AR.js cubemap demo 相同的 marker-local 活动范围：
+     *   X = 宽度，Y = 卡面法线方向的纵深，Z = 卡面内高度。
      */
     radii: function () {
       var w = Math.max(0.05, Number(tankConfig.width) || 0.80);
-      var d = Math.max(0.05, Number(tankConfig.depth) || 0.50);
+      var h = Math.max(0.05, Number(tankConfig.height) || 0.56);
       var marginX = Math.min(0.07, w * 0.12);
-      var marginZ = Math.min(0.07, d * 0.12);
+      var marginZ = Math.min(0.07, h * 0.12);
       return {
         x: Math.max(0.04, w / 2 - marginX),
-        z: Math.max(0.04, d / 2 - marginZ)
+        z: Math.max(0.04, h / 2 - marginZ)
       };
     },
 
-    /** 垂直活动范围，中心与 cube 中心重合。 */
+    /** 鱼在 marker +Y 方向（卡面法线纵深）内活动。 */
     yMin: function () {
-      var h = Math.max(0.05, Number(tankConfig.height) || 0.56);
-      var margin = Math.min(0.07, h * 0.12);
-      return -h / 2 + margin;
+      var d = Math.max(0.05, Number(tankConfig.depth) || 0.50);
+      return Math.min(0.04, d * 0.12);
     },
     yMax: function () {
-      var h = Math.max(0.05, Number(tankConfig.height) || 0.56);
-      var margin = Math.min(0.07, h * 0.12);
-      return h / 2 - margin;
-    },
-
-    /** 后墙在 tank local z=0；模拟坐标以中心为 0，输出时整体前移半个纵深。 */
-    tankCenterZ: function () {
-      return Math.max(0.025, Number(tankConfig.depth) || 0.50) / 2;
+      var d = Math.max(0.05, Number(tankConfig.depth) || 0.50);
+      return Math.max(this.yMin() + 0.04, d - Math.min(0.04, d * 0.12));
     },
 
     /** 模型最终缩放 = HTML 基准 × 手调大小 × 自适应缩放 */
@@ -952,15 +945,14 @@
 
       // 写进场景：朝向 = 航向，侧倾 = 转弯
       this.applyModelScale();
-      this.el.object3D.position.set(this.pos.x, this.pos.y, this.pos.z + this.tankCenterZ());
-      // tank-local：鱼头沿 X/Z 水平航向，鱼背朝 +Y；
-      // 鱼缸和鱼共用同一组 X/Y/Z 与纵深偏移。
+      this.el.object3D.position.set(this.pos.x, this.pos.y, this.pos.z);
+      // marker-local：鱼头沿卡片 X/Z 航向，鱼背朝 -Z，+Y 是鱼缸纵深。
       tmpForward.set(this.head.x, 0, this.head.z);
       if (tmpForward.lengthSq() < 1e-6) tmpForward.set(0, 0, 1);
       tmpForward.normalize();
       // up 和 forward 做正交处理，避免某些角度下基矩阵退化。
       // 否则鱼朝上/下游时两根轴共线，基矩阵退化（鱼会歪成乱转）
-      tmpUp.set(0, 1, 0);
+      tmpUp.set(0, 0, -1);
       tmpUp.addScaledVector(tmpForward, -tmpUp.dot(tmpForward)).normalize();
       tmpRight.crossVectors(tmpUp, tmpForward).normalize();
       tmpBasis.makeBasis(tmpRight, tmpUp, tmpForward);
@@ -1079,7 +1071,7 @@
         fit: this.fit,
         bodyLen: this.measureBodyLength(),
         turnRadius: (this.turnRadius || 0) / Math.max(0.2, this.tuning.turnScale),
-        heightRange: this.yMin().toFixed(2) + '~' + this.yMax().toFixed(2),
+        depthRange: this.yMin().toFixed(2) + '~' + this.yMax().toFixed(2),
         tankWidth: Number(tankConfig.width).toFixed(2),
         tankHeight: Number(tankConfig.height).toFixed(2),
         tankDepth: Number(tankConfig.depth).toFixed(2),
@@ -2048,7 +2040,7 @@
     /** 打开独立的鱼缸三维调试器。工具页和主页面都能用同一个入口。 */
     openTankEditor: function () {
       var path = window.location.pathname;
-      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=14';
+      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=15';
       window.open(editor, '_blank', 'noopener');
     },
 
@@ -2095,7 +2087,7 @@
       if (el.getAttribute('visible') !== visible) el.setAttribute('visible', visible);
       if (!visible) return;
 
-      // 与空间调试器一致的 tank-local 坐标：X=宽，Y=高，Z=纵深。
+      // 与官方 AR.js cubemap demo 一致的 marker-local 坐标：X=宽，Y=纵深，Z=卡面内高度。
       // cube 尺寸只来自三维调试器，不再跟 fish 的屏幕自适应半径联动。
       var w = Number(tankConfig.width);
       var h = Number(tankConfig.height);
@@ -2105,8 +2097,8 @@
       if (this._tankBoxSignature === signature) return;
       this._tankBoxSignature = signature;
       // 只写 A-Frame transform，不直接操作 object3D；鱼缸后墙落在 marker 平面上。
-      el.setAttribute('position', '0 0 ' + (d / 2).toFixed(5));
-      el.setAttribute('scale', w.toFixed(5) + ' ' + h.toFixed(5) + ' ' + d.toFixed(5));
+      el.setAttribute('position', '0 ' + (d / 2).toFixed(5) + ' 0');
+      el.setAttribute('scale', w.toFixed(5) + ' ' + d.toFixed(5) + ' ' + h.toFixed(5));
     },
 
     toggleTank: function () {
@@ -2149,7 +2141,7 @@
         statusText.textContent = 'FPS ' + (self.fps || '--') +
           '（渲染×' + (self.pixelRatio ? self.pixelRatio.toFixed(2) : '--') + '）　' +
           '游动：有界漫游　半径 ' + status.radius + ' 张卡宽（圆）' +
-          '　高度 ' + status.heightRange + '　' + status.state + '　' +
+          '　纵深 ' + status.depthRange + '　' + status.state + '　' +
           '鱼缸 ' + status.tankWidth + '×' + status.tankHeight + '×' + status.tankDepth +
           ' 卡宽（横×高×深）' +
           (status.tankCustom ? ' [三维调试器]' : ' [默认 cube]') + '　' +
