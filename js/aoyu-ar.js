@@ -2047,7 +2047,7 @@
     /** 打开独立的鱼缸三维调试器。工具页和主页面都能用同一个入口。 */
     openTankEditor: function () {
       var path = window.location.pathname;
-      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=11';
+      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=12';
       window.open(editor, '_blank', 'noopener');
     },
 
@@ -2079,7 +2079,7 @@
         el.id = 'debug-tank';
         el.setAttribute('visible', false);
         var cubeBase = /\/tools\//.test(window.location.pathname) ? '../assets/cube-faces/' : 'assets/cube-faces/';
-        el.setAttribute('tank-cube', 'base: ' + cubeBase + '; opacity: 0.9');
+        el.setAttribute('tank-cube', 'base: ' + cubeBase + '; opacity: 0.25');
         marker.appendChild(el);
       }
       el.object3D.userData.aoyuDebug = true;

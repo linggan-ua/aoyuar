@@ -197,9 +197,9 @@
 <script src="../aframe-ar.js"></script>
 <script src="../js/note-synth.js?v=1"></script>
 <script src="../js/tank-config.js?v=1"></script>
-<script src="../js/tank-cube.js?v=25"></script>
+<script src="../js/tank-cube.js?v=26"></script>
 <script>window.AOYU_DEBUG = true;   // 工具页始终显示调试入口</script>
-<script src="../js/aoyu-ar.js?v=133"></script>
+<script src="../js/aoyu-ar.js?v=134"></script>
 </head>
 <body>
 
@@ -216,7 +216,7 @@
 
   <a-entity id="ar-marker">
     <a-plane rotation="-90 0 0" position="0 -0.002 0" width="1.06" height="1.06" color="#1b1b1b"></a-plane>
-    <a-box id="debug-tank" visible="false" position="0 0 0.25" scale="0.80 0.56 0.50" tank-cube="base: ../assets/cube-faces/; opacity: 0.9"></a-box>
+    <a-box id="debug-tank" visible="false" position="0 0 0.25" scale="0.80 0.56 0.50" tank-cube="base: ../assets/cube-faces/; opacity: 0.25"></a-box>
     <a-plane rotation="-90 0 0" width="1" height="1" color="#e6dcc9"></a-plane>
     <a-entity id="koi-swim" fish-swim="key: koi; anim: #koi-anim" scale="0.55 0.55 0.55">
       <a-entity id="koi-anim" fish-anim="clip: Feixia_Swim_Loop_2.8s"

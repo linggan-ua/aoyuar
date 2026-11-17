@@ -22,7 +22,7 @@
       materials.push(new THREE.ShaderMaterial({
         uniforms: {
           faceMap: { value: texture },
-          faceOpacity: { value: opacity == null ? 0.9 : opacity }
+          faceOpacity: { value: opacity == null ? 0.25 : opacity }
         },
         vertexShader: [
           'varying vec2 vUv;',
@@ -37,7 +37,6 @@
           'varying vec2 vUv;',
           'void main() {',
           '  vec4 texel = texture2D(faceMap, vUv);',
-          '  if (texel.r > 0.94 && texel.g > 0.94 && texel.b > 0.94) discard;',
           '  gl_FragColor = vec4(texel.rgb, faceOpacity * texel.a);',
           '}'
         ].join('\n'),
@@ -84,7 +83,7 @@
     dependencies: ['geometry'],
     schema: {
       base: { type: 'string', default: '' },
-      opacity: { type: 'number', default: 0.9 }
+      opacity: { type: 'number', default: 0.25 }
     },
     init: function () {
       var self = this;
