@@ -1,9 +1,9 @@
 /**
  * 编辑器里的两条鲤鱼。
  *
- * 使用和 AR 相同的 tank-local 坐标：
- *   X = 宽，Y = 高，Z = 从鱼缸后墙向外的纵深
- * 鱼头沿 X/Z 水平面，鱼背朝 +Y；鱼缸 cube 只是同一空间的可视化。
+ * 和 AR 完全相同的 marker-local 坐标：
+ *   X = 宽，Y = 纵深，Z = 卡面内高度
+ * 鱼头沿卡片 X/Z 航向，鱼背朝 -Z，Y 方向是鱼缸纵深。
  */
 (function () {
   'use strict';
@@ -19,7 +19,7 @@
       time: 0,
       visible: true
     };
-    var tmpUp = new THREE.Vector3(0, 1, 0);
+    var tmpUp = new THREE.Vector3(0, 0, -1);
     var tmpForward = new THREE.Vector3();
     var tmpRight = new THREE.Vector3();
     var tmpBasis = new THREE.Matrix4();
@@ -37,13 +37,11 @@
       var w = Math.max(0.1, Number(cfg.width) || 0.80);
       var h = Math.max(0.1, Number(cfg.height) || 0.56);
       var d = Math.max(0.1, Number(cfg.depth) || 0.50);
-      return {
-        x: Math.max(0.05, w / 2 - Math.min(0.07, w * 0.12)),
-        y: Math.max(0.04, h / 2 - Math.min(0.07, h * 0.12)),
-        zMin: Math.min(0.06, d * 0.12),
-        zMax: Math.max(0.08, d - Math.min(0.06, d * 0.12)),
-        depth: d
-      };
+      var xHalf = Math.max(0.05, w / 2 - Math.min(0.07, w * 0.12));
+      var zHalf = Math.max(0.04, h / 2 - Math.min(0.07, h * 0.12));
+      var yMin = Math.min(0.04, d * 0.12);
+      var yMax = Math.max(yMin + 0.04, d - Math.min(0.04, d * 0.12));
+      return { x: xHalf, z: zHalf, yMin: yMin, yMax: yMax, depth: d };
     }
 
     function makeFishModel(gltf, index) {
@@ -52,7 +50,7 @@
       model.rotation.y = Math.PI / 2;
       root.add(model);
 
-      // 归一化到约 0.45 卡宽，和小程序/AR 里常见的鱼身大小接近。
+      // 归一化到约 0.45 卡宽，和 AR 中鱼身大小接近。
       var box = new THREE.Box3().setFromObject(model);
       var size = box.getSize(new THREE.Vector3());
       var major = Math.max(size.x, size.z, 0.001);
@@ -96,22 +94,27 @@
     function placeInitial(fish) {
       var b = bounds(state.config);
       var side = fish.index === 0 ? -1 : 1;
-      fish.pos.set(side * b.x * 0.35, (Math.random() - 0.5) * b.y, b.depth * (fish.index === 0 ? 0.35 : 0.65));
+      fish.pos.set(
+        side * b.x * 0.35,
+        b.depth * (fish.index === 0 ? 0.35 : 0.65),
+        (Math.random() - 0.5) * b.z
+      );
       fish.root.position.copy(fish.pos);
       fish.head = fish.index === 0 ? 0.4 : Math.PI - 0.4;
-      fish.target.set(-side * b.x * 0.55, 0, b.depth * (fish.index === 0 ? 0.7 : 0.3));
+      fish.target.set(
+        -side * b.x * 0.55,
+        b.depth * (fish.index === 0 ? 0.7 : 0.3),
+        (Math.random() - 0.5) * b.z
+      );
     }
 
     function pickTarget(fish) {
       var b = bounds(state.config);
-      var other = state.fish[1 - fish.index];
       var side = fish.index === 0 ? -1 : 1;
       var x = side * b.x * (0.45 + Math.random() * 0.35);
-      var z = b.depth * (0.25 + Math.random() * 0.5);
-      if (other && other.pos && Math.hypot(x - other.pos.x, z - other.pos.z) < Math.min(0.3, b.x)) {
-        x = -x;
-      }
-      fish.target.set(x, (Math.random() - 0.5) * b.y * 1.2, z);
+      var z = (Math.random() - 0.5) * b.z * 1.35;
+      var y = b.depth * (0.25 + Math.random() * 0.5);
+      fish.target.set(x, y, z);
       fish.targetTime = 4 + Math.random() * 4;
     }
 
@@ -135,7 +138,7 @@
 
       var want = Math.atan2(dx, dz);
       var diff = ((want - fish.head + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-      var turnRadius = Math.max(0.16, Math.min(b.x, b.depth) * 0.38);
+      var turnRadius = Math.max(0.16, Math.min(b.x, b.z) * 0.6);
       var maxTurn = Math.max(0.2, fish.speed / turnRadius) * dt * 2.4;
       var turn = Math.max(-maxTurn, Math.min(maxTurn, diff));
       fish.head += turn;
@@ -143,12 +146,12 @@
 
       fish.pos.x += Math.sin(fish.head) * fish.speed * dt;
       fish.pos.z += Math.cos(fish.head) * fish.speed * dt;
-      var bob = Math.sin(fish.phase) * Math.min(0.12, b.y * 0.45);
+      var bob = Math.sin(fish.phase) * Math.min(0.055, b.depth * 0.15);
       fish.pos.y += ((fish.target.y + bob) - fish.pos.y) * Math.min(1, dt * 0.8);
 
       fish.pos.x = Math.max(-b.x, Math.min(b.x, fish.pos.x));
-      fish.pos.z = Math.max(b.zMin, Math.min(b.zMax, fish.pos.z));
-      fish.pos.y = Math.max(-b.y, Math.min(b.y, fish.pos.y));
+      fish.pos.z = Math.max(-b.z, Math.min(b.z, fish.pos.z));
+      fish.pos.y = Math.max(b.yMin, Math.min(b.yMax, fish.pos.y));
 
       // 两条鱼保持一点间距，避免编辑器里看起来重叠。
       var other = state.fish[1 - fish.index];
@@ -167,7 +170,7 @@
 
       fish.root.position.copy(fish.pos);
       tmpForward.set(Math.sin(fish.head), 0, Math.cos(fish.head)).normalize();
-      tmpUp.set(0, 1, 0);
+      tmpUp.set(0, 0, -1);
       tmpUp.addScaledVector(tmpForward, -tmpUp.dot(tmpForward)).normalize();
       tmpRight.crossVectors(tmpUp, tmpForward).normalize();
       tmpBasis.makeBasis(tmpRight, tmpUp, tmpForward);
@@ -192,8 +195,8 @@
         if (!fish) continue;
         var b = bounds(next);
         fish.pos.x = Math.max(-b.x, Math.min(b.x, fish.pos.x));
-        fish.pos.y = Math.max(-b.y, Math.min(b.y, fish.pos.y));
-        fish.pos.z = Math.max(b.zMin, Math.min(b.zMax, fish.pos.z));
+        fish.pos.z = Math.max(-b.z, Math.min(b.z, fish.pos.z));
+        fish.pos.y = Math.max(b.yMin, Math.min(b.yMax, fish.pos.y));
         pickTarget(fish);
       }
     }
@@ -205,7 +208,6 @@
       }
     }
 
-    // 两条独立加载，避免 SkinnedMesh.clone() 共享骨架导致两条鱼同步抖动。
     loader.load('../assets/models/koi_red.glb', function (gltf) { makeFishModel(gltf, 0); }, function (xhr) { if (xhr && xhr.total && xhr.loaded === xhr.total) console.log('AOYU_EDITOR_FISH_DOWNLOAD 0'); }, function (error) {
       state.failed++;
       console.error('AOYU_EDITOR_FISH_ERROR', 0, error);
@@ -215,12 +217,7 @@
       console.error('AOYU_EDITOR_FISH_ERROR', 1, error);
     });
 
-    return {
-      update: update,
-      setConfig: setConfig,
-      setVisible: setVisible,
-      state: state
-    };
+    return { update: update, setConfig: setConfig, setVisible: setVisible, state: state };
   }
 
   window.AOYU_EDITOR_FISH = { create: createFishSystem };
