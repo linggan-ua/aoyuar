@@ -639,13 +639,13 @@
     /**
      * 鱼缸纵深区间。
      * - 默认模式：沿用旧的屏幕自适应构图；
-     * - 三维调试器模式：按编辑器保存的卡宽尺寸精确摆放在 marker 前方。
+     * - 三维调试器模式：后墙与 marker 平面重合，按编辑器保存的卡宽尺寸向前展开。
      */
     yMin: function () {
-      return tankConfig.custom ? 0.04 : this.data.yMin * this.fit;
+      return tankConfig.custom ? 0 : this.data.yMin * this.fit;
     },
     yMax: function () {
-      if (tankConfig.custom) return 0.04 + Number(tankConfig.depth);
+      if (tankConfig.custom) return Number(tankConfig.depth);
       var min = this.data.yMin;
       var range = this.data.yMax - min;
       return (min + range * tankScale('depth')) * this.fit;
