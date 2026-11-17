@@ -24,6 +24,17 @@
     { label: 'BACK',   sub: '-Z', color: '#8aabff', position: [0, 0, -0.61] }
   ];
 
+  // 直接使用 AR.js marker-local 坐标时，marker 的 Y 是卡面法线，
+  // Z 是卡面内的上下轴；方向文本要跟着物理朝向换名。
+  var MARKER_FACE_DEFS = [
+    { label: 'RIGHT',  sub: '+X', color: '#ff4b55', position: [ 0.61, 0, 0] },
+    { label: 'LEFT',   sub: '-X', color: '#ff858d', position: [-0.61, 0, 0] },
+    { label: 'FRONT',  sub: '+Y', color: '#5d8cff', position: [0,  0.61, 0] },
+    { label: 'BACK',   sub: '-Y', color: '#8aabff', position: [0, -0.61, 0] },
+    { label: 'BOTTOM', sub: '+Z', color: '#2eaa64', position: [0, 0,  0.61] },
+    { label: 'TOP',    sub: '-Z', color: '#6ee77e', position: [0, 0, -0.61] }
+  ];
+
   function makeLabelTexture(THREE, def) {
     var canvas = document.createElement('canvas');
     canvas.width = 384;
@@ -60,8 +71,9 @@
     return texture;
   }
 
-  function createMesh(THREE, opacity) {
+  function createMesh(THREE, opacity, axisMode) {
     var alpha = opacity == null ? 0.88 : opacity;
+    var faceDefs = axisMode === 'marker' ? MARKER_FACE_DEFS : FACE_DEFS;
     var group = new THREE.Group();
     var box = new THREE.BoxGeometry(1, 1, 1);
     var fill = new THREE.Mesh(box, new THREE.MeshBasicMaterial({
@@ -84,8 +96,8 @@
     );
     group.add(edges);
 
-    for (var i = 0; i < FACE_DEFS.length; i++) {
-      var def = FACE_DEFS[i];
+    for (var i = 0; i < faceDefs.length; i++) {
+      var def = faceDefs[i];
       var sprite = new THREE.Sprite(new THREE.SpriteMaterial({
         map: makeLabelTexture(THREE, def),
         transparent: true,
@@ -138,6 +150,7 @@
 
   window.AOYU_TANK_CUBE = {
     FACE_DEFS: FACE_DEFS.slice(),
+    MARKER_FACE_DEFS: MARKER_FACE_DEFS.slice(),
     createMesh: createMesh,
     updateFaceLabels: updateFaceLabels
   };
@@ -146,10 +159,11 @@
 
   AFRAME.registerComponent('tank-cube', {
     schema: {
-      opacity: { type: 'number', default: 0.88 }
+      opacity: { type: 'number', default: 0.88 },
+      axisMode: { type: 'string', default: 'editor' }
     },
     init: function () {
-      var group = createMesh(AFRAME.THREE, this.data.opacity);
+      var group = createMesh(AFRAME.THREE, this.data.opacity, this.data.axisMode);
       this.el.setObject3D('mesh', group);
       this.mesh = group;
     },

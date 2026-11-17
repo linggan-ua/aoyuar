@@ -58,7 +58,7 @@
   .brand b { display: block; font-size: 13px; letter-spacing: .4px; }
   .brand small { display: block; color: var(--muted); font-size: 10px; letter-spacing: .8px; margin-top: 1px; }
   #view-actions {
-    display: flex; gap: 5px; padding: 4px; border: 1px solid var(--line); border-radius: 9px;
+    display: flex; flex-wrap: wrap; gap: 5px; padding: 4px; border: 1px solid var(--line); border-radius: 9px;
     background: rgba(22, 24, 29, .74); backdrop-filter: blur(10px); pointer-events: auto;
   }
   #view-actions button {
@@ -224,7 +224,7 @@
 </style>
 <script src="../aframe.min.js"></script>
 <script src="../js/tank-config.js?v=1"></script>
-<script src="../js/tank-cube.js?v=15"></script>
+<script src="../js/tank-cube.js?v=18"></script>
 <script>window.THREE = window.AFRAME && window.AFRAME.THREE;</script>
 <script src="../js/GLTFLoader.js"></script>
 <script src="../js/tank-editor-fish.js?v=3"></script>
@@ -241,7 +241,10 @@
         <button type="button" data-view="persp" class="on">透视</button>
         <button type="button" data-view="front">正面</button>
         <button type="button" data-view="top">顶视</button>
-        <button type="button" data-view="side">侧视</button>
+        <button type="button" data-view="left">左视</button>
+        <button type="button" data-view="right">右视</button>
+        <button type="button" data-view="bottom">底视</button>
+        <button type="button" data-view="back">背视</button>
         <button type="button" id="ar-quick-btn" class="ar-jump">AR 实景</button>
       </div>
     </div>
@@ -340,7 +343,7 @@
 
     <footer class="panel-footer">
       保存的是这台浏览器里的鱼缸参数。空间调试和同页 AR 共用同一份参数与 tank 坐标。<br>
-      键盘：1 透视 · 2 正面 · 3 顶视 · 4 侧视 · F 聚焦
+      键盘：1 透视 · 2 正面 · 3 顶视 · 4 右视 · 5 左视 · 6 底视 · 7 背视 · F 聚焦
     </footer>
   </aside>
 </div>
@@ -376,7 +379,10 @@
   var scene = new THREE.Scene();
   scene.background = new THREE.Color(0x191b20);
 
-  var camera = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
+  var perspectiveCamera = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
+  var orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, -1000, 1000);
+  var camera = perspectiveCamera;
+  var viewMode = 'persp';
   var orbit = {
     target: new THREE.Vector3(0, 0, 0.28),
     radius: 2.65,
@@ -393,6 +399,19 @@
     );
     camera.lookAt(orbit.target);
   }
+
+  function updateOrthoFrustum() {
+    var aspect = Math.max(0.2, viewport.clientWidth / Math.max(1, viewport.clientHeight));
+    var half = Math.max(1.25, Math.max(config.width, config.height, config.depth) * 1.55);
+    orthoCamera.left = -half * aspect;
+    orthoCamera.right = half * aspect;
+    orthoCamera.top = half;
+    orthoCamera.bottom = -half;
+    orthoCamera.near = -1000;
+    orthoCamera.far = 1000;
+    orthoCamera.updateProjectionMatrix();
+  }
+  updateOrthoFrustum();
   updateCamera();
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.88));
@@ -466,7 +485,7 @@
   /* ---------- 鱼缸体积 ---------- */
   var tankGroup = new THREE.Group();
   scene.add(tankGroup);
-  var tankCube = window.AOYU_TANK_CUBE.createMesh(THREE, 0.88);
+  var tankCube = window.AOYU_TANK_CUBE.createMesh(THREE, 0.88, 'editor');
   tankGroup.add(tankCube);
   var fishSystem = window.AOYU_EDITOR_FISH.create(THREE, scene, config);
 
@@ -573,6 +592,7 @@
     tankGroup.scale.set(w, h, d);
     tankGroup.position.set(0, 0, d / 2 + 0.008);
     fishSystem.setConfig(config);
+    updateOrthoFrustum();
     rebuildDimensions();
     updateControls(config);
     document.getElementById('summary-size').textContent = w.toFixed(2) + ' × ' + h.toFixed(2) + ' × ' + d.toFixed(2);
@@ -720,24 +740,43 @@
 
   function setView(name) {
     updateViewActive(name);
+    viewMode = name === 'persp' ? 'persp' : 'ortho';
+    camera = viewMode === 'ortho' ? orthoCamera : perspectiveCamera;
+    camera.up.set(0, 1, 0);
+
     if (name === 'front') {
       orbit.theta = 0;
       orbit.phi = Math.PI / 2;
-      orbit.radius = 2.45;
+      orbit.radius = 3.2;
     } else if (name === 'top') {
       orbit.theta = 0;
-      orbit.phi = 0.16;
-      orbit.radius = 2.7;
-    } else if (name === 'side') {
+      orbit.phi = 0.001;
+      orbit.radius = 3.2;
+      camera.up.set(0, 0, -1);
+    } else if (name === 'bottom') {
+      orbit.theta = 0;
+      orbit.phi = Math.PI - 0.001;
+      orbit.radius = 3.2;
+      camera.up.set(0, 0, 1);
+    } else if (name === 'left') {
+      orbit.theta = -Math.PI / 2;
+      orbit.phi = Math.PI / 2;
+      orbit.radius = 3.2;
+    } else if (name === 'right' || name === 'side') {
       orbit.theta = Math.PI / 2;
-      orbit.phi = 1.36;
-      orbit.radius = 2.6;
+      orbit.phi = Math.PI / 2;
+      orbit.radius = 3.2;
+    } else if (name === 'back') {
+      orbit.theta = Math.PI;
+      orbit.phi = Math.PI / 2;
+      orbit.radius = 3.2;
     } else {
       orbit.theta = 0.58;
       orbit.phi = 1.17;
       orbit.radius = 2.65;
     }
     orbit.target.set(0, 0, config.depth / 2);
+    updateOrthoFrustum();
     updateCamera();
   }
   document.querySelectorAll('[data-view]').forEach(function (button) {
@@ -797,7 +836,10 @@
     if (event.key === '1') setView('persp');
     if (event.key === '2') setView('front');
     if (event.key === '3') setView('top');
-    if (event.key === '4') setView('side');
+    if (event.key === '4') setView('right');
+    if (event.key === '5') setView('left');
+    if (event.key === '6') setView('bottom');
+    if (event.key === '7') setView('back');
     if (event.key.toLowerCase() === 'f') {
       orbit.target.set(0, 0, config.depth / 2);
       orbit.radius = Math.max(2.25, Math.max(config.width, config.height, config.depth) * 2.15);
@@ -809,8 +851,9 @@
     var w = Math.max(1, viewport.clientWidth);
     var h = Math.max(1, viewport.clientHeight);
     renderer.setSize(w, h);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
+    perspectiveCamera.aspect = w / h;
+    perspectiveCamera.updateProjectionMatrix();
+    updateOrthoFrustum();
   }
   window.addEventListener('resize', resize);
   if (window.ResizeObserver) new ResizeObserver(resize).observe(viewport);

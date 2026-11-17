@@ -5,8 +5,8 @@
  *   游动（随机巡游/冲刺/滑行/悬停、限速转向、软边界、绕重力姿态、摆尾联动）
  *   入场/退场、丢卡隐藏、点鱼身播五声音阶、点空白惊吓、20:00 自动换鱼
  *
- * 坐标系按官方 AR.js cubemap demo：marker 局部空间 X = 鱼缸宽，Y = 从码平面向上，
- * Z = 鱼缸纵深。鱼缸和鱼都使用同一组 marker-local 坐标，不再依赖手机视角或屏幕方向。
+ * 坐标系按官方 AR.js cubemap demo：marker 局部空间 X = 鱼缸宽，Y = 从鲤鱼码向观众的纵深，
+ * Z = 卡面内的高度方向。鱼缸和鱼都直接使用 marker-local 坐标，不再叠加自定义旋转。
  */
 (function () {
   'use strict';
@@ -559,36 +559,28 @@
     baseRadius: function () { return this.data.radius; },
 
     /**
-     * 鱼在 cube 内的水平活动范围。
-     * 坐标系完全按官方 cubemap demo：
-     *   X = cube 宽度，Z = cube 纵深，Y = 从鲤鱼码向上的高度。
+     * 鱼在 marker-local 鱼缸内的活动范围：
+     *   X = 宽度，Z = 卡面内高度，Y = 卡面法线方向的纵深。
      */
     radii: function () {
       var w = Math.max(0.05, Number(tankConfig.width) || 0.80);
-      var d = Math.max(0.05, Number(tankConfig.depth) || 0.50);
+      var h = Math.max(0.05, Number(tankConfig.height) || 0.56);
       var marginX = Math.min(0.07, w * 0.12);
-      var marginZ = Math.min(0.07, d * 0.12);
+      var marginZ = Math.min(0.07, h * 0.12);
       return {
         x: Math.max(0.04, w / 2 - marginX),
-        z: Math.max(0.04, d / 2 - marginZ)
+        z: Math.max(0.04, h / 2 - marginZ)
       };
     },
 
-    /** 鱼在 cube 内的垂直活动范围（tank local +Y = 向上，中心为 0）。 */
+    /** 全程在 marker +Y 方向（鱼缸纵深）内活动。 */
     yMin: function () {
-      var h = Math.max(0.05, Number(tankConfig.height) || 0.56);
-      var margin = Math.min(0.07, h * 0.12);
-      return -h / 2 + margin;
+      var d = Math.max(0.05, Number(tankConfig.depth) || 0.50);
+      return Math.min(0.04, d * 0.12);
     },
     yMax: function () {
-      var h = Math.max(0.05, Number(tankConfig.height) || 0.56);
-      var margin = Math.min(0.07, h * 0.12);
-      return h / 2 - margin;
-    },
-
-    /** 鱼缸后墙在 tank local z=0，鱼的中心坐标需要整体前移半个纵深。 */
-    tankCenterZ: function () {
-      return Math.max(0.025, Number(tankConfig.depth) || 0.50) / 2;
+      var d = Math.max(0.05, Number(tankConfig.depth) || 0.50);
+      return Math.max(this.yMin() + 0.04, d - Math.min(0.04, d * 0.12));
     },
 
     /** 模型最终缩放 = HTML 基准 × 手调大小 × 自适应缩放 */
@@ -603,11 +595,10 @@
     },
 
     /**
-     * 采样校验：给定 cube 的水平半径和顶部高度，整圈是否都在画面内。
-     * 任何一点跑到镜头后面或出画面都算装不下。
+     * 采样校验：给定卡面内 X/Z 半径，在鱼缸最靠近观众的 Y 深度检查是否在画面内。
      */
     fitsRadii: function (rx, rz, camera, limitX, limitY) {
-      var y = this.yMax();                          // cube 顶部，投影通常最靠外
+      var y = this.yMax();                          // 最靠近观众的深度，投影通常最靠外
       var space = this.markerSpace();
       if (!space) return false;
       for (var i = 0; i < SCREEN_FILL_SAMPLES; i++) {
@@ -954,15 +945,15 @@
 
       // 写进场景：朝向 = 航向，侧倾 = 转弯
       this.applyModelScale();
-      this.el.object3D.position.set(this.pos.x, this.pos.y, this.pos.z + this.tankCenterZ());
-      // 使用官方 cube 的坐标轴：鱼头沿水平 X/Z 航向，鱼背朝 cube 的 +Y 面；
-      // 这样从斜视、俯视等不同角度看，鱼和鱼缸共用同一个 marker 坐标系。
+      this.el.object3D.position.set(this.pos.x, this.pos.y, this.pos.z);
+      // marker-local：鱼头沿卡片 X/Z 方向，鱼背朝 -Z（卡片上方），
+      // +Y 是鱼缸纵深；鱼和鱼缸都直接挂在 marker 下，和官方 cubemap 同一条变换链。
       tmpForward.set(this.head.x, 0, this.head.z);
       if (tmpForward.lengthSq() < 1e-6) tmpForward.set(0, 0, 1);
       tmpForward.normalize();
       // up 和 forward 做正交处理，避免某些角度下基矩阵退化。
       // 否则鱼朝上/下游时两根轴共线，基矩阵退化（鱼会歪成乱转）
-      tmpUp.set(0, 1, 0);
+      tmpUp.set(0, 0, -1);
       tmpUp.addScaledVector(tmpForward, -tmpUp.dot(tmpForward)).normalize();
       tmpRight.crossVectors(tmpUp, tmpForward).normalize();
       tmpBasis.makeBasis(tmpRight, tmpUp, tmpForward);
@@ -1081,7 +1072,7 @@
         fit: this.fit,
         bodyLen: this.measureBodyLength(),
         turnRadius: (this.turnRadius || 0) / Math.max(0.2, this.tuning.turnScale),
-        heightRange: this.yMin().toFixed(2) + '~' + this.yMax().toFixed(2),
+        depthRange: this.yMin().toFixed(2) + '~' + this.yMax().toFixed(2),
         tankWidth: Number(tankConfig.width).toFixed(2),
         tankHeight: Number(tankConfig.height).toFixed(2),
         tankDepth: Number(tankConfig.depth).toFixed(2),
@@ -2049,7 +2040,7 @@
     /** 打开独立的鱼缸三维调试器。工具页和主页面都能用同一个入口。 */
     openTankEditor: function () {
       var path = window.location.pathname;
-      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=4';
+      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=6';
       window.open(editor, '_blank', 'noopener');
     },
 
@@ -2082,7 +2073,7 @@
         el.id = 'debug-tank';
         el.setAttribute('visible', false);
         var cube = document.createElement('a-entity');
-        cube.setAttribute('tank-cube', 'opacity: 0.88');
+        cube.setAttribute('tank-cube', 'opacity: 0.88; axis-mode: marker');
         el.appendChild(cube);
         marker.appendChild(el);
       }
@@ -2098,7 +2089,7 @@
       if (el.getAttribute('visible') !== visible) el.setAttribute('visible', visible);
       if (!visible) return;
 
-      // 官方 cube 坐标：X=宽，Y=高（从码平面向上），Z=纵深。
+      // 官方 marker/cube 坐标：X=宽，Y=纵深（从码向观众），Z=卡面内高度。
       // cube 尺寸只来自三维调试器，不再跟 fish 的屏幕自适应半径联动。
       var w = Number(tankConfig.width);
       var h = Number(tankConfig.height);
@@ -2108,8 +2099,8 @@
       if (this._tankBoxSignature === signature) return;
       this._tankBoxSignature = signature;
       // 只写 A-Frame transform，不直接操作 object3D；鱼缸底面始终落在 marker 平面上。
-      el.setAttribute('position', '0 0 ' + (d / 2).toFixed(5));
-      el.setAttribute('scale', w.toFixed(5) + ' ' + h.toFixed(5) + ' ' + d.toFixed(5));
+      el.setAttribute('position', '0 ' + (d / 2).toFixed(5) + ' 0');
+      el.setAttribute('scale', w.toFixed(5) + ' ' + d.toFixed(5) + ' ' + h.toFixed(5));
     },
 
     toggleTank: function () {
@@ -2152,7 +2143,7 @@
         statusText.textContent = 'FPS ' + (self.fps || '--') +
           '（渲染×' + (self.pixelRatio ? self.pixelRatio.toFixed(2) : '--') + '）　' +
           '游动：有界漫游　半径 ' + status.radius + ' 张卡宽（圆）' +
-          '　高度 ' + status.heightRange + '　' + status.state + '　' +
+          '　纵深 ' + status.depthRange + '　' + status.state + '　' +
           '鱼缸 ' + status.tankWidth + '×' + status.tankHeight + '×' + status.tankDepth +
           ' 卡宽（横×高×深）' +
           (status.tankCustom ? ' [三维调试器]' : ' [默认 cube]') + '　' +
