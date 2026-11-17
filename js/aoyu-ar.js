@@ -418,14 +418,52 @@
    *   6) 每帧积分之后再做一次硬投影：出圈就按比例拉回、高度夹到区间内
    *      —— 所以无论受惊冲刺、掉帧、改范围、改大小，都不可能游出范围
    */
+  /**
+   * 调试用的鱼缸边框：只画 12 条棱，不画 BoxGeometry wireframe 的面片对角线。
+   * 盒体单位尺寸为 1，由 updateTankBox() 按横/高/深三个真实尺寸缩放。
+   */
+  AFRAME.registerComponent('debug-tank-box', {
+    init: function () {
+      var points = [];
+      var corners = [
+        [-0.5, -0.5, -0.5], [ 0.5, -0.5, -0.5], [ 0.5,  0.5, -0.5], [-0.5,  0.5, -0.5],
+        [-0.5, -0.5,  0.5], [ 0.5, -0.5,  0.5], [ 0.5,  0.5,  0.5], [-0.5,  0.5,  0.5]
+      ];
+      var edges = [
+        [0, 1], [1, 2], [2, 3], [3, 0],
+        [4, 5], [5, 6], [6, 7], [7, 4],
+        [0, 4], [1, 5], [2, 6], [3, 7]
+      ];
+      for (var i = 0; i < edges.length; i++) {
+        var a = corners[edges[i][0]];
+        var b = corners[edges[i][1]];
+        points.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+      }
+      var geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+      var material = new THREE.LineBasicMaterial({
+        color: 0x6fd3ff,
+        transparent: true,
+        opacity: 0.9,
+        depthTest: false,
+        depthWrite: false
+      });
+      var lines = new THREE.LineSegments(geometry, material);
+      lines.renderOrder = 999;
+      this.el.setObject3D('mesh', lines);
+    }
+  });
+
   AFRAME.registerComponent('fish-swim', {
     schema: {
       key: { type: 'string' },
       anim: { type: 'selector' },
       radius: { type: 'number', default: 0.50 },    // 游动范围半径（卡片 = 1 单位；圆形）
-      // 鱼缸纵深（marker 的 +Y 指向观众）：从大屏往观众方向的深度范围
-      yMin: { type: 'number', default: 0.30 },
-      yMax: { type: 'number', default: 1.25 },
+      // 鱼缸纵深（marker 的 +Y 指向观众）：从大屏往观众方向的深度范围。
+      // 之前 0.30~1.25 经自适应缩放后只剩约 0.23 卡宽，看起来是一块薄板；
+      // 这里把纵深拉到约 2.4 卡宽，再交给自适应整体缩放，鱼缸才有正常水体厚度。
+      yMin: { type: 'number', default: 0.20 },
+      yMax: { type: 'number', default: 2.60 },
       speed: { type: 'number', default: 0.30 },     // 基准速度（单位/秒）
       turnRate: { type: 'number', default: 1.6 },   // 转弯系数：弧度/单位位移；1.6 ≈ 转弯半径 0.63 卡宽
       maxBank: { type: 'number', default: 10 * Math.PI / 180 },
@@ -1129,7 +1167,10 @@
         fit: this.fit,
         bodyLen: this.measureBodyLength(),
         turnRadius: (this.turnRadius || 0) / Math.max(0.2, this.tuning.turnScale),
-        height: this.yMin().toFixed(2) + '~' + this.yMax().toFixed(2),
+        depth: this.yMin().toFixed(2) + '~' + this.yMax().toFixed(2),
+        tankWidth: (r.x * 2).toFixed(2),
+        tankHeight: (r.z * 2).toFixed(2),
+        tankDepth: (this.yMax() - this.yMin()).toFixed(2),
         t: this.speed.toFixed(2),
         pos: this.el.object3D.position
       };
@@ -2092,9 +2133,7 @@
       var marker = document.getElementById('ar-marker');
       if (!marker) return null;
       var el = document.createElement('a-entity');
-      el.setAttribute('geometry', 'primitive: box');
-      el.setAttribute('material',
-        'shader: flat; color: #6fd3ff; wireframe: true; transparent: true; opacity: 0.5; depthTest: false');
+      el.setAttribute('debug-tank-box', '');
       el.object3D.userData.aoyuDebug = true;
       marker.appendChild(el);
       this.tankBoxEl = el;
@@ -2146,7 +2185,9 @@
         statusText.textContent = 'FPS ' + (self.fps || '--') +
           '（渲染×' + (self.pixelRatio ? self.pixelRatio.toFixed(2) : '--') + '）　' +
           '游动：有界漫游　半径 ' + status.radius + ' 张卡宽（圆）' +
-          '　高 ' + status.height + '　' + status.state + '　' +
+          '　纵深 ' + status.depth + '　' + status.state + '　' +
+          '鱼缸 ' + status.tankWidth + '×' + status.tankHeight + '×' + status.tankDepth +
+          ' 卡宽（横×高×深）　' +
           '速度×' + status.tuning.speedScale.toFixed(2) +
           ' 转向×' + status.tuning.turnScale.toFixed(2) +
           ' 范围×' + status.tuning.rangeScale.toFixed(2) +
