@@ -1,51 +1,52 @@
 /**
- * 官方 AR.js cubemap 坐标的鱼缸 cube。
+ * 与官方 AR.js cubemap demo 同构的方向 cube。
  *
- * 不再用一块大面积透明贴图盖住鱼，而是：
- *   - 透明的 unit cube 体积
- *   - 六面各一个小方向铭牌：RIGHT/LEFT/TOP/BOTTOM/BACK/FRONT
- *     （对应官方 cube 的 +X/-X/+Y/-Y/+Z/-Z）
- *   - 微弱的 cube 轮廓线
+ * 这里只创建一个标准 BoxGeometry mesh：
+ *   +X / -X / +Y / -Y / +Z / -Z
+ * 六个面各有一张方向标签材质，不再额外套 group、sprite 或自定义旋转。
  *
- * marker / cube 局部坐标轴：
- *   X = 鱼缸宽度
- *   Y = 鱼缸高度（从鲤鱼码平面向上）
- *   Z = 鱼缸纵深
+ * editor 模式：X=宽，Y=高，Z=纵深
+ * marker 模式：X=宽，Y=纵深，Z=卡面内高度
  */
 (function () {
   'use strict';
 
-  var FACE_DEFS = [
-    { label: 'RIGHT',  sub: '+X', color: '#ff4b55', position: [ 0.61, 0, 0] },
-    { label: 'LEFT',   sub: '-X', color: '#ff858d', position: [-0.61, 0, 0] },
-    { label: 'TOP',    sub: '+Y', color: '#6ee77e', position: [0,  0.61, 0] },
-    { label: 'BOTTOM', sub: '-Y', color: '#2eaa64', position: [0, -0.61, 0] },
-    { label: 'FRONT',  sub: '+Z', color: '#5d8cff', position: [0, 0,  0.61] },
-    { label: 'BACK',   sub: '-Z', color: '#8aabff', position: [0, 0, -0.61] }
+  var EDITOR_FACE_DEFS = [
+    { label: 'RIGHT',  sub: '+X', color: '#ff4b55' },
+    { label: 'LEFT',   sub: '-X', color: '#ff858d' },
+    { label: 'TOP',    sub: '+Y', color: '#6ee77e' },
+    { label: 'BOTTOM', sub: '-Y', color: '#2eaa64' },
+    { label: 'FRONT',  sub: '+Z', color: '#5d8cff' },
+    { label: 'BACK',   sub: '-Z', color: '#8aabff' }
   ];
 
-  // 直接使用 AR.js marker-local 坐标时，marker 的 Y 是卡面法线，
-  // Z 是卡面内的上下轴；方向文本要跟着物理朝向换名。
   var MARKER_FACE_DEFS = [
-    { label: 'RIGHT',  sub: '+X', color: '#ff4b55', position: [ 0.61, 0, 0] },
-    { label: 'LEFT',   sub: '-X', color: '#ff858d', position: [-0.61, 0, 0] },
-    { label: 'FRONT',  sub: '+Y', color: '#5d8cff', position: [0,  0.61, 0] },
-    { label: 'BACK',   sub: '-Y', color: '#8aabff', position: [0, -0.61, 0] },
-    { label: 'BOTTOM', sub: '+Z', color: '#2eaa64', position: [0, 0,  0.61] },
-    { label: 'TOP',    sub: '-Z', color: '#6ee77e', position: [0, 0, -0.61] }
+    { label: 'RIGHT',  sub: '+X', color: '#ff4b55' },
+    { label: 'LEFT',   sub: '-X', color: '#ff858d' },
+    { label: 'FRONT',  sub: '+Y', color: '#5d8cff' },
+    { label: 'BACK',   sub: '-Y', color: '#8aabff' },
+    { label: 'BOTTOM', sub: '+Z', color: '#2eaa64' },
+    { label: 'TOP',    sub: '-Z', color: '#6ee77e' }
   ];
 
-  function makeLabelTexture(THREE, def) {
+  function makeFaceTexture(THREE, def) {
     var canvas = document.createElement('canvas');
-    canvas.width = 384;
-    canvas.height = 144;
+    canvas.width = 512;
+    canvas.height = 512;
     var ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, 512, 512);
 
-    var x = 3, y = 4, w = canvas.width - 6, h = canvas.height - 8, r = 22;
-    ctx.fillStyle = 'rgba(12, 17, 23, .88)';
+    // 透明底 + 彩色边框 + 小方向铭牌；六面合起来就是 cube 的方向。
     ctx.strokeStyle = def.color;
-    ctx.lineWidth = 5;
+    ctx.globalAlpha = 0.92;
+    ctx.lineWidth = 9;
+    ctx.strokeRect(18, 18, 476, 476);
+    ctx.globalAlpha = 1;
+
+    var x = 92, y = 206, w = 328, h = 100, r = 18;
+    ctx.fillStyle = 'rgba(12, 17, 23, .86)';
+    ctx.strokeStyle = def.color;
+    ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -58,12 +59,12 @@
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#f5f9ff';
-    ctx.font = '700 43px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
-    ctx.fillText(def.label, canvas.width / 2, 60);
+    ctx.fillStyle = '#f4f8ff';
+    ctx.font = '700 46px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
+    ctx.fillText(def.label, 256, 244);
     ctx.fillStyle = def.color;
-    ctx.font = '700 31px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
-    ctx.fillText(def.sub, canvas.width / 2, 109);
+    ctx.font = '600 28px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif';
+    ctx.fillText(def.sub, 256, 282);
 
     var texture = new THREE.CanvasTexture(canvas);
     texture.encoding = THREE.sRGBEncoding;
@@ -71,51 +72,29 @@
     return texture;
   }
 
-  function createMesh(THREE, opacity, axisMode) {
-    var alpha = opacity == null ? 0.88 : opacity;
-    var faceDefs = axisMode === 'marker' ? MARKER_FACE_DEFS : FACE_DEFS;
-    var group = new THREE.Group();
-    var box = new THREE.BoxGeometry(1, 1, 1);
-    var fill = new THREE.Mesh(box, new THREE.MeshBasicMaterial({
-      color: 0x61d2ff,
-      transparent: true,
-      opacity: 0.05 * (alpha / 0.88),
-      side: THREE.DoubleSide,
-      depthWrite: false
-    }));
-    group.add(fill);
-
-    var edges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
-      new THREE.LineBasicMaterial({
-        color: 0x7fe8ff,
+  function makeMaterials(THREE, defs, opacity) {
+    var alpha = opacity == null ? 0.92 : opacity;
+    var materials = [];
+    for (var i = 0; i < defs.length; i++) {
+      materials.push(new THREE.MeshBasicMaterial({
+        map: makeFaceTexture(THREE, defs[i]),
         transparent: true,
-        opacity: 0.82 * (alpha / 0.88),
+        opacity: alpha,
+        side: THREE.FrontSide,
         depthWrite: false
-      })
-    );
-    group.add(edges);
-
-    for (var i = 0; i < faceDefs.length; i++) {
-      var def = faceDefs[i];
-      var sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: makeLabelTexture(THREE, def),
-        transparent: true,
-        depthTest: false,
-        depthWrite: false,
-        sizeAttenuation: false
       }));
-      sprite.position.set(def.position[0], def.position[1], def.position[2]);
-      sprite.scale.set(0.16, 0.06, 1);
-      sprite.userData.aoyuFaceLabel = def.label;
-      sprite.userData.faceNormal = new THREE.Vector3(
-        def.position[0], def.position[1], def.position[2]
-      ).normalize();
-      group.add(sprite);
     }
+    return materials;
+  }
 
-    group.userData.aoyuTankCube = true;
-    return group;
+  function createMesh(THREE, opacity, axisMode) {
+    var defs = axisMode === 'marker' ? MARKER_FACE_DEFS : EDITOR_FACE_DEFS;
+    var mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      makeMaterials(THREE, defs, opacity)
+    );
+    mesh.userData.aoyuTankCube = true;
+    return mesh;
   }
 
   function disposeObject(object) {
@@ -128,53 +107,49 @@
         mats[i].dispose();
       }
     }
-    for (var j = 0; j < object.children.length; j++) disposeObject(object.children[j]);
-  }
-
-  function updateFaceLabels(group, camera) {
-    if (!group || !camera) return;
-    group.updateWorldMatrix(true, false);
-    var center = group.userData._labelCenter || (group.userData._labelCenter = new THREE.Vector3());
-    var cam = group.userData._labelCam || (group.userData._labelCam = new THREE.Vector3());
-    var normal = group.userData._labelNormal || (group.userData._labelNormal = new THREE.Vector3());
-    group.getWorldPosition(center);
-    camera.getWorldPosition(cam);
-    var toCamera = cam.sub(center).normalize();
-    for (var i = 0; i < group.children.length; i++) {
-      var child = group.children[i];
-      if (!child.userData || !child.userData.faceNormal) continue;
-      normal.copy(child.userData.faceNormal).transformDirection(group.matrixWorld).normalize();
-      child.visible = normal.dot(toCamera) > 0.04;
-    }
   }
 
   window.AOYU_TANK_CUBE = {
-    FACE_DEFS: FACE_DEFS.slice(),
+    EDITOR_FACE_DEFS: EDITOR_FACE_DEFS.slice(),
     MARKER_FACE_DEFS: MARKER_FACE_DEFS.slice(),
     createMesh: createMesh,
-    updateFaceLabels: updateFaceLabels
+    // 保留给编辑器动画循环的 API；标签现在固定在 box 面上，不需要每帧 billboard 更新。
+    updateFaceLabels: function () {}
   };
 
   if (!window.AFRAME || !window.AFRAME.registerComponent) return;
 
   AFRAME.registerComponent('tank-cube', {
+    dependencies: ['geometry'],
     schema: {
-      opacity: { type: 'number', default: 0.88 },
+      opacity: { type: 'number', default: 0.92 },
       axisMode: { type: 'string', default: 'editor' }
     },
     init: function () {
-      var group = createMesh(AFRAME.THREE, this.data.opacity, this.data.axisMode);
-      this.el.setObject3D('mesh', group);
-      this.mesh = group;
-    },
-    tick: function () {
-      var camera = this.el.sceneEl && this.el.sceneEl.camera;
-      updateFaceLabels(this.mesh, camera);
+      var self = this;
+      this.applyMaterials = function () {
+        var mesh = self.el.getObject3D('mesh');
+        if (!mesh || !mesh.geometry || !mesh.geometry.groups || mesh.geometry.groups.length < 6) return;
+        if (self.mesh && self.mesh.material === mesh.material) return;
+        var defs = self.data.axisMode === 'marker' ? MARKER_FACE_DEFS : EDITOR_FACE_DEFS;
+        var mats = makeMaterials(AFRAME.THREE, defs, self.data.opacity);
+        mesh.material = mats;
+        self.mesh = mesh;
+        self.materials = mats;
+      };
+      // a-box 的 geometry 可能在组件之后才挂上；两个时机都试一次。
+      this.applyMaterials();
+      this.el.addEventListener('loaded', this.applyMaterials);
+      setTimeout(this.applyMaterials, 0);
     },
     remove: function () {
-      if (!this.mesh) return;
-      disposeObject(this.mesh);
-      this.mesh = null;
+      if (!this.materials) return;
+      for (var i = 0; i < this.materials.length; i++) {
+        if (this.materials[i].map) this.materials[i].map.dispose();
+        this.materials[i].dispose();
+      }
+      this.materials = null;
     }
   });
+
 })();

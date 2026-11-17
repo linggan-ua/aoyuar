@@ -2040,7 +2040,7 @@
     /** 打开独立的鱼缸三维调试器。工具页和主页面都能用同一个入口。 */
     openTankEditor: function () {
       var path = window.location.pathname;
-      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=6';
+      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=7';
       window.open(editor, '_blank', 'noopener');
     },
 
@@ -2067,14 +2067,11 @@
       if (!marker) return null;
       var el = document.getElementById('debug-tank');
       if (!el) {
-        // 和官方 AR.js cubemap demo 一样：鱼缸是 marker 下的普通 A-Frame 子节点。
-        // 父节点负责 position/scale，子节点用和官方同款的六面方向贴图 cube。
-        el = document.createElement('a-entity');
+        // 和官方 AR.js cubemap demo 一样：鱼缸就是一个直接挂在 marker 下的 a-box。
+        el = document.createElement('a-box');
         el.id = 'debug-tank';
         el.setAttribute('visible', false);
-        var cube = document.createElement('a-entity');
-        cube.setAttribute('tank-cube', 'opacity: 0.88; axis-mode: marker');
-        el.appendChild(cube);
+        el.setAttribute('tank-cube', 'opacity: 0.88; axis-mode: marker');
         marker.appendChild(el);
       }
       el.object3D.userData.aoyuDebug = true;
