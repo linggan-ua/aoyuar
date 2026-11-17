@@ -224,7 +224,7 @@
 </style>
 <script src="../aframe.min.js"></script>
 <script src="../js/tank-config.js?v=1"></script>
-<script src="../js/tank-cube.js?v=22"></script>
+<script src="../js/tank-cube.js?v=25"></script>
 <script>window.THREE = window.AFRAME && window.AFRAME.THREE;</script>
 <script src="../js/GLTFLoader.js"></script>
 <script src="../js/tank-editor-fish.js?v=3"></script>
@@ -485,7 +485,7 @@
   /* ---------- 鱼缸体积 ---------- */
   var tankGroup = new THREE.Group();
   scene.add(tankGroup);
-  var tankCube = window.AOYU_TANK_CUBE.createMesh(THREE, 0.88, 'editor');
+  var tankCube = window.AOYU_TANK_CUBE.createMesh(THREE, '../assets/cube-faces/', 0.9);
   tankGroup.add(tankCube);
   var fishSystem = window.AOYU_EDITOR_FISH.create(THREE, scene, config);
 
