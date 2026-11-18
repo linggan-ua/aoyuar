@@ -1071,6 +1071,21 @@
     switchTimer: null,
     lastNoteIndex: -1,
     players: [],
+    // 麦克风响度监听。默认不在后台申请权限，必须由调试面板按钮触发。
+    micEnabled: false,
+    micStarting: false,
+    micStream: null,
+    micSource: null,
+    micAnalyser: null,
+    micContext: null,
+    micTimer: null,
+    micLevel: 0,
+    micThreshold: 0.08,       // RMS，0..1
+    micCooldown: 1.5,         // 秒
+    micLastTrigger: 0,
+    micTriggerCount: 0,
+    micError: '',
+    micSamples: null,
 
     init: function () {
       var self = this;
@@ -2089,6 +2104,163 @@
       console.log('AOYU_TANK_BOX', this.tankVisible ? 'on' : 'off');
     },
 
+    /* ---------- 麦克风响度监听 ---------- */
+    micStatusText: function () {
+      if (this.micStarting) return '麦克风：请求权限…';
+      if (!this.micEnabled) return this.micError ? '麦克风：' + this.micError : '麦克风：关';
+      return '麦克风：开　响度 ' + Number(this.micLevel || 0).toFixed(3) +
+        '　阈值 ' + Number(this.micThreshold).toFixed(3) +
+        '　冷却 ' + Number(this.micCooldown).toFixed(1) + 's' +
+        '　触发 ' + this.micTriggerCount;
+    },
+
+    syncMicControls: function () {
+      var btn = document.getElementById('db-mic');
+      if (btn) {
+        btn.classList.toggle('on', !!this.micEnabled);
+        btn.disabled = !!this.micStarting;
+        btn.textContent = this.micStarting ? '麦克风：请求中…' : (this.micEnabled ? '麦克风：开' : '麦克风：关');
+      }
+      var threshold = document.getElementById('db-mic-threshold');
+      var cooldown = document.getElementById('db-mic-cooldown');
+      if (threshold && document.activeElement !== threshold) threshold.value = Number(this.micThreshold).toFixed(3);
+      if (cooldown && document.activeElement !== cooldown) cooldown.value = Number(this.micCooldown).toFixed(1);
+      var status = document.getElementById('debug-mic');
+      if (status) status.textContent = this.micStatusText();
+    },
+
+    toggleMic: function () {
+      if (this.micStarting) return;
+      if (this.micEnabled) {
+        this.stopMic();
+        return;
+      }
+      this.startMic();
+    },
+
+    startMic: function () {
+      var self = this;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        this.micError = '浏览器不支持麦克风';
+        this.syncMicControls();
+        return;
+      }
+      this.micError = '';
+      this.micStarting = true;
+      this.syncMicControls();
+      navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      }).then(function (stream) {
+        var AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) {
+          stream.getTracks().forEach(function (track) { track.stop(); });
+          throw new Error('AudioContext 不可用');
+        }
+        self.micStream = stream;
+        self.micContext = new AudioContext();
+        self.micAnalyser = self.micContext.createAnalyser();
+        self.micAnalyser.fftSize = 1024;
+        self.micAnalyser.smoothingTimeConstant = 0.2;
+        self.micSource = self.micContext.createMediaStreamSource(stream);
+        self.micSource.connect(self.micAnalyser);
+        self.micEnabled = true;
+        self.micStarting = false;
+        self.micLevel = 0;
+        self.micLastTrigger = 0;
+        self.micTriggerCount = 0;
+        if (self.micContext.state === 'suspended' && self.micContext.resume) {
+          var resumed = self.micContext.resume();
+          if (resumed && resumed.catch) resumed.catch(function () {});
+        }
+        self.micTimer = setInterval(function () { self.micTick(); }, 50);
+        self.syncMicControls();
+        console.log('AOYU_MIC_ON');
+      }).catch(function (error) {
+        self.micStarting = false;
+        self.micEnabled = false;
+        self.micError = (error && (error.name || error.message)) || '无法打开麦克风';
+        if (self.micStream) {
+          self.micStream.getTracks().forEach(function (track) { track.stop(); });
+          self.micStream = null;
+        }
+        self.stopMic();
+        self.syncMicControls();
+        console.warn('AOYU_MIC_ERROR', self.micError);
+      });
+    },
+
+    stopMic: function () {
+      if (this.micTimer) {
+        clearInterval(this.micTimer);
+        this.micTimer = null;
+      }
+      if (this.micSource && this.micSource.disconnect) this.micSource.disconnect();
+      this.micSource = null;
+      if (this.micStream) {
+        this.micStream.getTracks().forEach(function (track) { track.stop(); });
+        this.micStream = null;
+      }
+      this.micAnalyser = null;
+      if (this.micContext) {
+        var ctx = this.micContext;
+        this.micContext = null;
+        if (ctx.state !== 'closed' && ctx.close) {
+          var closing = ctx.close();
+          if (closing && closing.catch) closing.catch(function () {});
+        }
+      }
+      this.micSamples = null;
+      this.micEnabled = false;
+      this.micStarting = false;
+      this.micLevel = 0;
+      this.syncMicControls();
+      console.log('AOYU_MIC_OFF');
+    },
+
+    micTick: function () {
+      if (!this.micEnabled || !this.micAnalyser) return;
+      var analyser = this.micAnalyser;
+      var n = analyser.fftSize;
+      var mean = 0;
+      var sum = 0;
+      if (analyser.getFloatTimeDomainData) {
+        if (!this.micSamples || this.micSamples.length !== n) this.micSamples = new Float32Array(n);
+        analyser.getFloatTimeDomainData(this.micSamples);
+        for (var i = 0; i < n; i++) mean += this.micSamples[i];
+        mean /= n;
+        for (var j = 0; j < n; j++) {
+          var v = this.micSamples[j] - mean;
+          sum += v * v;
+        }
+      } else {
+        if (!this.micSamples || this.micSamples.length !== n) this.micSamples = new Uint8Array(n);
+        analyser.getByteTimeDomainData(this.micSamples);
+        for (var k = 0; k < n; k++) mean += this.micSamples[k] / 128 - 1;
+        mean /= n;
+        for (var m = 0; m < n; m++) {
+          var b = this.micSamples[m] / 128 - 1 - mean;
+          sum += b * b;
+        }
+      }
+      this.micLevel = Math.sqrt(sum / n);
+      var now = performance.now();
+      if (this.micLevel >= this.micThreshold && now - this.micLastTrigger >= this.micCooldown * 1000) {
+        this.micLastTrigger = now;
+        this.micTriggerCount++;
+        this.triggerMicStartle();
+      }
+      this.syncMicControls();
+    },
+
+    triggerMicStartle: function () {
+      var marker = this.marker;
+      if (!marker || !marker.object3D || !marker.object3D.visible) return;
+      var list = this.activeFishList();
+      if (!list.length) return;
+      list.forEach(function (fish) { fish.startle(null); });
+      console.log('AOYU_MIC_STARTLE', this.micLevel.toFixed(3), 'count=' + this.micTriggerCount);
+    },
+
     /* ---------- 调试面板 ---------- */
     bindDebugPanel: function () {
       var self = this;
@@ -2096,7 +2268,38 @@
       var toggle = document.getElementById('debug-toggle');
       var statusText = document.getElementById('debug-status');
 
+      // 麦克风控制面板由脚本注入，主页面和所有调试工具页共用同一套参数。
+      var micRow = document.getElementById('db-mic-row');
+      if (!micRow) {
+        micRow = document.createElement('div');
+        micRow.id = 'db-mic-row';
+        micRow.className = 'db-row';
+        micRow.style.flexWrap = 'wrap';
+        micRow.innerHTML =
+          '<button id="db-mic">麦克风：关</button>' +
+          '<label style="flex:1 1 100px;display:flex;align-items:center;gap:4px;color:#8b98a9;font-size:11px">阈值 ' +
+            '<input id="db-mic-threshold" type="number" min="0.01" max="1" step="0.01" value="0.08" ' +
+              'style="width:52px;padding:4px;border-radius:5px;border:1px solid rgba(244,247,248,.22);background:#1d2632;color:#f4f7f8;font:inherit">' +
+          '</label>' +
+          '<label style="flex:1 1 100px;display:flex;align-items:center;gap:4px;color:#8b98a9;font-size:11px">冷却 ' +
+            '<input id="db-mic-cooldown" type="number" min="0.1" max="30" step="0.1" value="1.5" ' +
+              'style="width:48px;padding:4px;border-radius:5px;border:1px solid rgba(244,247,248,.22);background:#1d2632;color:#f4f7f8;font:inherit">s' +
+          '</label>';
+        var hint = panel.querySelector('.db-hint');
+        if (hint) panel.insertBefore(micRow, hint);
+        else panel.appendChild(micRow);
+      }
+      if (!document.getElementById('debug-mic')) {
+        var micStatus = document.createElement('div');
+        micStatus.id = 'debug-mic';
+        micStatus.className = 'db-status';
+        var hint2 = panel.querySelector('.db-hint');
+        if (hint2) panel.insertBefore(micStatus, hint2);
+        else panel.appendChild(micStatus);
+      }
+
       this.refreshDebug = function () {
+        self.syncMicControls();
         self.updateTankBox();
         var statusText2 = document.getElementById('debug-camera');
         if (statusText2) statusText2.textContent = self.cameraStatusText();
@@ -2146,6 +2349,31 @@
         toggle.click();
       });
 
+      var micBtn = document.getElementById('db-mic');
+      if (micBtn) micBtn.addEventListener('click', function () { self.toggleMic(); });
+      var micThreshold = document.getElementById('db-mic-threshold');
+      if (micThreshold) {
+        micThreshold.addEventListener('input', function () {
+          var value = Number(micThreshold.value);
+          if (isFinite(value)) {
+            self.micThreshold = clamp(value, 0.01, 1);
+            self.saveTuning();
+            self.syncMicControls();
+          }
+        });
+      }
+      var micCooldown = document.getElementById('db-mic-cooldown');
+      if (micCooldown) {
+        micCooldown.addEventListener('input', function () {
+          var value = Number(micCooldown.value);
+          if (isFinite(value)) {
+            self.micCooldown = clamp(value, 0.1, 30);
+            self.saveTuning();
+            self.syncMicControls();
+          }
+        });
+      }
+      this.syncMicControls();
       var tankBtn = document.getElementById('db-tank');
       if (tankBtn) tankBtn.addEventListener('click', function () { self.toggleTank(); });
       var tankEditorBtn = document.getElementById('db-tank-editor');
@@ -2211,7 +2439,9 @@
           tuning: fish.tuning,
           lightweight: !!this.lightweight,
           pcMode: !!this.pcMode,
-          hitBoxVisible: !!this.hitBoxVisible
+          hitBoxVisible: !!this.hitBoxVisible,
+          micThreshold: this.micThreshold,
+          micCooldown: this.micCooldown
         }));
       } catch (error) {
         /* 隐私模式之类写不了就算了 */
@@ -2220,7 +2450,15 @@
 
     applySavedTuning: function () {
       var saved = this.loadSavedTuning();
-      if (!saved || !saved.tuning) return;
+      if (!saved) return;
+      if (typeof saved.micThreshold === 'number' && isFinite(saved.micThreshold)) {
+        this.micThreshold = clamp(saved.micThreshold, 0.01, 1);
+      }
+      if (typeof saved.micCooldown === 'number' && isFinite(saved.micCooldown)) {
+        this.micCooldown = clamp(saved.micCooldown, 0.1, 30);
+      }
+      this.syncMicControls();
+      if (!saved.tuning) return;
       Object.keys(instances).forEach(function (key) {
         var fish = instances[key];
         if (!fish) return;
