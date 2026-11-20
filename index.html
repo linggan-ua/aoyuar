@@ -144,41 +144,71 @@
   .festival-scan-card {
     position: relative; display: flex; align-items: center; gap: 10px; text-align: left;
     margin: 0 auto 15px; padding: 9px 13px; border-radius: 14px;
-    color: #fff; background: linear-gradient(100deg, #0e9acb, #6651e6 64%, #9c49db);
-    border: 1px solid rgba(255,255,255,.68);
-    box-shadow: 0 5px 0 rgba(53,35,138,.72), 0 10px 22px rgba(53,35,138,.18);
-    transform: rotate(.4deg); overflow: hidden;
+    color: #3c3275; background: rgba(255,255,255,.72);
+    border: 1px dashed rgba(94,61,174,.36);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 3px 10px rgba(53,35,138,.09);
+    overflow: hidden;
   }
   .festival-scan-card::after {
     content: ""; position: absolute; right: -14px; top: -26px; width: 72px; height: 72px;
-    border: 14px solid rgba(255,255,255,.13); border-radius: 50%;
+    border: 14px solid rgba(108,74,198,.08); border-radius: 50%;
   }
   .scan-icon {
     flex: 0 0 38px; width: 38px; height: 38px; border-radius: 12px;
-    display: grid; place-items: center; background: #fff; color: #ee3f4f;
-    font: 900 23px/1 "Songti SC", serif; box-shadow: inset 0 -3px 0 rgba(219,56,76,.18);
+    display: grid; place-items: center; color: #fff;
+    background: linear-gradient(145deg, #21c5da, #5f58e6 70%, #8d46d7);
+    font: 900 23px/1 "Songti SC", serif;
+    box-shadow: inset 0 -3px 0 rgba(52,32,125,.22), 0 3px 7px rgba(62,43,143,.18);
   }
   .scan-copy { display: flex; flex-direction: column; min-width: 0; }
-  .scan-copy small { font-size: 10px; opacity: .84; letter-spacing: .08em; }
-  .scan-copy strong { font-size: 14px; letter-spacing: .03em; }
-  .scan-music { margin-left: auto; font-size: 25px; opacity: .82; }
+  .scan-copy small { color: #706c91; font-size: 10px; letter-spacing: .08em; }
+  .scan-copy strong { color: #38257e; font-size: 14px; letter-spacing: .03em; }
+  .scan-music { margin-left: auto; color: #a27adf; font-size: 25px; opacity: .72; }
+  .start-action { position: relative; width: min(100%, 320px); margin: 0 auto; }
+  .tap-guide {
+    position: absolute; right: 5px; top: -24px; z-index: 2; display: flex; align-items: center; gap: 2px;
+    color: #51258f; font-size: 11px; font-weight: 900; letter-spacing: .08em;
+    animation: tapGuide 1.25s ease-in-out infinite; pointer-events: none;
+  }
+  .tap-finger { display: inline-block; font-size: 22px; line-height: 1; filter: drop-shadow(0 2px 0 rgba(255,255,255,.9)); transform-origin: 50% 100%; }
+  @keyframes tapGuide {
+    0%, 100% { transform: translateY(0) rotate(-5deg); opacity: .82; }
+    45% { transform: translateY(-6px) rotate(-5deg); opacity: 1; }
+    62% { transform: translateY(1px) rotate(-5deg); opacity: 1; }
+  }
   #start-ar-button {
-    width: min(100%, 310px); min-width: 0; padding: 14px 18px; border-radius: 16px;
-    border: 2px solid rgba(255,255,255,.96);
-    background: linear-gradient(180deg, #21d7e3 0%, #3d7ef2 48%, #7840e6 100%);
-    color: #fff; font-size: 17px; font-weight: 900; letter-spacing: .08em;
-    font-family: inherit; cursor: pointer; text-shadow: 0 2px 0 rgba(40,26,115,.48);
+    position: relative; width: 100%; min-width: 0; padding: 16px 18px; border-radius: 16px;
+    border: 3px solid rgba(255,255,255,.98);
+    background: linear-gradient(180deg, #fff77c 0%, #ffd84d 46%, #ffab32 100%);
+    color: #3e2079; font-size: 18px; font-weight: 900; letter-spacing: .08em;
+    font-family: inherit; cursor: pointer; text-shadow: 0 1px 0 rgba(255,255,255,.72);
     box-shadow:
-      0 7px 0 #302078,
-      0 13px 26px rgba(46,29,132,.32),
-      inset 0 2px 0 rgba(255,255,255,.4);
+      0 8px 0 #6b2d9d,
+      0 16px 30px rgba(60,31,129,.34),
+      inset 0 3px 0 rgba(255,255,255,.74);
+    animation: ctaPulse 2s ease-in-out infinite;
+    overflow: hidden;
     transition: transform .18s ease, box-shadow .25s ease, opacity .2s ease, filter .2s ease;
   }
-  #start-ar-button:active { transform: translateY(5px) scale(.985); box-shadow: 0 2px 0 #302078, 0 6px 14px rgba(46,29,132,.24), inset 0 2px 0 rgba(255,255,255,.35); }
+  #start-ar-button::after {
+    content: ""; position: absolute; top: -45%; left: -35%; width: 32%; height: 190%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.78), transparent);
+    transform: rotate(20deg); animation: ctaShine 2.8s ease-in-out infinite;
+  }
+  @keyframes ctaPulse {
+    0%, 100% { box-shadow: 0 8px 0 #6b2d9d, 0 16px 30px rgba(60,31,129,.34), 0 0 0 0 rgba(255,225,74,.55), inset 0 3px 0 rgba(255,255,255,.74); }
+    50% { box-shadow: 0 8px 0 #6b2d9d, 0 18px 34px rgba(60,31,129,.4), 0 0 0 10px rgba(255,225,74,0), inset 0 3px 0 rgba(255,255,255,.74); }
+  }
+  @keyframes ctaShine { 0%, 34% { left: -45%; } 60%, 100% { left: 118%; } }
+  #start-ar-button:active {
+    transform: translateY(6px) scale(.985); animation: none;
+    box-shadow: 0 2px 0 #6b2d9d, 0 6px 14px rgba(46,29,132,.26), inset 0 2px 0 rgba(255,255,255,.55);
+  }
   #start-ar-button[disabled] {
-    opacity: .56; cursor: default; filter: grayscale(.45);
+    opacity: .56; cursor: default; filter: grayscale(.45); animation: none;
     box-shadow: 0 4px 0 rgba(48,32,120,.6);
   }
+  #start-ar-button[disabled]::after { display: none; }
   .start-privacy { display: block; margin-top: 12px; color: #47366f; font-size: 10.5px; line-height: 1.55; font-weight: 700; }
   .start-note { position: absolute; left: 50%; bottom: calc(8px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 6; color: rgba(44,30,103,.66); font-size: 11px; white-space: nowrap; }
   .start-note b { color: #342079; font-weight: 900; }
@@ -204,6 +234,9 @@
     .festival-scan-card { margin-bottom: 12px; padding: 7px 12px; }
     #start-ar-button { padding: 12px 16px; }
     .start-privacy { margin-top: 9px; font-size: 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .music-note, .festival-eq i, .tap-guide, #start-ar-button, #start-ar-button::after { animation: none !important; }
   }
 
   /* 只有 iOS / 微信这种"必须先有用户手势"的环境才会出现 */
@@ -396,10 +429,13 @@
       <div class="festival-en">FOSHAN RICE FIELD · CHINESE TREND MUSIC FESTIVAL</div>
       <div class="festival-scan-card">
         <span class="scan-icon" aria-hidden="true">鲤</span>
-        <span class="scan-copy"><small>扫描鲤鱼识别码</small><strong>唤醒稻田里的双鱼</strong></span>
+        <span class="scan-copy"><small>扫描舞台上的鲤鱼识别码</small><strong>唤醒稻田里的双鱼</strong></span>
         <span class="scan-music" aria-hidden="true">♪</span>
       </div>
-      <button id="start-ar-button" type="button" disabled>资源准备中…</button>
+      <div class="start-action">
+        <span class="tap-guide" aria-hidden="true"><span class="tap-finger">👆</span>点这里</span>
+        <button id="start-ar-button" type="button" disabled>资源准备中…</button>
+      </div>
       <span class="start-privacy">进入时会请求摄像头和麦克风权限<br>麦克风只用于现场鼓点检测，不录制、不上传</span>
     </div>
 
@@ -437,7 +473,7 @@
       </svg>
     </div>
 
-    <div class="start-note">电脑上按 <b>F</b> 键可全屏 / 再按一次退出</div>
+    <!-- <div class="start-note">电脑上按 <b>F</b> 键可全屏 / 再按一次退出</div> -->
   </div>
 
   <div id="hint">正在打开相机…</div>
