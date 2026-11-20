@@ -1071,7 +1071,7 @@
     switchTimer: null,
     lastNoteIndex: -1,
     players: [],
-    // 麦克风响度监听。默认不在后台申请权限，必须由调试面板按钮触发。
+    // 麦克风瞬态检测：进入 AR 时自动申请权限，抓大鼓这类短促强峰。
     micEnabled: false,
     micStarting: false,
     micStream: null,
@@ -1079,11 +1079,16 @@
     micAnalyser: null,
     micContext: null,
     micTimer: null,
-    micLevel: 0,
-    micThreshold: 0.08,       // RMS，0..1
-    micCooldown: 1.5,         // 秒
+    micLevel: 0,              // 当前峰值，0..1
+    micRms: 0,
+    micCrest: 0,              // peak / rms，越高越像鼓点/瞬态
+    micBaseline: 0.01,        // 缓慢跟随现场底噪/持续音乐
+    micThreshold: 0.40,       // 峰值触发线，0..1
+    micCooldown: 0.45,        // 两次鼓点触发的最小间隔（秒）
     micLastTrigger: 0,
+    micIgnoreUntil: 0,        // 启动后的短暂校准期，避免点“进入”的声音误触发
     micTriggerCount: 0,
+    micUiAt: 0,
     micError: '',
     micSamples: null,
     micStreamHandlers: null,
@@ -1199,12 +1204,13 @@
         if (button.disabled) return;
         self.resumeAudio();
         button.disabled = true;
-        button.textContent = '正在打开相机…';
+        button.textContent = '正在请求摄像头和麦克风…';
         console.log('AOYU_START_TAP');
         // 启动页先留着：AR.js 的 video 刚插进 DOM 时还没定尺寸，那一刻会看到
         // "小画面 + 四周黑边"，随后才被拉到 cover。等 onCameraLive 再收，就不会看到这段过渡。
         self.pendingStart = true;
         if (window.AOYU_USE_IMAGE_TRACKER) {
+          self.startMic({ source: 'startup' });
           overlay.classList.add('hidden');
           self.pendingStart = false;
           // 相机交给 image-tracker；它开不起来时会把提示写在 #ar-error 上，
@@ -1215,15 +1221,18 @@
         }
         var video = self.findArVideo();
         if (video && self.isVideoLive(video)) {
+          self.startMic({ source: 'startup' });
           // 相机在点按钮之前就已经就绪（AR.js 一加载就开相机，这是常态）：
           // 直接进。这里不能走 onCameraLive——它开头有 if (cameraReady) return，
           // 而 cameraReady 早就被置过了，会直接把启动页卡住。
           self.closeStartOverlay();
           self.onCameraLive();
         } else if (video && video.srcObject) {
+          self.startMic({ source: 'startup' });
           self.attachStream(video, video.srcObject);   // 有流但还没出画面：踢一下
         } else {
-          self.openCameraByGesture();
+          // 摄像头和麦克风放在同一次 getUserMedia 里申请，手机端只弹一轮权限。
+          self.openCameraByGesture(true);
         }
         // 兜底：8 秒还没画面就报错并把启动页收掉，不让人干等
         setTimeout(function () {
@@ -1321,7 +1330,9 @@
       window.addEventListener('camera-error', function (event) {
         self.showGate((event && (event.error || (event.detail && event.detail.error))) || null);
       });
-      this.gateEl.addEventListener('click', function () { self.openCameraByGesture(); });
+      this.gateEl.addEventListener('click', function () {
+        self.openCameraByGesture(!self.micEnabled && !self.micError);
+      });
 
       // 记录视频尺寸变化：iPhone 靠近时系统自动切镜头会走这里，日志里能直接看出来
       window.addEventListener('arjs-video-loaded', function (event) {
@@ -1620,7 +1631,7 @@
     },
 
     /** 只有用户点过之后才会走到这里：这一步在"用户手势"里，iOS/微信才肯弹权限、才给流 */
-    openCameraByGesture: function () {
+    openCameraByGesture: function (withAudio) {
       var self = this;
       this.errorEl.textContent = '';
       this.gateEl.classList.remove('show');
@@ -1628,16 +1639,59 @@
         this.showCameraError({ name: 'NotSupported' });
         return;
       }
-      navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+      var wantAudio = withAudio === true;
+      var video = { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } };
+      var audio = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+      if (wantAudio) {
+        this.micError = '';
+        this.micStarting = true;
+        this.setAudioSessionType('play-and-record');
+        this.syncMicControls();
+      }
+
+      var open = function (audioConstraints) {
+        return navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: video });
+      };
+
+      open(wantAudio ? audio : false).catch(function (error) {
+        if (!wantAudio) throw error;
+        // 麦克风被拒绝或占用时不能拖死 AR：记录麦克风错误，立刻重试纯视频。
+        self.failMic(error);
+        console.warn('AOYU_MIC_CAMERA_FALLBACK_VIDEO_ONLY', error && error.name);
+        return open(false);
       }).then(function (stream) {
-        var video = self.findArVideo();
-        if (!video) {
-          self.pendingStream = stream;      // AR.js 连 video 元素都还没建出来，等它建好再接
+        var audioTracks = stream.getAudioTracks ? stream.getAudioTracks() : [];
+        var videoTracks = stream.getVideoTracks ? stream.getVideoTracks() : [];
+        var videoStream = stream;
+
+        if (wantAudio && audioTracks.length && videoTracks.length && window.MediaStream) {
+          // 音轨只交给分析器，视频轨只交给 AR.js；关麦克风时不会误杀摄像头。
+          var microphoneStream = new MediaStream(audioTracks);
+          videoStream = new MediaStream(videoTracks);
+          try {
+            self.attachMicStream(microphoneStream, { source: 'startup-combined' });
+          } catch (error) {
+            microphoneStream.getTracks().forEach(function (track) { track.stop(); });
+            self.failMic(error);
+          }
+        } else if (wantAudio && audioTracks.length) {
+          try {
+            self.attachMicStream(stream, { source: 'startup-combined' });
+          } catch (error) {
+            self.failMic(error);
+          }
+        } else if (wantAudio) {
+          self.micStarting = false;
+          self.micError = '麦克风没有返回音轨';
+          self.syncMicControls();
+        }
+
+        var videoEl = self.findArVideo();
+        if (!videoEl) {
+          self.pendingStream = videoStream; // AR.js 连 video 元素都还没建出来，等它建好再接
           return;
         }
-        self.attachStream(video, stream);
+        self.attachStream(videoEl, videoStream);
       }).catch(function (error) {
         self.showCameraError(error);
       });
@@ -2107,12 +2161,14 @@
       console.log('AOYU_TANK_BOX', this.tankVisible ? 'on' : 'off');
     },
 
-    /* ---------- 麦克风响度监听 ---------- */
+    /* ---------- 麦克风瞬态/鼓点监听 ---------- */
     micStatusText: function () {
       if (this.micStarting) return '麦克风：请求权限…';
       if (!this.micEnabled) return this.micError ? '麦克风：' + this.micError : '麦克风：关';
-      return '麦克风：开　响度 ' + Number(this.micLevel || 0).toFixed(3) +
-        '　阈值 ' + Number(this.micThreshold).toFixed(3) +
+      return '麦克风：开　峰值 ' + Number(this.micLevel || 0).toFixed(3) +
+        '　底噪 ' + Number(this.micBaseline || 0).toFixed(3) +
+        '　锐度 ' + Number(this.micCrest || 0).toFixed(1) +
+        '　阈值 ' + Number(this.micThreshold).toFixed(2) +
         '　冷却 ' + Number(this.micCooldown).toFixed(1) + 's' +
         '　触发 ' + this.micTriggerCount;
     },
@@ -2126,8 +2182,8 @@
       }
       var threshold = document.getElementById('db-mic-threshold');
       var cooldown = document.getElementById('db-mic-cooldown');
-      if (threshold && document.activeElement !== threshold) threshold.value = Number(this.micThreshold).toFixed(3);
-      if (cooldown && document.activeElement !== cooldown) cooldown.value = Number(this.micCooldown).toFixed(1);
+      if (threshold && document.activeElement !== threshold) threshold.value = Number(this.micThreshold).toFixed(2);
+      if (cooldown && document.activeElement !== cooldown) cooldown.value = Number(this.micCooldown).toFixed(2);
       var status = document.getElementById('debug-mic');
       if (status) status.textContent = this.micStatusText();
     },
@@ -2165,115 +2221,139 @@
       this.startMic();
     },
 
-    startMic: function () {
-      var self = this;
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        this.micError = '浏览器不支持麦克风';
-        this.syncMicControls();
-        return;
-      }
+    /** 主音频上下文只建一次；麦克风和点鱼音符共用，手机 Safari 才不会 InvalidStateError。 */
+    ensureMicAudioContext: function () {
       var AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContext) {
-        this.micError = '浏览器不支持音频分析';
-        this.syncMicControls();
-        return;
-      }
-      this.micError = '';
-      this.micStarting = true;
-      this.syncMicControls();
-      this.setAudioSessionType('play-and-record');
-
-      // 手机 Safari/WebView 不能像桌面一样随手多开 AudioContext。优先复用点击音符时
-      // 已经由用户手势唤醒的主上下文，避免 createMediaStreamSource 报 InvalidStateError。
+      if (!AudioContext) throw new Error('浏览器不支持音频分析');
       var context = this.audioCtx;
       if (!context || context.state === 'closed') {
         context = new AudioContext();
         this.audioCtx = context;
       }
       this.micContext = context;
-      if (context.state === 'suspended' && context.resume) {
-        var resumePromise = context.resume();
-        if (resumePromise && resumePromise.catch) resumePromise.catch(function () {});
+      if ((context.state === 'suspended' || context.state === 'interrupted') && context.resume) {
+        var resumed = context.resume();
+        if (resumed && resumed.catch) resumed.catch(function () {});
+      }
+      return context;
+    },
+
+    /** 把已有音轨接入分析器。启动时摄像头和麦克风可以合并成一次 getUserMedia。 */
+    attachMicStream: function (stream, options) {
+      var self = this;
+      options = options || {};
+      var tracks = stream.getAudioTracks ? stream.getAudioTracks() : [];
+      var liveTrack = tracks.filter(function (track) { return track.readyState === 'live'; })[0];
+      if (!liveTrack) {
+        var noTrack = new Error('麦克风流里没有可用的音轨');
+        noTrack.name = 'InvalidStateError';
+        throw noTrack;
+      }
+      var context = this.ensureMicAudioContext();
+      var source = null;
+      var analyser = null;
+      try {
+        source = context.createMediaStreamSource(stream);
+        analyser = context.createAnalyser();
+        analyser.fftSize = 2048;   // 约 43ms 窗口，连续采样时能包住大鼓瞬态
+        analyser.smoothingTimeConstant = 0.2;
+        source.connect(analyser);
+      } catch (error) {
+        if (source && source.disconnect) source.disconnect();
+        throw error;
       }
 
-      var connect = function (stream) {
-        var tracks = stream.getAudioTracks ? stream.getAudioTracks() : [];
-        var liveTrack = tracks.filter(function (track) { return track.readyState === 'live'; })[0];
-        if (!liveTrack) {
-          stream.getTracks().forEach(function (track) { track.stop(); });
-          var noTrack = new Error('麦克风流里没有可用的音轨');
-          noTrack.name = 'InvalidStateError';
-          throw noTrack;
-        }
-        if (!context || context.state === 'closed') {
-          stream.getTracks().forEach(function (track) { track.stop(); });
-          var badContext = new Error('音频上下文已关闭');
-          badContext.name = 'InvalidStateError';
-          throw badContext;
-        }
+      this.micStream = stream;
+      this.micAnalyser = analyser;
+      this.micSource = source;
+      this.micEnabled = true;
+      this.micStarting = false;
+      this.micError = '';
+      this.micLevel = 0;
+      this.micRms = 0;
+      this.micCrest = 0;
+      this.micBaseline = 0.01;
+      this.micLastTrigger = 0;
+      this.micTriggerCount = 0;
+      this.micUiAt = 0;
+      this.micIgnoreUntil = performance.now() + 700;
 
-        var source;
-        var analyser;
+      var onEnded = function () {
+        if (self.micStream !== stream) return;
+        self.micError = '麦克风连接已断开';
+        self.stopMic();
+        self.syncMicControls();
+        console.warn('AOYU_MIC_TRACK_ENDED');
+      };
+      liveTrack.addEventListener('ended', onEnded);
+      this.micStreamHandlers = { stream: stream, track: liveTrack, onEnded: onEnded };
+
+      this.setAudioSessionType('play-and-record');
+      if (context.state === 'suspended' || context.state === 'interrupted') {
+        var resumedAfterSource = context.resume();
+        if (resumedAfterSource && resumedAfterSource.catch) resumedAfterSource.catch(function () {});
+      }
+      if (this.micTimer) clearInterval(this.micTimer);
+      this.micTimer = setInterval(function () { self.micTick(); }, 40);
+      this.syncMicControls();
+      console.log('AOYU_MIC_ON', context.state, options.source || '');
+      return true;
+    },
+
+    failMic: function (error) {
+      this.micError = this.microphoneErrorMessage(error);
+      if (this.micStream) {
+        this.micStream.getTracks().forEach(function (track) { track.stop(); });
+        this.micStream = null;
+      }
+      this.stopMic();
+      this.syncMicControls();
+      console.warn('AOYU_MIC_ERROR', this.micError);
+    },
+
+    startMic: function (options) {
+      var self = this;
+      options = options || {};
+      if (this.micStarting) return Promise.resolve(false);
+      if (this.micEnabled) return Promise.resolve(true);
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        this.micError = '浏览器不支持麦克风';
+        this.syncMicControls();
+        return Promise.resolve(false);
+      }
+      try {
+        this.ensureMicAudioContext();
+      } catch (error) {
+        this.micError = error.message || '浏览器不支持音频分析';
+        this.syncMicControls();
+        return Promise.resolve(false);
+      }
+      this.micError = '';
+      this.micStarting = true;
+      this.setAudioSessionType('play-and-record');
+      this.syncMicControls();
+
+      var attach = function (stream) {
         try {
-          source = context.createMediaStreamSource(stream);
-          analyser = context.createAnalyser();
-          analyser.fftSize = 1024;
-          analyser.smoothingTimeConstant = 0.2;
-          source.connect(analyser);
+          self.attachMicStream(stream, { source: options.source || 'audio-request' });
+          return true;
         } catch (error) {
-          if (source && source.disconnect) source.disconnect();
           stream.getTracks().forEach(function (track) { track.stop(); });
           throw error;
         }
-
-        self.micStream = stream;
-        self.micAnalyser = analyser;
-        self.micSource = source;
-        self.micEnabled = true;
-        self.micStarting = false;
-        self.micLevel = 0;
-        self.micLastTrigger = 0;
-        self.micTriggerCount = 0;
-
-        var onEnded = function () {
-          if (self.micStream !== stream) return;
-          self.micError = '麦克风连接已断开';
-          self.stopMic();
-          self.syncMicControls();
-          console.warn('AOYU_MIC_TRACK_ENDED');
-        };
-        liveTrack.addEventListener('ended', onEnded);
-        self.micStreamHandlers = { stream: stream, track: liveTrack, onEnded: onEnded };
-
-        if (context.state === 'suspended' && context.resume) {
-          var resumedAfterSource = context.resume();
-          if (resumedAfterSource && resumedAfterSource.catch) resumedAfterSource.catch(function () {});
-        }
-        self.micTimer = setInterval(function () { self.micTick(); }, 50);
-        self.syncMicControls();
-        console.log('AOYU_MIC_ON', context.state);
       };
-
       var primary = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
-      navigator.mediaDevices.getUserMedia({ audio: primary }).then(connect).catch(function (error) {
+      return navigator.mediaDevices.getUserMedia({ audio: primary }).then(attach).catch(function (error) {
         // 某些手机不接受关闭 AEC/NS/AGC 的约束，自动退到最普通的音轨请求。
         if (error && (error.name === 'InvalidStateError' || error.name === 'OverconstrainedError' ||
             error.name === 'NotSupportedError' || error.name === 'TypeError')) {
           console.warn('AOYU_MIC_RETRY_BASIC', error.name);
-          return navigator.mediaDevices.getUserMedia({ audio: true }).then(connect);
+          return navigator.mediaDevices.getUserMedia({ audio: true }).then(attach);
         }
         throw error;
       }).catch(function (error) {
-        self.micStarting = false;
-        self.micEnabled = false;
-        self.micError = self.microphoneErrorMessage(error);
-        if (self.micStream) {
-          self.micStream.getTracks().forEach(function (track) { track.stop(); });
-          self.micStream = null;
-        }
-        self.stopMic();
-        self.syncMicControls();
-        console.warn('AOYU_MIC_ERROR', self.micError);
+        self.failMic(error);
+        return false;
       });
     },
 
@@ -2303,6 +2383,11 @@
       this.micEnabled = false;
       this.micStarting = false;
       this.micLevel = 0;
+      this.micRms = 0;
+      this.micCrest = 0;
+      this.micBaseline = 0.01;
+      this.micUiAt = 0;
+      this.micIgnoreUntil = 0;
       this.setAudioSessionType('playback');
       this.syncMicControls();
       console.log('AOYU_MIC_OFF');
@@ -2314,6 +2399,7 @@
       var n = analyser.fftSize;
       var mean = 0;
       var sum = 0;
+      var peak = 0;
       try {
         if (analyser.getFloatTimeDomainData) {
           if (!this.micSamples || this.micSamples.length !== n) this.micSamples = new Float32Array(n);
@@ -2323,6 +2409,7 @@
           for (var j = 0; j < n; j++) {
             var v = this.micSamples[j] - mean;
             sum += v * v;
+            if (Math.abs(v) > peak) peak = Math.abs(v);
           }
         } else {
           if (!this.micSamples || this.micSamples.length !== n) this.micSamples = new Uint8Array(n);
@@ -2332,6 +2419,7 @@
           for (var m = 0; m < n; m++) {
             var b = this.micSamples[m] / 128 - 1 - mean;
             sum += b * b;
+            if (Math.abs(b) > peak) peak = Math.abs(b);
           }
         }
       } catch (error) {
@@ -2340,14 +2428,34 @@
         this.stopMic();
         return;
       }
-      this.micLevel = Math.sqrt(sum / n);
+      var rms = Math.sqrt(sum / n);
+      var baselineBefore = Math.max(this.micBaseline || 0, 0.006);
+      var crest = rms > 1e-5 ? peak / rms : 0;
       var now = performance.now();
-      if (this.micLevel >= this.micThreshold && now - this.micLastTrigger >= this.micCooldown * 1000) {
+      this.micLevel = peak;
+      this.micRms = rms;
+      this.micCrest = crest;
+
+      // 三个条件同时满足才当作大鼓：绝对峰值够大、波形足够尖、比现场底噪明显突起。
+      var strong = peak >= this.micThreshold;
+      var sharp = crest >= 1.65;
+      var sudden = peak >= baselineBefore * 1.5;
+      if (now >= this.micIgnoreUntil && strong && sharp && sudden &&
+          now - this.micLastTrigger >= this.micCooldown * 1000) {
         this.micLastTrigger = now;
         this.micTriggerCount++;
         this.triggerMicStartle();
       }
-      this.syncMicControls();
+
+      // 上升慢、下降快：正常音乐/底噪会缓慢抬高基线，大鼓瞬态不会立刻把基线带高。
+      var follow = peak > this.micBaseline ? 0.012 : 0.1;
+      this.micBaseline += (peak - this.micBaseline) * follow;
+
+      // 状态文字每秒最多刷新 5 次，避免分析线程每 40ms 都碰 DOM。
+      if (now - this.micUiAt >= 200) {
+        this.micUiAt = now;
+        this.syncMicControls();
+      }
     },
 
     triggerMicStartle: function () {
@@ -2356,7 +2464,9 @@
       var list = this.activeFishList();
       if (!list.length) return;
       list.forEach(function (fish) { fish.startle(null); });
-      console.log('AOYU_MIC_STARTLE', this.micLevel.toFixed(3), 'count=' + this.micTriggerCount);
+      console.log('AOYU_MIC_PEAK', 'peak=' + this.micLevel.toFixed(3),
+        'rms=' + this.micRms.toFixed(3), 'crest=' + this.micCrest.toFixed(2),
+        'base=' + this.micBaseline.toFixed(3), 'count=' + this.micTriggerCount);
     },
 
     /* ---------- Pattern 识别阈值 ---------- */
@@ -2407,12 +2517,12 @@
         micRow.style.flexWrap = 'wrap';
         micRow.innerHTML =
           '<button id="db-mic">麦克风：关</button>' +
-          '<label style="flex:1 1 100px;display:flex;align-items:center;gap:4px;color:#8b98a9;font-size:11px">阈值 ' +
-            '<input id="db-mic-threshold" type="number" min="0.01" max="1" step="0.01" value="0.08" ' +
+          '<label style="flex:1 1 100px;display:flex;align-items:center;gap:4px;color:#8b98a9;font-size:11px">峰值 ' +
+            '<input id="db-mic-threshold" type="number" min="0.05" max="1" step="0.01" value="0.40" ' +
               'style="width:52px;padding:4px;border-radius:5px;border:1px solid rgba(244,247,248,.22);background:#1d2632;color:#f4f7f8;font:inherit">' +
           '</label>' +
           '<label style="flex:1 1 100px;display:flex;align-items:center;gap:4px;color:#8b98a9;font-size:11px">冷却 ' +
-            '<input id="db-mic-cooldown" type="number" min="0.1" max="30" step="0.1" value="1.5" ' +
+            '<input id="db-mic-cooldown" type="number" min="0.1" max="30" step="0.05" value="0.45" ' +
               'style="width:48px;padding:4px;border-radius:5px;border:1px solid rgba(244,247,248,.22);background:#1d2632;color:#f4f7f8;font:inherit">s' +
           '</label>';
         var hint = panel.querySelector('.db-hint');
@@ -2512,7 +2622,7 @@
         micThreshold.addEventListener('input', function () {
           var value = Number(micThreshold.value);
           if (isFinite(value)) {
-            self.micThreshold = clamp(value, 0.01, 1);
+            self.micThreshold = clamp(value, 0.05, 1);
             self.saveTuning();
             self.syncMicControls();
           }
@@ -2608,6 +2718,7 @@
           lightweight: !!this.lightweight,
           pcMode: !!this.pcMode,
           hitBoxVisible: !!this.hitBoxVisible,
+          micDetectorVersion: 2,
           micThreshold: this.micThreshold,
           micCooldown: this.micCooldown,
           patternConfidence: this.patternConfidence
@@ -2620,11 +2731,14 @@
     applySavedTuning: function () {
       var saved = this.loadSavedTuning();
       if (!saved) return;
-      if (typeof saved.micThreshold === 'number' && isFinite(saved.micThreshold)) {
-        this.micThreshold = clamp(saved.micThreshold, 0.01, 1);
-      }
-      if (typeof saved.micCooldown === 'number' && isFinite(saved.micCooldown)) {
-        this.micCooldown = clamp(saved.micCooldown, 0.1, 30);
+      // v2 以前保存的是 RMS 阈值，和现在的“峰值/瞬态”不是一回事，不能混用。
+      if (saved.micDetectorVersion === 2) {
+        if (typeof saved.micThreshold === 'number' && isFinite(saved.micThreshold)) {
+          this.micThreshold = clamp(saved.micThreshold, 0.05, 1);
+        }
+        if (typeof saved.micCooldown === 'number' && isFinite(saved.micCooldown)) {
+          this.micCooldown = clamp(saved.micCooldown, 0.1, 30);
+        }
       }
       if (typeof saved.patternConfidence === 'number' && isFinite(saved.patternConfidence)) {
         this.patternConfidence = clamp(saved.patternConfidence, 0.30, 0.90);

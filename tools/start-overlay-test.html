@@ -79,6 +79,7 @@
   .start-hero-sub { margin-top: 10px; font-size: 14px; color: #9aa89f; }
   .start-tips { color: #9fb3a9; font-size: 13px; line-height: 1.9; }
   .start-tips b { color: #05f8ab; font-weight: 600; }
+  .start-privacy { color: #6d7f77; font-size: 12px; line-height: 1.7; }
   #start-ar-button {
     min-width: min(78vw, 340px); padding: 17px 26px; border-radius: 999px;
     border: 1.5px solid rgba(5, 248, 171, .75);
@@ -208,7 +209,7 @@
 <script src="../js/tank-config.js?v=1"></script>
 <script src="../js/tank-cube.js?v=27"></script>
 <script>window.AOYU_DEBUG = true;   // 工具页始终显示调试入口</script>
-<script src="../js/aoyu-ar.js?v=153"></script>
+<script src="../js/aoyu-ar.js?v=156"></script>
 </head>
 <body>
 
@@ -263,7 +264,9 @@
   <!-- 启动页（还原老版本）-->
   <div id="start-overlay" class="start-overlay">
     <div class="start-hero"><div class="start-hero-title">鲤鱼 AR</div><div class="start-hero-sub">扫描 kanji 测试码 · 验证鱼缸空间和游动</div></div>
-    <div class="start-tips">扫描 <b>kanji 测试码</b>，验证 AR 空间<br>首次进入请点击「允许/Allow」授权摄像头</div>
+    <div class="start-tips">扫描 <b>kanji 测试码</b>，验证 AR 空间<br>
+      <span class="start-privacy">进入时会请求摄像头和麦克风权限<br>麦克风只用于现场鼓点检测，不录制、不上传</span>
+    </div>
     <button id="start-ar-button" type="button" disabled>资源准备中…</button>
     <div class="start-note">电脑上按 <b>F</b> 键可全屏 / 再按一次退出</div>
   </div>
