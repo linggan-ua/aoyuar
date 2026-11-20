@@ -53,50 +53,158 @@
     pointer-events: auto; white-space: pre-wrap;
   }
 
-  /* ---------- 启动页（还原老版本：标题图 + 进入按钮）---------- */
+  /* ---------- 启动页：稻田国潮音乐节纸艺拼贴风 ---------- */
   .start-overlay {
     position: fixed; inset: 0; z-index: 100;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 20px; padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
-    /* 底色取自标题图：近黑带一点墨绿 */
-    background: radial-gradient(120% 90% at 50% 38%, #071712 0%, #020806 58%, #000 100%);
-    color: #eaf6f1; text-align: center;
-    pointer-events: auto;
+    display: flex; align-items: center; justify-content: center;
+    padding: calc(18px + env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom));
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 50% 12%, rgba(255,255,255,.82) 0 5%, rgba(255,255,255,0) 42%),
+      linear-gradient(145deg, #ffb3b4 0%, #8fd8ea 22%, #b9f1e9 46%, #94c9ff 67%, #d5a9e7 100%);
+    color: #fff; text-align: center; pointer-events: auto;
     transition: opacity .45s ease, visibility .45s ease;
   }
+  .start-overlay::before {
+    content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+    opacity: .17; mix-blend-mode: soft-light;
+    background-image:
+      radial-gradient(circle at 20% 30%, #fff 0 1px, transparent 1.5px),
+      radial-gradient(circle at 70% 65%, #2b236d 0 1px, transparent 1.5px);
+    background-size: 18px 18px, 23px 23px;
+  }
   .start-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
-  /* 启动页海报（竖版）：尽量放大到能看清上面的字，同时给下面的说明和按钮留位置 */
-  #start-poster {
-    max-height: 58vh; max-width: min(86vw, 420px); width: auto;
-    filter: drop-shadow(0 12px 44px rgba(5, 248, 171, .16));
+  .festival-scene { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .paper-ribbon {
+    position: absolute; border-radius: 999px; opacity: .84;
+    border-top: 2px solid rgba(255,255,255,.6);
+    box-shadow: inset 0 3px 0 rgba(255,255,255,.22), 0 10px 24px rgba(61,38,139,.16);
   }
-  .start-hero {
-    margin: 8px 0 18px; padding: 46px 20px; border-radius: 14px;
-    background: radial-gradient(ellipse at 30% 30%, rgba(63,163,140,.22), rgba(8,11,16,.92) 70%);
-    border: 1px solid rgba(200,162,90,.45); text-align: center;
+  .ribbon-a { width: 82vw; height: 15vh; left: -24vw; top: -8vh; transform: rotate(9deg); background: linear-gradient(120deg, #f8a9a5, #ffd9b7); }
+  .ribbon-b { width: 78vw; height: 13vh; right: -27vw; top: 2vh; transform: rotate(-12deg); background: linear-gradient(120deg, #d7b7f4, #91dce6); }
+  .ribbon-c { width: 54vw; height: 9vh; left: -18vw; top: 24vh; transform: rotate(-9deg); background: linear-gradient(120deg, #7adce8, #c9f4de); opacity: .55; }
+  .music-note {
+    position: absolute; color: #4a2b9a; opacity: .72; font: 900 30px/1 "Songti SC", serif;
+    text-shadow: 0 2px 0 rgba(255,255,255,.75); animation: festivalFloat 4.8s ease-in-out infinite;
   }
-  .start-hero-title { font: 700 44px/1.2 "Songti SC", serif; color: #f2ede2; }
-  .start-hero-sub { margin-top: 10px; font-size: 14px; color: #9aa89f; }
-  .start-tips { color: #9fb3a9; font-size: 13px; line-height: 1.9; }
-  .start-tips b { color: #05f8ab; font-weight: 600; }
-  .start-privacy { color: #6d7f77; font-size: 12px; line-height: 1.7; }
+  .note-a { left: 7%; top: 23%; transform: rotate(-12deg); }
+  .note-b { right: 8%; top: 18%; font-size: 38px; color: #e03d7a; animation-delay: -1.8s; transform: rotate(12deg); }
+  .note-c { right: 16%; top: 40%; font-size: 24px; color: #2a80d2; animation-delay: -3.2s; }
+  .sparkle { position: absolute; width: 12px; height: 12px; background: #fff8c9; transform: rotate(45deg); border-radius: 2px; box-shadow: 0 0 18px rgba(255,255,255,.9); opacity: .9; }
+  .sparkle-a { left: 15%; top: 39%; }
+  .sparkle-b { right: 13%; top: 31%; width: 8px; height: 8px; }
+  .sparkle-c { left: 23%; top: 12%; width: 7px; height: 7px; }
+  @keyframes festivalFloat { 0%, 100% { margin-top: 0; } 50% { margin-top: -10px; } }
+
+  .festival-frame {
+    position: relative; z-index: 4; width: min(92vw, 460px); box-sizing: border-box;
+    padding: 18px 18px 16px; border-radius: 28px 28px 34px 24px;
+    background: linear-gradient(155deg, rgba(249,255,255,.84), rgba(227,244,255,.66));
+    border: 2px solid rgba(255,255,255,.9);
+    box-shadow:
+      0 14px 0 rgba(55,35,145,.18),
+      0 28px 56px rgba(55,35,145,.32),
+      inset 0 1px 0 #fff,
+      inset 0 -1px 0 rgba(88,63,165,.18);
+    backdrop-filter: blur(12px) saturate(1.18);
+    -webkit-backdrop-filter: blur(12px) saturate(1.18);
+  }
+  .festival-topline { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .festival-pill, .festival-ar-pill {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 6px 10px; border-radius: 999px; font-size: 11px; font-weight: 900; letter-spacing: .08em;
+    box-shadow: 0 3px 0 rgba(54,34,132,.55), 0 7px 14px rgba(54,34,132,.14);
+  }
+  .festival-pill { color: #fff; background: linear-gradient(100deg, #178ed0, #6f48e6); transform: rotate(-2deg); }
+  .festival-ar-pill { color: #3a257e; background: linear-gradient(180deg, #ffe96a, #ffc940); transform: rotate(2deg); }
+  .festival-kicker {
+    margin: 14px 0 7px; display: flex; align-items: center; justify-content: center; gap: 8px;
+    color: #43238f; font-size: 12px; font-weight: 900; letter-spacing: .14em;
+  }
+  .festival-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 15px; }
+  .festival-eq i { width: 3px; border-radius: 99px; background: #7543df; animation: festivalEq 1s ease-in-out infinite alternate; }
+  .festival-eq i:nth-child(1) { height: 7px; }
+  .festival-eq i:nth-child(2) { height: 14px; animation-delay: -.4s; }
+  .festival-eq i:nth-child(3) { height: 10px; animation-delay: -.7s; }
+  @keyframes festivalEq { to { transform: scaleY(.42); opacity: .62; } }
+  .festival-title {
+    margin: 0; font-family: "STKaiti", "Kaiti SC", "KaiTi", "Songti SC", serif;
+    font-size: clamp(38px, 10.8vw, 58px); line-height: .93; font-weight: 900;
+    letter-spacing: .015em; color: #fff; transform: rotate(-1.2deg);
+  }
+  .festival-title span {
+    display: block; -webkit-text-stroke: 1.8px #342079; paint-order: stroke fill;
+    text-shadow: 0 3px 0 #8050df, 0 6px 0 #2d1975, 0 11px 18px rgba(47,25,112,.27);
+  }
+  .festival-title span + span { margin-top: 4px; color: #f8ffff; font-size: 1.04em; }
+  .festival-en {
+    margin: 9px auto 12px; max-width: 310px; color: #53398f;
+    font-size: 9px; line-height: 1.45; font-weight: 900; letter-spacing: .16em;
+  }
+  .festival-scan-card {
+    position: relative; display: flex; align-items: center; gap: 10px; text-align: left;
+    margin: 0 auto 15px; padding: 9px 13px; border-radius: 14px;
+    color: #fff; background: linear-gradient(100deg, #0e9acb, #6651e6 64%, #9c49db);
+    border: 1px solid rgba(255,255,255,.68);
+    box-shadow: 0 5px 0 rgba(53,35,138,.72), 0 10px 22px rgba(53,35,138,.18);
+    transform: rotate(.4deg); overflow: hidden;
+  }
+  .festival-scan-card::after {
+    content: ""; position: absolute; right: -14px; top: -26px; width: 72px; height: 72px;
+    border: 14px solid rgba(255,255,255,.13); border-radius: 50%;
+  }
+  .scan-icon {
+    flex: 0 0 38px; width: 38px; height: 38px; border-radius: 12px;
+    display: grid; place-items: center; background: #fff; color: #ee3f4f;
+    font: 900 23px/1 "Songti SC", serif; box-shadow: inset 0 -3px 0 rgba(219,56,76,.18);
+  }
+  .scan-copy { display: flex; flex-direction: column; min-width: 0; }
+  .scan-copy small { font-size: 10px; opacity: .84; letter-spacing: .08em; }
+  .scan-copy strong { font-size: 14px; letter-spacing: .03em; }
+  .scan-music { margin-left: auto; font-size: 25px; opacity: .82; }
   #start-ar-button {
-    min-width: min(58vw, 250px); padding: 17px 22px; border-radius: 999px;
-    border: 1.5px solid rgba(5, 248, 171, .75);
-    background: linear-gradient(180deg, rgba(5, 248, 171, .16), rgba(5, 248, 171, .05));
-    color: #05f8ab; font-size: 17px; font-weight: 700; letter-spacing: .1em;
-    font-family: inherit; cursor: pointer;
-    box-shadow: inset 0 0 0 1px rgba(5, 248, 171, .12), 0 10px 34px rgba(5, 248, 171, .10);
-    transition: transform .18s ease, box-shadow .25s ease, opacity .2s ease, color .2s ease;
+    width: min(100%, 310px); min-width: 0; padding: 14px 18px; border-radius: 16px;
+    border: 2px solid rgba(255,255,255,.96);
+    background: linear-gradient(180deg, #21d7e3 0%, #3d7ef2 48%, #7840e6 100%);
+    color: #fff; font-size: 17px; font-weight: 900; letter-spacing: .08em;
+    font-family: inherit; cursor: pointer; text-shadow: 0 2px 0 rgba(40,26,115,.48);
+    box-shadow:
+      0 7px 0 #302078,
+      0 13px 26px rgba(46,29,132,.32),
+      inset 0 2px 0 rgba(255,255,255,.4);
+    transition: transform .18s ease, box-shadow .25s ease, opacity .2s ease, filter .2s ease;
   }
-  #start-ar-button:active { transform: scale(.97); }
+  #start-ar-button:active { transform: translateY(5px) scale(.985); box-shadow: 0 2px 0 #302078, 0 6px 14px rgba(46,29,132,.24), inset 0 2px 0 rgba(255,255,255,.35); }
   #start-ar-button[disabled] {
-    opacity: .5; border-color: rgba(159, 179, 169, .45); color: #9fb3a9; box-shadow: none; cursor: default;
+    opacity: .56; cursor: default; filter: grayscale(.45);
+    box-shadow: 0 4px 0 rgba(48,32,120,.6);
   }
-  .start-note { color: #6d7f77; font-size: 12px; }
-  .start-note b { color: #05f8ab; font-weight: 700; }
-  /* 只有接鼠标/键盘的设备才提"按 F 全屏"（手机没有 F 键） */
+  .start-privacy { display: block; margin-top: 12px; color: #47366f; font-size: 10.5px; line-height: 1.55; font-weight: 700; }
+  .start-note { position: absolute; left: 50%; bottom: calc(8px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 6; color: rgba(44,30,103,.66); font-size: 11px; white-space: nowrap; }
+  .start-note b { color: #342079; font-weight: 900; }
   @media (pointer: coarse) { .start-note { display: none; } }
+
+  .festival-landscape { position: absolute; left: -5%; right: -5%; bottom: 0; height: 39vh; min-height: 230px; z-index: 2; overflow: hidden; pointer-events: none; }
+  .festival-wave {
+    position: absolute; left: -14%; width: 128%; border-radius: 50% 50% 0 0 / 30% 30% 0 0;
+    border-top: 2px solid rgba(255,255,255,.45); transform-origin: center bottom;
+    box-shadow: 0 -7px 0 rgba(255,255,255,.12), 0 -16px 26px rgba(53,37,143,.14);
+  }
+  .wave-back { height: 52%; bottom: 17%; transform: rotate(-3deg); background: linear-gradient(180deg, #ffd5ba, #f5a99f); }
+  .wave-mid { height: 54%; bottom: 5%; transform: rotate(2deg); background: linear-gradient(180deg, #94e0d5, #42b9c6 55%, #3689cd); }
+  .wave-front { height: 46%; bottom: -13%; transform: rotate(-1deg); background: linear-gradient(180deg, #e5b4e7, #b96dd7 52%, #784fbe); }
+  .wave-lines { position: absolute; left: 12%; right: 12%; bottom: 16%; height: 13%; opacity: .5; border-radius: 50%; background: repeating-linear-gradient(98deg, transparent 0 14px, rgba(255,255,255,.58) 15px 18px, transparent 19px 32px); transform: rotate(-2deg); }
+  .rice-frame { position: absolute; left: -2%; right: -2%; bottom: -4%; width: 104%; height: 92%; overflow: visible; filter: drop-shadow(0 8px 10px rgba(73,48,16,.16)); }
+
+  @media (max-height: 700px) {
+    .festival-frame { padding: 15px 15px 13px; }
+    .festival-kicker { margin-top: 10px; }
+    .festival-title { font-size: clamp(34px, 9.8vw, 48px); }
+    .festival-en { margin: 7px auto 9px; }
+    .festival-scan-card { margin-bottom: 12px; padding: 7px 12px; }
+    #start-ar-button { padding: 12px 16px; }
+    .start-privacy { margin-top: 9px; font-size: 10px; }
+  }
 
   /* 只有 iOS / 微信这种"必须先有用户手势"的环境才会出现 */
   #tap-gate {
@@ -207,7 +315,7 @@
 <script src="js/note-synth.js?v=1"></script>
 <script src="js/tank-config.js?v=1"></script>
 <script src="js/tank-cube.js?v=27"></script>
-<script src="js/aoyu-ar.js?v=159"></script>
+<script src="js/aoyu-ar.js?v=160"></script>
 </head>
 <body>
 
@@ -261,13 +369,74 @@
 </a-scene>
 
 <div id="ui">
-  <!-- 启动页（还原老版本）-->
+  <!-- 启动页：佛山市稻田国潮音乐节主题 -->
   <div id="start-overlay" class="start-overlay">
-    <div class="start-hero"><div class="start-hero-title">鲤鱼 AR</div><div class="start-hero-sub">扫描鲤鱼识别码 · 验证鱼缸空间和游动</div></div>
-    <div class="start-tips"><b>鱼跃龙门</b><br>扫描 <b>鲤鱼识别码</b><br>
+    <div class="festival-scene" aria-hidden="true">
+      <span class="paper-ribbon ribbon-a"></span>
+      <span class="paper-ribbon ribbon-b"></span>
+      <span class="paper-ribbon ribbon-c"></span>
+      <span class="music-note note-a">♪</span>
+      <span class="music-note note-b">♫</span>
+      <span class="music-note note-c">♪</span>
+      <span class="sparkle sparkle-a"></span>
+      <span class="sparkle sparkle-b"></span>
+      <span class="sparkle sparkle-c"></span>
+    </div>
+
+    <div class="festival-frame">
+      <div class="festival-topline">
+        <span class="festival-pill">2026 · 佛山高明</span>
+        <span class="festival-ar-pill">AR 互动体验</span>
+      </div>
+      <div class="festival-kicker">
+        <span class="festival-eq" aria-hidden="true"><i></i><i></i><i></i></span>
+        体彩之夜 · 国潮音浪
+      </div>
+      <h1 class="festival-title"><span>佛山市稻田</span><span>国潮音乐节</span></h1>
+      <div class="festival-en">FOSHAN RICE FIELD · CHINESE TREND MUSIC FESTIVAL</div>
+      <div class="festival-scan-card">
+        <span class="scan-icon" aria-hidden="true">鲤</span>
+        <span class="scan-copy"><small>扫描鲤鱼识别码</small><strong>唤醒稻田里的双鱼</strong></span>
+        <span class="scan-music" aria-hidden="true">♪</span>
+      </div>
+      <button id="start-ar-button" type="button" disabled>资源准备中…</button>
       <span class="start-privacy">进入时会请求摄像头和麦克风权限<br>麦克风只用于现场鼓点检测，不录制、不上传</span>
     </div>
-    <button id="start-ar-button" type="button" disabled>资源准备中…</button>
+
+    <div class="festival-landscape" aria-hidden="true">
+      <span class="festival-wave wave-back"></span>
+      <span class="festival-wave wave-mid"></span>
+      <span class="festival-wave wave-front"></span>
+      <span class="wave-lines"></span>
+      <svg class="rice-frame" viewBox="0 0 500 280" preserveAspectRatio="none">
+        <defs>
+          <g id="rice-cluster">
+            <g fill="none" stroke="#b47a2a" stroke-width="3.5" stroke-linecap="round">
+              <path d="M82 282 C74 223 74 160 111 78"/>
+              <path d="M82 282 C62 230 47 187 24 145"/>
+              <path d="M82 282 C107 229 132 183 157 126"/>
+              <path d="M43 184 C28 164 22 145 24 122" stroke="#8b9f4a" stroke-width="3"/>
+              <path d="M111 126 C122 103 128 90 142 78" stroke="#8b9f4a" stroke-width="3"/>
+            </g>
+            <g fill="#f5c75c" stroke="#a66e24" stroke-width="1.4">
+              <ellipse cx="111" cy="78" rx="6.5" ry="15" transform="rotate(24 111 78)"/>
+              <ellipse cx="103" cy="103" rx="6.5" ry="15" transform="rotate(20 103 103)"/>
+              <ellipse cx="96" cy="128" rx="6.5" ry="15" transform="rotate(17 96 128)"/>
+              <ellipse cx="89" cy="153" rx="6.5" ry="15" transform="rotate(12 89 153)"/>
+              <ellipse cx="24" cy="145" rx="6.5" ry="15" transform="rotate(-45 24 145)"/>
+              <ellipse cx="36" cy="162" rx="6.5" ry="15" transform="rotate(-38 36 162)"/>
+              <ellipse cx="48" cy="179" rx="6.5" ry="15" transform="rotate(-30 48 179)"/>
+              <ellipse cx="157" cy="126" rx="6.5" ry="15" transform="rotate(50 157 126)"/>
+              <ellipse cx="145" cy="143" rx="6.5" ry="15" transform="rotate(42 145 143)"/>
+              <ellipse cx="133" cy="160" rx="6.5" ry="15" transform="rotate(34 133 160)"/>
+            </g>
+          </g>
+        </defs>
+        <use href="#rice-cluster"></use>
+        <use href="#rice-cluster" transform="translate(500 0) scale(-1 1)"></use>
+      </svg>
+    </div>
+
     <div class="start-note">电脑上按 <b>F</b> 键可全屏 / 再按一次退出</div>
   </div>
 

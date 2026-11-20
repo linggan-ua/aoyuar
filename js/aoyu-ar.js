@@ -1281,7 +1281,7 @@
       var enable = function () {
         if (!button.disabled) return;
         button.disabled = false;
-        button.textContent = '进入鲤鱼世界';
+        button.textContent = '进入稻田国潮 AR';
         console.log('AOYU_START_READY');
       };
       if (assets) {
