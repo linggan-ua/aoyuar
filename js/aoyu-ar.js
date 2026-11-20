@@ -1086,6 +1086,7 @@
     micTriggerCount: 0,
     micError: '',
     micSamples: null,
+    micStreamHandlers: null,
     // AR.js pattern 识别阈值：越低越容易识别，但误识别/抖动也会增加。
     patternConfidence: 0.60,
 
@@ -2131,6 +2132,30 @@
       if (status) status.textContent = this.micStatusText();
     },
 
+    /** iOS 上播放和录音是同一个 AudioSession；开麦克风时必须允许同时录制。 */
+    setAudioSessionType: function (type) {
+      if (!navigator.audioSession) return;
+      try { navigator.audioSession.type = type; } catch (error) { /* 老浏览器没有这个 API */ }
+    },
+
+    /** 麦克风错误不能只显示英文枚举，现场至少能直接看懂是哪一类问题。 */
+    microphoneErrorMessage: function (error) {
+      var name = error && error.name;
+      var map = {
+        NotAllowedError: '没有麦克风权限',
+        PermissionDeniedError: '没有麦克风权限',
+        NotFoundError: '没有找到麦克风',
+        DevicesNotFoundError: '没有找到麦克风',
+        NotReadableError: '麦克风正被其他应用占用',
+        TrackStartError: '麦克风正被其他应用占用',
+        InvalidStateError: '麦克风连接无效，请重试',
+        SecurityError: '麦克风需要 HTTPS',
+        OverconstrainedError: '当前麦克风不兼容'
+      };
+      if (map[name]) return map[name];
+      return name || (error && error.message) || '无法打开麦克风';
+    },
+
     toggleMic: function () {
       if (this.micStarting) return;
       if (this.micEnabled) {
@@ -2147,40 +2172,101 @@
         this.syncMicControls();
         return;
       }
+      var AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) {
+        this.micError = '浏览器不支持音频分析';
+        this.syncMicControls();
+        return;
+      }
       this.micError = '';
       this.micStarting = true;
       this.syncMicControls();
-      navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-      }).then(function (stream) {
-        var AudioContext = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContext) {
+      this.setAudioSessionType('play-and-record');
+
+      // 手机 Safari/WebView 不能像桌面一样随手多开 AudioContext。优先复用点击音符时
+      // 已经由用户手势唤醒的主上下文，避免 createMediaStreamSource 报 InvalidStateError。
+      var context = this.audioCtx;
+      if (!context || context.state === 'closed') {
+        context = new AudioContext();
+        this.audioCtx = context;
+      }
+      this.micContext = context;
+      if (context.state === 'suspended' && context.resume) {
+        var resumePromise = context.resume();
+        if (resumePromise && resumePromise.catch) resumePromise.catch(function () {});
+      }
+
+      var connect = function (stream) {
+        var tracks = stream.getAudioTracks ? stream.getAudioTracks() : [];
+        var liveTrack = tracks.filter(function (track) { return track.readyState === 'live'; })[0];
+        if (!liveTrack) {
           stream.getTracks().forEach(function (track) { track.stop(); });
-          throw new Error('AudioContext 不可用');
+          var noTrack = new Error('麦克风流里没有可用的音轨');
+          noTrack.name = 'InvalidStateError';
+          throw noTrack;
         }
+        if (!context || context.state === 'closed') {
+          stream.getTracks().forEach(function (track) { track.stop(); });
+          var badContext = new Error('音频上下文已关闭');
+          badContext.name = 'InvalidStateError';
+          throw badContext;
+        }
+
+        var source;
+        var analyser;
+        try {
+          source = context.createMediaStreamSource(stream);
+          analyser = context.createAnalyser();
+          analyser.fftSize = 1024;
+          analyser.smoothingTimeConstant = 0.2;
+          source.connect(analyser);
+        } catch (error) {
+          if (source && source.disconnect) source.disconnect();
+          stream.getTracks().forEach(function (track) { track.stop(); });
+          throw error;
+        }
+
         self.micStream = stream;
-        self.micContext = new AudioContext();
-        self.micAnalyser = self.micContext.createAnalyser();
-        self.micAnalyser.fftSize = 1024;
-        self.micAnalyser.smoothingTimeConstant = 0.2;
-        self.micSource = self.micContext.createMediaStreamSource(stream);
-        self.micSource.connect(self.micAnalyser);
+        self.micAnalyser = analyser;
+        self.micSource = source;
         self.micEnabled = true;
         self.micStarting = false;
         self.micLevel = 0;
         self.micLastTrigger = 0;
         self.micTriggerCount = 0;
-        if (self.micContext.state === 'suspended' && self.micContext.resume) {
-          var resumed = self.micContext.resume();
-          if (resumed && resumed.catch) resumed.catch(function () {});
+
+        var onEnded = function () {
+          if (self.micStream !== stream) return;
+          self.micError = '麦克风连接已断开';
+          self.stopMic();
+          self.syncMicControls();
+          console.warn('AOYU_MIC_TRACK_ENDED');
+        };
+        liveTrack.addEventListener('ended', onEnded);
+        self.micStreamHandlers = { stream: stream, track: liveTrack, onEnded: onEnded };
+
+        if (context.state === 'suspended' && context.resume) {
+          var resumedAfterSource = context.resume();
+          if (resumedAfterSource && resumedAfterSource.catch) resumedAfterSource.catch(function () {});
         }
         self.micTimer = setInterval(function () { self.micTick(); }, 50);
         self.syncMicControls();
-        console.log('AOYU_MIC_ON');
+        console.log('AOYU_MIC_ON', context.state);
+      };
+
+      var primary = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+      navigator.mediaDevices.getUserMedia({ audio: primary }).then(connect).catch(function (error) {
+        // 某些手机不接受关闭 AEC/NS/AGC 的约束，自动退到最普通的音轨请求。
+        if (error && (error.name === 'InvalidStateError' || error.name === 'OverconstrainedError' ||
+            error.name === 'NotSupportedError' || error.name === 'TypeError')) {
+          console.warn('AOYU_MIC_RETRY_BASIC', error.name);
+          return navigator.mediaDevices.getUserMedia({ audio: true }).then(connect);
+        }
+        throw error;
       }).catch(function (error) {
         self.micStarting = false;
         self.micEnabled = false;
-        self.micError = (error && (error.name || error.message)) || '无法打开麦克风';
+        self.micError = self.microphoneErrorMessage(error);
         if (self.micStream) {
           self.micStream.getTracks().forEach(function (track) { track.stop(); });
           self.micStream = null;
@@ -2198,23 +2284,26 @@
       }
       if (this.micSource && this.micSource.disconnect) this.micSource.disconnect();
       this.micSource = null;
+      if (this.micStreamHandlers) {
+        var handler = this.micStreamHandlers;
+        if (handler.track && handler.track.removeEventListener && handler.onEnded) {
+          handler.track.removeEventListener('ended', handler.onEnded);
+        }
+        this.micStreamHandlers = null;
+      }
       if (this.micStream) {
         this.micStream.getTracks().forEach(function (track) { track.stop(); });
         this.micStream = null;
       }
       this.micAnalyser = null;
-      if (this.micContext) {
-        var ctx = this.micContext;
-        this.micContext = null;
-        if (ctx.state !== 'closed' && ctx.close) {
-          var closing = ctx.close();
-          if (closing && closing.catch) closing.catch(function () {});
-        }
-      }
+      // micContext 与音符共用一个主 AudioContext，只断开源节点，绝不能 close，
+      // 否则关一次麦克风后，点击鱼的声音也会一起失效。
+      this.micContext = null;
       this.micSamples = null;
       this.micEnabled = false;
       this.micStarting = false;
       this.micLevel = 0;
+      this.setAudioSessionType('playback');
       this.syncMicControls();
       console.log('AOYU_MIC_OFF');
     },
@@ -2225,24 +2314,31 @@
       var n = analyser.fftSize;
       var mean = 0;
       var sum = 0;
-      if (analyser.getFloatTimeDomainData) {
-        if (!this.micSamples || this.micSamples.length !== n) this.micSamples = new Float32Array(n);
-        analyser.getFloatTimeDomainData(this.micSamples);
-        for (var i = 0; i < n; i++) mean += this.micSamples[i];
-        mean /= n;
-        for (var j = 0; j < n; j++) {
-          var v = this.micSamples[j] - mean;
-          sum += v * v;
+      try {
+        if (analyser.getFloatTimeDomainData) {
+          if (!this.micSamples || this.micSamples.length !== n) this.micSamples = new Float32Array(n);
+          analyser.getFloatTimeDomainData(this.micSamples);
+          for (var i = 0; i < n; i++) mean += this.micSamples[i];
+          mean /= n;
+          for (var j = 0; j < n; j++) {
+            var v = this.micSamples[j] - mean;
+            sum += v * v;
+          }
+        } else {
+          if (!this.micSamples || this.micSamples.length !== n) this.micSamples = new Uint8Array(n);
+          analyser.getByteTimeDomainData(this.micSamples);
+          for (var k = 0; k < n; k++) mean += this.micSamples[k] / 128 - 1;
+          mean /= n;
+          for (var m = 0; m < n; m++) {
+            var b = this.micSamples[m] / 128 - 1 - mean;
+            sum += b * b;
+          }
         }
-      } else {
-        if (!this.micSamples || this.micSamples.length !== n) this.micSamples = new Uint8Array(n);
-        analyser.getByteTimeDomainData(this.micSamples);
-        for (var k = 0; k < n; k++) mean += this.micSamples[k] / 128 - 1;
-        mean /= n;
-        for (var m = 0; m < n; m++) {
-          var b = this.micSamples[m] / 128 - 1 - mean;
-          sum += b * b;
-        }
+      } catch (error) {
+        this.micError = this.microphoneErrorMessage(error);
+        console.warn('AOYU_MIC_TICK_ERROR', error && error.name);
+        this.stopMic();
+        return;
       }
       this.micLevel = Math.sqrt(sum / n);
       var now = performance.now();
