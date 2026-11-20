@@ -14,6 +14,7 @@
     margin: 0; padding: 0; width: 100%; height: 100%;
     overflow: hidden;
     font: 14px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
     -webkit-user-select: none; user-select: none;
     -webkit-tap-highlight-color: transparent;
   }
@@ -56,9 +57,10 @@
   /* ---------- 启动页：稻田国潮音乐节纸艺拼贴风 ---------- */
   .start-overlay {
     position: fixed; inset: 0; z-index: 100;
-    display: flex; align-items: center; justify-content: center;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
     padding: calc(18px + env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom));
-    overflow: hidden;
+    overflow-x: hidden; overflow-y: auto;
+    overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
     background:
       radial-gradient(circle at 50% 12%, rgba(255,255,255,.82) 0 5%, rgba(255,255,255,0) 42%),
       linear-gradient(145deg, #ffb3b4 0%, #8fd8ea 22%, #b9f1e9 46%, #94c9ff 67%, #d5a9e7 100%);
@@ -74,7 +76,7 @@
     background-size: 18px 18px, 23px 23px;
   }
   .start-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
-  .festival-scene { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .festival-scene { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
   .paper-ribbon {
     position: absolute; border-radius: 999px; opacity: .84;
     border-top: 2px solid rgba(255,255,255,.6);
@@ -97,7 +99,8 @@
   @keyframes festivalFloat { 0%, 100% { margin-top: 0; } 50% { margin-top: -10px; } }
 
   .festival-frame {
-    position: relative; z-index: 4; width: min(92vw, 460px); box-sizing: border-box;
+    position: relative; z-index: 4; flex: 0 0 auto; width: min(94vw, 460px); box-sizing: border-box;
+    margin: auto 0;
     padding: 18px 18px 16px; border-radius: 28px 28px 34px 24px;
     background: linear-gradient(155deg, rgba(249,255,255,.84), rgba(227,244,255,.66));
     border: 2px solid rgba(255,255,255,.9);
@@ -164,20 +167,24 @@
   .scan-copy small { color: #706c91; font-size: 10px; letter-spacing: .08em; }
   .scan-copy strong { color: #38257e; font-size: 14px; letter-spacing: .03em; }
   .scan-music { margin-left: auto; color: #a27adf; font-size: 25px; opacity: .72; }
-  .start-action { position: relative; width: min(100%, 320px); margin: 0 auto; }
+  .start-action { position: relative; width: min(100%, 330px); margin: 0 auto; padding-top: 25px; }
   .tap-guide {
-    position: absolute; right: 5px; top: -24px; z-index: 2; display: flex; align-items: center; gap: 2px;
-    color: #51258f; font-size: 11px; font-weight: 900; letter-spacing: .08em;
-    animation: tapGuide 1.25s ease-in-out infinite; pointer-events: none;
+    position: absolute; left: 50%; top: 0; z-index: 2; transform: translateX(-50%);
+    display: flex; align-items: center; justify-content: center;
+    color: #51258f; font-size: 13px; font-weight: 900; letter-spacing: .08em;
+    pointer-events: none; white-space: nowrap; transition: opacity .2s ease, visibility .2s ease;
   }
-  .tap-finger { display: inline-block; font-size: 22px; line-height: 1; filter: drop-shadow(0 2px 0 rgba(255,255,255,.9)); transform-origin: 50% 100%; }
+  .tap-guide-inner { display: inline-flex; align-items: center; gap: 3px; animation: tapGuide 1.25s ease-in-out infinite; }
+  .tap-finger { display: inline-block; font-size: 24px; line-height: 1; filter: drop-shadow(0 2px 0 rgba(255,255,255,.9)); transform-origin: 50% 100%; }
   @keyframes tapGuide {
-    0%, 100% { transform: translateY(0) rotate(-5deg); opacity: .82; }
-    45% { transform: translateY(-6px) rotate(-5deg); opacity: 1; }
-    62% { transform: translateY(1px) rotate(-5deg); opacity: 1; }
+    0%, 100% { transform: translateY(-2px) rotate(-3deg); opacity: .78; }
+    45% { transform: translateY(-8px) rotate(-3deg); opacity: 1; }
+    64% { transform: translateY(2px) rotate(-3deg); opacity: 1; }
   }
+  #start-ar-button[disabled] + .tap-guide { opacity: 0; visibility: hidden; }
   #start-ar-button {
-    position: relative; width: 100%; min-width: 0; padding: 16px 18px; border-radius: 16px;
+    position: relative; width: 100%; min-width: 0; min-height: 64px; box-sizing: border-box;
+    padding: 16px 18px; border-radius: 16px; line-height: 1.2;
     border: 3px solid rgba(255,255,255,.98);
     background: linear-gradient(180deg, #fff77c 0%, #ffd84d 46%, #ffab32 100%);
     color: #3e2079; font-size: 18px; font-weight: 900; letter-spacing: .08em;
@@ -210,11 +217,11 @@
   }
   #start-ar-button[disabled]::after { display: none; }
   .start-privacy { display: block; margin-top: 12px; color: #47366f; font-size: 10.5px; line-height: 1.55; font-weight: 700; }
-  .start-note { position: absolute; left: 50%; bottom: calc(8px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 6; color: rgba(44,30,103,.66); font-size: 11px; white-space: nowrap; }
+  .start-note { position: fixed; left: 50%; bottom: calc(8px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 6; color: rgba(44,30,103,.66); font-size: 11px; white-space: nowrap; }
   .start-note b { color: #342079; font-weight: 900; }
   @media (pointer: coarse) { .start-note { display: none; } }
 
-  .festival-landscape { position: absolute; left: -5%; right: -5%; bottom: 0; height: 39vh; min-height: 230px; z-index: 2; overflow: hidden; pointer-events: none; }
+  .festival-landscape { position: fixed; left: -5%; right: -5%; bottom: 0; height: 39vh; min-height: 230px; z-index: 2; overflow: hidden; pointer-events: none; }
   .festival-wave {
     position: absolute; left: -14%; width: 128%; border-radius: 50% 50% 0 0 / 30% 30% 0 0;
     border-top: 2px solid rgba(255,255,255,.45); transform-origin: center bottom;
@@ -232,11 +239,20 @@
     .festival-title { font-size: clamp(34px, 9.8vw, 48px); }
     .festival-en { margin: 7px auto 9px; }
     .festival-scan-card { margin-bottom: 12px; padding: 7px 12px; }
-    #start-ar-button { padding: 12px 16px; }
+    #start-ar-button { min-height: 60px; padding: 12px 16px; }
     .start-privacy { margin-top: 9px; font-size: 10px; }
   }
+  @media (max-width: 380px), (max-height: 620px) {
+    .festival-frame { padding-left: 13px; padding-right: 13px; border-radius: 22px; }
+    .festival-kicker { font-size: 10px; letter-spacing: .1em; }
+    .festival-title { font-size: clamp(32px, 9.6vw, 43px); }
+    .festival-en { display: none; }
+    .festival-scan-card { padding: 7px 10px; margin-bottom: 8px; }
+    .start-action { padding-top: 22px; }
+    .start-privacy { line-height: 1.45; }
+  }
   @media (prefers-reduced-motion: reduce) {
-    .music-note, .festival-eq i, .tap-guide, #start-ar-button, #start-ar-button::after { animation: none !important; }
+    .music-note, .festival-eq i, .tap-guide-inner, #start-ar-button, #start-ar-button::after { animation: none !important; }
   }
 
   /* 只有 iOS / 微信这种"必须先有用户手势"的环境才会出现 */
@@ -433,8 +449,8 @@
         <span class="scan-music" aria-hidden="true">♪</span>
       </div>
       <div class="start-action">
-        <span class="tap-guide" aria-hidden="true"><span class="tap-finger">👆</span>点这里</span>
         <button id="start-ar-button" type="button" disabled>资源准备中…</button>
+        <span class="tap-guide" aria-hidden="true"><span class="tap-guide-inner"><span class="tap-finger">👇</span>点这里</span></span>
       </div>
       <span class="start-privacy">进入时会请求摄像头和麦克风权限<br>麦克风只用于现场鼓点检测，不录制、不上传</span>
     </div>
