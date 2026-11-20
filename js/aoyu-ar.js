@@ -456,6 +456,7 @@
       this.heightPhase = this.rng() * Math.PI * 2;
       this.verticalVelocity = 0;
       this.pitch = 0;
+      this.tuning = { speedScale: 1, turnScale: 1, rangeScale: DEFAULT_RANGE_SCALE, animSpeedMax: 1, modelScale: DEFAULT_MODEL_SCALE, pcModelScale: DEFAULT_MODEL_SCALE, startleSpeed: 4 };
       this.speed = this.data.speed * 0.6;
       this.speedTarget = this.data.speed;
       this.stateTime = 0;
@@ -465,7 +466,6 @@
       this.startleBurstUntil = 0;
       this.edgeTime = 0;        // 贴在水平边界上多久了（超过阈值就换目标，不让它一直磨边）
       this.edgeHit = false;     // 上一帧是不是被硬约束按回边界了
-      this.tuning = { speedScale: 1, turnScale: 1, rangeScale: DEFAULT_RANGE_SCALE, animSpeedMax: 1, modelScale: DEFAULT_MODEL_SCALE, pcModelScale: DEFAULT_MODEL_SCALE, startleSpeed: 4 };
       this.baseScale = this.el.object3D.scale.x;   // HTML 里写死的固定模型大小
       this.appliedScale = 0;   // 0 表示还没写过缩放，第一帧一定会写一次
       this.hidden = true;
@@ -526,7 +526,7 @@
     dashSpeed: function () {
       var r = this.radii();
       // 活动范围就是鱼缸本身，不再乘屏幕自适应倍率；只按鱼缸短边做安全封顶。
-      var v = this.data.speed * this.tuning.startleSpeed * this.tuning.speedScale;
+      var v = this.data.speed * this.tuning.startleSpeed * this.tuning.speedScale * this.motionScale();
       return Math.min(v, Math.min(r.x, r.z) * 4.5);
     },
 
@@ -571,6 +571,35 @@
         this.appliedScale = want;
         this.el.object3D.scale.setScalar(want);
       }
+    },
+
+    /** 当前模型缩放（PC 模式走 PC 专用值）。 */
+    activeModelScale: function () {
+      var scale = (app && app.pcMode) ? this.tuning.pcModelScale : this.tuning.modelScale;
+      return isFinite(scale) && scale > 0 ? scale : 1;
+    },
+
+    /**
+     * 水平运动尺度：鱼变大或鱼缸变宽/变深时，世界坐标里的合理游速也要一起放大。
+     * 取两者最大值而不是相乘，避免鱼和鱼缸同时放大 2× 时速度错误地变成 4×。
+     */
+    motionScale: function () {
+      var modelScale = this.activeModelScale();
+      var w = Math.max(0.05, Number(tankConfig.width) || TANK_DEFAULTS.width);
+      var d = Math.max(0.05, Number(tankConfig.depth) || TANK_DEFAULTS.depth);
+      var tankScale = Math.sqrt((w / TANK_DEFAULTS.width) * (d / TANK_DEFAULTS.depth));
+      var scale = Math.max(modelScale, tankScale);
+      if (!(scale > 0) || !isFinite(scale)) scale = 1;
+      return scale;
+    },
+
+    /** 垂直换层尺度：鱼缸变高或鱼变大时，垂直位移速度也同步放大。 */
+    verticalMotionScale: function () {
+      var modelScale = this.activeModelScale();
+      var h = Math.max(0.05, Number(tankConfig.height) || TANK_DEFAULTS.height);
+      var scale = Math.max(modelScale, h / TANK_DEFAULTS.height);
+      if (!(scale > 0) || !isFinite(scale)) scale = 1;
+      return scale;
     },
 
     /**
@@ -741,6 +770,8 @@
       var r = this.radii();
       var yLo = this.yMin();
       var yHi = this.yMax();
+      var motionScale = this.motionScale();
+      var verticalScale = this.verticalMotionScale();
 
       // 目标点收紧到鱼缸内部 90% 的可用空间，给鱼身和转弯留余量。
       var tn = Math.sqrt((this.target.x / r.x) * (this.target.x / r.x) +
@@ -874,20 +905,24 @@
         this.speed = dash + (this.burstSpeed() - dash) * Math.max(0, Math.min(1, kBurst));
       } else {
         var wantSpeed = boosting
-          ? Math.max(dash, this.speedTarget * this.tuning.speedScale * 1.35)
-          : this.speedTarget * this.tuning.speedScale * turnSlow;
+          ? Math.max(dash, this.speedTarget * this.tuning.speedScale * motionScale * 1.35)
+          : this.speedTarget * this.tuning.speedScale * motionScale * turnSlow;
         var over = this.speed > wantSpeed * 1.3;
         var accel = wantSpeed > this.speed ? (boosting ? 8 : 1.15) : (over ? 2.8 : 0.8);
+        accel *= motionScale;   // 速度放大后，加速时间仍保持一致，不会显得笨重
         this.speed += Math.max(-accel * d, Math.min(accel * d, wantSpeed - this.speed));
       }
       if (!(this.speed > 0)) this.speed = 0;
 
       // 垂直换层：目标是缓慢变化的高度，不让鱼像浮标一样机械上下摆。
-      this.heightPhase += d * this.data.bobSpeed * 0.8;
-      var heightWave = Math.sin(this.heightPhase) * Math.min(0.018, (yHi - yLo) * 0.035);
+      this.heightPhase += d * this.data.bobSpeed * 0.8 * verticalScale;
+      var heightWave = Math.sin(this.heightPhase) *
+        Math.min(0.018 * verticalScale, (yHi - yLo) * 0.12);
       var wantY = clamp(this.target.y + heightWave, yLo, yHi);
-      var wantVy = clamp((wantY - this.pos.y) * 1.8, -0.28, 0.28);
-      this.verticalVelocity += (wantVy - this.verticalVelocity) * Math.min(1, d * 2.2);
+      var wantVy = clamp((wantY - this.pos.y) * 1.8 * verticalScale,
+        -0.28 * verticalScale, 0.28 * verticalScale);
+      this.verticalVelocity += (wantVy - this.verticalVelocity) *
+        Math.min(1, d * 2.2 * Math.sqrt(verticalScale));
 
       // 积分。
       this.pos.x += this.head.x * this.speed * d;
@@ -1051,6 +1086,8 @@
         tankBaseHeight: Number(tankConfig.height).toFixed(2),
         tankBaseDepth: Number(tankConfig.depth).toFixed(2),
         tankCustom: !!tankConfig.custom,
+        motionScale: this.motionScale().toFixed(2),
+        verticalMotionScale: this.verticalMotionScale().toFixed(2),
         t: this.speed.toFixed(2),
         pos: this.el.object3D.position
       };
@@ -2598,6 +2635,7 @@
           ' 摆尾×' + status.tuning.animSpeedMax.toFixed(2) +
           ' 大小×' + (self.pcMode ? status.tuning.pcModelScale : status.tuning.modelScale).toFixed(2) +
           (self.pcMode ? '(PC)' : '') +
+          ' 运动同步×' + status.motionScale +
           ' 惊吓×' + status.tuning.startleSpeed.toFixed(1) +
           '　身长 ' + status.bodyLen.toFixed(2) + ' 转弯半径 ' + status.turnRadius.toFixed(2) + ' 卡宽' +
           '　当前速度 ' + status.t + ' 位置 ' + status.pos.x.toFixed(2) + ',' +
