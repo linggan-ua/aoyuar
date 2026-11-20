@@ -1663,7 +1663,7 @@
       this.errorEl.textContent = '';
       this.gateEl.classList.remove('show');
       this.hintEl.classList.remove('hidden');
-      this.hintEl.textContent = '把 kanji 测试码放进画面';
+      this.hintEl.textContent = '把鲤鱼识别码放进画面';
       console.log('AOYU_CAMERA_LIVE');
     },
 
@@ -2100,7 +2100,7 @@
       if (!hint) return;
       if (active) hint.classList.add('hidden');
       else {
-        hint.textContent = '把 kanji 测试码放进画面';
+        hint.textContent = '把鲤鱼识别码放进画面';
         hint.classList.remove('hidden');
       }
     },
@@ -2120,7 +2120,7 @@
     /** 打开独立的鱼缸三维调试器。工具页和主页面都能用同一个入口。 */
     openTankEditor: function () {
       var path = window.location.pathname;
-      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=18';
+      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=19';
       window.open(editor, '_blank', 'noopener');
     },
 

@@ -182,7 +182,7 @@
   window.AOYU_USE_IMAGE_TRACKER = useImageTracker;
   window.AOYU_SKIP_CAMERA = useImageTracker;      // 相机由 image-tracker 自己开
   // 图像跟踪用的卡片参考图（默认值写死在 image-tracker.js 里，这里跟随 pattern 一起换）
-  window.AOYU_TRACKER_CARD = '../assets/patterns/kanji.png';
+  window.AOYU_TRACKER_CARD = '../assets/patterns/pattern-koi-red-white.png';
   if (!useImageTracker) return;
   document.addEventListener('DOMContentLoaded', function () {});
   var rewrite = function () {
@@ -209,7 +209,7 @@
 <script src="../js/tank-config.js?v=1"></script>
 <script src="../js/tank-cube.js?v=27"></script>
 <script>window.AOYU_DEBUG = true;   // 工具页始终显示调试入口</script>
-<script src="../js/aoyu-ar.js?v=158"></script>
+<script src="../js/aoyu-ar.js?v=159"></script>
 </head>
 <body>
 
@@ -219,7 +219,7 @@
          device-orientation-permission-ui="enabled: true; deviceMotionMessage: 此网站需要访问你的设备运动传感器，以进入增强现实体验。; httpsMessage: 请通过 HTTPS 访问本网站，才能进入增强现实并授权设备传感器。; denyButtonText: 拒绝; allowButtonText: 允许; cancelButtonText: 取消"
          vr-mode-ui="enabled: false"
          renderer="colorManagement: true;"
-         arjs="sourceType: image; sourceUrl: ../assets/patterns/kanji.png; debugUIEnabled: false; patternRatio: 0.5; cameraParametersUrl: ../assets/arjs/camera_para.dat; errorPopup: ar-error">
+         arjs="sourceType: image; sourceUrl: ../assets/patterns/pattern-koi-red-white.png; debugUIEnabled: false; patternRatio: 0.5; cameraParametersUrl: ../assets/arjs/camera_para.dat; errorPopup: ar-error">
 
   <a-assets timeout="30000">
     <a-asset-item id="koi-model" src="../assets/models/koi_red.glb"></a-asset-item>
@@ -235,7 +235,7 @@
 
   <!-- 识别用的 .patt：同名 .png 是要打印的卡片（黑方块占 80%、内图占黑方块 50%，
        所以 arjs 的 patternRatio 必须是 0.5；换卡就换这两个文件 + 下面这一行） -->
-  <a-marker id="ar-marker" min-confidence="0.6" smooth="true" smooth-count="7" smooth-tolerance="0.01" smooth-threshold="2" type="pattern" url="../assets/patterns/kanji.patt"
+  <a-marker id="ar-marker" min-confidence="0.6" smooth="true" smooth-count="7" smooth-tolerance="0.01" smooth-threshold="2" type="pattern" url="../assets/patterns/pattern-koi-red-white.patt"
             emitevents="true" size="1">
 
     <!-- 调试鱼缸：和官方 AR.js cubemap demo 一样直接挂在 marker 下。
@@ -264,8 +264,8 @@
 <div id="ui">
   <!-- 启动页（还原老版本）-->
   <div id="start-overlay" class="start-overlay">
-    <div class="start-hero"><div class="start-hero-title">鲤鱼 AR</div><div class="start-hero-sub">扫描 kanji 测试码 · 验证鱼缸空间和游动</div></div>
-    <div class="start-tips">扫描 <b>kanji 测试码</b>，验证 AR 空间<br>首次进入请点击「允许/Allow」授权摄像头</div>
+    <div class="start-hero"><div class="start-hero-title">鲤鱼 AR</div><div class="start-hero-sub">扫描鲤鱼识别码 · 验证鱼缸空间和游动</div></div>
+    <div class="start-tips">扫描 <b>鲤鱼识别码</b>，验证 AR 空间<br>首次进入请点击「允许/Allow」授权摄像头</div>
     <button id="start-ar-button" type="button" disabled>资源准备中…</button>
     <div class="start-note">电脑上按 <b>F</b> 键可全屏 / 再按一次退出</div>
   </div>

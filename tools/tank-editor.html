@@ -258,7 +258,7 @@
   <aside id="sidebar">
     <header class="panel-head">
       <h1>鱼缸尺寸</h1>
-      <p>识别码是鱼缸的后墙。当前显示 kanji 测试码；拖动参数会实时改变三维体积并自动保存，点「AR 实景」可在同一页查看。</p>
+      <p>识别码是鱼缸的后墙。当前显示鲤鱼识别码；拖动参数会实时改变三维体积并自动保存，点「AR 实景」可在同一页查看。</p>
     </header>
 
     <section class="section">
@@ -441,7 +441,7 @@
   markerBack.position.z = -0.004;
   markerGroup.add(markerBack);
 
-  var markerTexture = new THREE.TextureLoader().load('../assets/patterns/kanji.png', function (texture) {
+  var markerTexture = new THREE.TextureLoader().load('../assets/patterns/pattern-koi-red-white.png', function (texture) {
     texture.encoding = THREE.sRGBEncoding;
     texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
     patternMaterial.map = texture;

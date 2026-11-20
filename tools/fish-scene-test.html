@@ -182,7 +182,7 @@
   window.AOYU_USE_IMAGE_TRACKER = useImageTracker;
   window.AOYU_SKIP_CAMERA = useImageTracker;      // 相机由 image-tracker 自己开
   // 图像跟踪用的卡片参考图（默认值写死在 image-tracker.js 里，这里跟随 pattern 一起换）
-  window.AOYU_TRACKER_CARD = 'assets/patterns/pattern-card-v4-track.png';
+  window.AOYU_TRACKER_CARD = '../assets/patterns/pattern-koi-red-white.png';
   if (!useImageTracker) return;
   document.addEventListener('DOMContentLoaded', function () {});
   var rewrite = function () {
@@ -209,7 +209,7 @@
 <script src="../js/tank-config.js?v=1"></script>
 <script src="../js/tank-cube.js?v=27"></script>
 <script>window.AOYU_DEBUG = true; window.AOYU_VIRTUAL_SCENE = true;   // 工具页使用普通 A-Frame Y-up</script>
-<script src="../js/aoyu-ar.js?v=158"></script>
+<script src="../js/aoyu-ar.js?v=159"></script>
 </head>
 <body>
 
