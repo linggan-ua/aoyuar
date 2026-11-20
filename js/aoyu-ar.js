@@ -1086,6 +1086,8 @@
     micTriggerCount: 0,
     micError: '',
     micSamples: null,
+    // AR.js pattern 识别阈值：越低越容易识别，但误识别/抖动也会增加。
+    patternConfidence: 0.60,
 
     init: function () {
       var self = this;
@@ -2261,6 +2263,38 @@
       console.log('AOYU_MIC_STARTLE', this.micLevel.toFixed(3), 'count=' + this.micTriggerCount);
     },
 
+    /* ---------- Pattern 识别阈值 ---------- */
+    applyPatternConfidence: function () {
+      var marker = this.marker || document.getElementById('ar-marker');
+      var anchorEl = marker && marker.components && marker.components['arjs-anchor'];
+      var anchor = anchorEl && anchorEl._arAnchor;
+      if (anchor && anchor.parameters) {
+        anchor.parameters.minConfidence = Number(this.patternConfidence);
+      }
+    },
+
+    syncPatternControls: function () {
+      var input = document.getElementById('db-pattern-confidence');
+      if (input && document.activeElement !== input) {
+        input.value = Number(this.patternConfidence).toFixed(2);
+      }
+      var status = document.getElementById('debug-pattern');
+      if (status) {
+        status.textContent = 'AR 识别阈值：' + Number(this.patternConfidence).toFixed(2) +
+          '（越低越容易识别，误识别也越多；卡面比例仍是 0.50）';
+      }
+      this.applyPatternConfidence();
+    },
+
+    setPatternConfidence: function (value) {
+      var n = Number(value);
+      if (!isFinite(n)) return;
+      this.patternConfidence = Math.round(clamp(n, 0.30, 0.90) * 100) / 100;
+      this.syncPatternControls();
+      this.saveTuning();
+      console.log('AOYU_PATTERN_CONFIDENCE', this.patternConfidence);
+    },
+
     /* ---------- 调试面板 ---------- */
     bindDebugPanel: function () {
       var self = this;
@@ -2298,7 +2332,33 @@
         else panel.appendChild(micStatus);
       }
 
+      var patternRow = document.getElementById('db-pattern-row');
+      if (!patternRow) {
+        patternRow = document.createElement('div');
+        patternRow.id = 'db-pattern-row';
+        patternRow.className = 'db-row';
+        patternRow.style.flexWrap = 'wrap';
+        patternRow.innerHTML =
+          '<label style="flex:1 1 150px;display:flex;align-items:center;gap:5px;color:#8b98a9;font-size:11px">识别阈值 ' +
+            '<input id="db-pattern-confidence" type="number" min="0.30" max="0.90" step="0.01" value="0.60" ' +
+              'style="width:56px;padding:4px;border-radius:5px;border:1px solid rgba(244,247,248,.22);background:#1d2632;color:#f4f7f8;font:inherit">' +
+          '</label>' +
+          '<button id="db-pattern-standard" style="flex:0 1 100px">标准 0.60</button>';
+        var hint3 = panel.querySelector('.db-hint');
+        if (hint3) panel.insertBefore(patternRow, hint3);
+        else panel.appendChild(patternRow);
+      }
+      if (!document.getElementById('debug-pattern')) {
+        var patternStatus = document.createElement('div');
+        patternStatus.id = 'debug-pattern';
+        patternStatus.className = 'db-status';
+        var hint4 = panel.querySelector('.db-hint');
+        if (hint4) panel.insertBefore(patternStatus, hint4);
+        else panel.appendChild(patternStatus);
+      }
+
       this.refreshDebug = function () {
+        self.syncPatternControls();
         self.syncMicControls();
         self.updateTankBox();
         var statusText2 = document.getElementById('debug-camera');
@@ -2374,6 +2434,18 @@
         });
       }
       this.syncMicControls();
+      var patternInput = document.getElementById('db-pattern-confidence');
+      if (patternInput) {
+        patternInput.addEventListener('input', function () {
+          var value = Number(patternInput.value);
+          if (isFinite(value)) self.setPatternConfidence(value);
+        });
+      }
+      var patternStandard = document.getElementById('db-pattern-standard');
+      if (patternStandard) {
+        patternStandard.addEventListener('click', function () { self.setPatternConfidence(0.60); });
+      }
+      this.syncPatternControls();
       var tankBtn = document.getElementById('db-tank');
       if (tankBtn) tankBtn.addEventListener('click', function () { self.toggleTank(); });
       var tankEditorBtn = document.getElementById('db-tank-editor');
@@ -2441,7 +2513,8 @@
           pcMode: !!this.pcMode,
           hitBoxVisible: !!this.hitBoxVisible,
           micThreshold: this.micThreshold,
-          micCooldown: this.micCooldown
+          micCooldown: this.micCooldown,
+          patternConfidence: this.patternConfidence
         }));
       } catch (error) {
         /* 隐私模式之类写不了就算了 */
@@ -2457,7 +2530,11 @@
       if (typeof saved.micCooldown === 'number' && isFinite(saved.micCooldown)) {
         this.micCooldown = clamp(saved.micCooldown, 0.1, 30);
       }
+      if (typeof saved.patternConfidence === 'number' && isFinite(saved.patternConfidence)) {
+        this.patternConfidence = clamp(saved.patternConfidence, 0.30, 0.90);
+      }
       this.syncMicControls();
+      this.syncPatternControls();
       if (!saved.tuning) return;
       Object.keys(instances).forEach(function (key) {
         var fish = instances[key];
