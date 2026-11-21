@@ -9,10 +9,12 @@
 
   var KEY = 'aoyu-tank-v1';
   var DEFAULTS = { width: 0.80, height: 0.56, depth: 0.50 };
+  // 只保留防止 NaN/Infinity 和误输入的硬上限；不再把现场尺寸卡在 3 卡宽。
+  var HARD_MAX = 1000;
   var LIMITS = {
-    width: [0.10, 3.00],
-    height: [0.10, 3.00],
-    depth: [0.05, 3.00]
+    width: [0.10, HARD_MAX],
+    height: [0.10, HARD_MAX],
+    depth: [0.05, HARD_MAX]
   };
 
   function clamp(value, min, max) {

@@ -2120,7 +2120,7 @@
     /** 打开独立的鱼缸三维调试器。工具页和主页面都能用同一个入口。 */
     openTankEditor: function () {
       var path = window.location.pathname;
-      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=19';
+      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=20';
       window.open(editor, '_blank', 'noopener');
     },
 
@@ -2136,6 +2136,20 @@
       window.addEventListener('storage', function (event) {
         if (!event.key || event.key === 'aoyu-tank-v1' ||
             (window.AOYU_TANK && event.key === window.AOYU_TANK.KEY)) reload();
+      });
+      window.addEventListener('storage', function (event) {
+        if (event.key && event.key !== CONFIG.storageKey) return;
+        var saved = self.loadSavedTuning();
+        if (!saved || !saved.tuning) return;
+        Object.keys(instances).forEach(function (key) {
+          var fish = instances[key];
+          if (!fish) return;
+          Object.keys(saved.tuning).forEach(function (k) {
+            if (typeof saved.tuning[k] === 'number' && isFinite(saved.tuning[k])) fish.tuning[k] = saved.tuning[k];
+          });
+        });
+        if (self.refreshDebug) self.refreshDebug();
+        console.log('AOYU_TUNING_STORAGE_SYNC');
       });
       window.addEventListener('aoyu-tank-change', reload);
     },

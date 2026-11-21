@@ -223,11 +223,11 @@
   }
 </style>
 <script src="../aframe.min.js"></script>
-<script src="../js/tank-config.js?v=1"></script>
+<script src="../js/tank-config.js?v=2"></script>
 <script src="../js/tank-cube.js?v=27"></script>
 <script>window.THREE = window.AFRAME && window.AFRAME.THREE;</script>
 <script src="../js/GLTFLoader.js"></script>
-<script src="../js/tank-editor-fish.js?v=5"></script>
+<script src="../js/tank-editor-fish.js?v=6"></script>
 </head>
 <body>
 <div id="app">
@@ -269,13 +269,13 @@
           <div class="dim-name"><i class="axis-dot" style="background:var(--red)"></i>宽度 <em>X</em></div>
           <div class="dim-readout"><b data-readout>0.80</b><small>卡宽</small></div>
         </div>
-        <input data-slider type="range" min="0.10" max="3.00" step="0.01" value="0.80" aria-label="鱼缸宽度">
+        <input data-slider type="range" min="0.10" max="20.00" step="0.10" value="0.80" aria-label="鱼缸宽度">
         <div class="dim-controls">
-          <button type="button" data-step="-0.05" aria-label="宽度减小">−</button>
-          <input data-number type="number" min="0.10" max="3.00" step="0.01" value="0.80" aria-label="鱼缸宽度数值">
-          <button type="button" data-step="0.05" aria-label="宽度增加">+</button>
+          <button type="button" data-step="-0.10" aria-label="宽度减小">−</button>
+          <input data-number type="number" min="0.10" max="1000" step="0.01" value="0.80" aria-label="鱼缸宽度数值">
+          <button type="button" data-step="0.10" aria-label="宽度增加">+</button>
         </div>
-        <div class="mini-note">左右两墙的距离（X 轴）</div>
+        <div class="mini-note">左右两墙的距离（X 轴）· 滑条到 20，输入框可到 1000</div>
       </div>
 
       <div class="dimension" data-axis="height" style="--axis-color:var(--green)">
@@ -283,13 +283,13 @@
           <div class="dim-name"><i class="axis-dot" style="background:var(--green)"></i>高度 <em>Y</em></div>
           <div class="dim-readout"><b data-readout>0.56</b><small>卡宽</small></div>
         </div>
-        <input data-slider type="range" min="0.10" max="3.00" step="0.01" value="0.56" aria-label="鱼缸高度">
+        <input data-slider type="range" min="0.10" max="20.00" step="0.10" value="0.56" aria-label="鱼缸高度">
         <div class="dim-controls">
-          <button type="button" data-step="-0.05" aria-label="高度减小">−</button>
-          <input data-number type="number" min="0.10" max="3.00" step="0.01" value="0.56" aria-label="鱼缸高度数值">
-          <button type="button" data-step="0.05" aria-label="高度增加">+</button>
+          <button type="button" data-step="-0.10" aria-label="高度减小">−</button>
+          <input data-number type="number" min="0.10" max="1000" step="0.01" value="0.56" aria-label="鱼缸高度数值">
+          <button type="button" data-step="0.10" aria-label="高度增加">+</button>
         </div>
-        <div class="mini-note">上下两面玻璃的距离（Y 轴）</div>
+        <div class="mini-note">上下两面玻璃的距离（Y 轴）· 滑条到 20，输入框可到 1000</div>
       </div>
 
       <div class="dimension" data-axis="depth" style="--axis-color:var(--blue)">
@@ -297,13 +297,31 @@
           <div class="dim-name"><i class="axis-dot" style="background:var(--blue)"></i>纵深 <em>Z</em></div>
           <div class="dim-readout"><b data-readout>0.50</b><small>卡宽</small></div>
         </div>
-        <input data-slider type="range" min="0.05" max="3.00" step="0.01" value="0.50" aria-label="鱼缸纵深">
+        <input data-slider type="range" min="0.05" max="20.00" step="0.10" value="0.50" aria-label="鱼缸纵深">
         <div class="dim-controls">
-          <button type="button" data-step="-0.05" aria-label="纵深减小">−</button>
-          <input data-number type="number" min="0.05" max="3.00" step="0.01" value="0.50" aria-label="鱼缸纵深数值">
-          <button type="button" data-step="0.05" aria-label="纵深增加">+</button>
+          <button type="button" data-step="-0.10" aria-label="纵深减小">−</button>
+          <input data-number type="number" min="0.05" max="1000" step="0.01" value="0.50" aria-label="鱼缸纵深数值">
+          <button type="button" data-step="0.10" aria-label="纵深增加">+</button>
         </div>
-        <div class="mini-note">从识别码墙面向观众方向的厚度（Z 轴）</div>
+        <div class="mini-note">从识别码墙面向观众方向的厚度（Z 轴）· 滑条到 20，输入框可到 1000</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-label"><span>FISH SIZE</span><span>与 AR 同步</span></div>
+      <div class="dimension" style="--axis-color:var(--orange)">
+        <div class="dim-head">
+          <div class="dim-name"><i class="axis-dot" style="background:var(--orange)"></i>鱼的大小 <em>MODEL</em></div>
+          <div class="dim-readout"><b id="fish-scale-readout">1.00</b><small>×</small></div>
+        </div>
+        <input id="fish-scale-slider" type="range" min="0.10" max="10.00" step="0.05" value="1.00" aria-label="鱼的大小倍率">
+        <div class="dim-controls">
+          <button type="button" data-fish-step="-0.10" aria-label="鱼变小">−</button>
+          <input id="fish-scale-number" type="number" min="0.05" max="1000" step="0.01" value="1.00" aria-label="鱼的大小倍率数值">
+          <button type="button" data-fish-step="0.10" aria-label="鱼变大">+</button>
+        </div>
+        <div class="mini-note">直接同步 AR 的现场大小与 PC 大小；鱼变大时编辑器里的游速和摆尾也一起同步。</div>
+        <div class="mini-note" id="fish-motion-readout">运动同步 ×1.00</div>
       </div>
     </section>
 
@@ -333,7 +351,7 @@
 
     <section class="section">
       <div class="summary">
-        <div><b id="summary-size">0.80 × 0.56 × 0.50</b><small>宽 × 高 × 深 / 卡宽</small></div>
+        <div><b id="summary-size">0.80 × 0.56 × 0.50</b><small>宽 × 高 × 深 / 卡宽 · 鱼 <span id="summary-fish-scale">1.00×</span></small></div>
         <div class="save-state" id="save-state">本地自动保存</div>
       </div>
     </section>
@@ -363,7 +381,31 @@
   var sidebar = document.getElementById('sidebar');
   var toastTimer = null;
   var saveTimer = null;
+  var fishSaveTimer = null;
+  var FISH_STORAGE_KEY = 'aoyu-tuning-v5';
   var config = api.load();
+
+  function readFishTuning() {
+    try {
+      var raw = localStorage.getItem(FISH_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function normalizeFishScale(value) {
+    var n = Number(value);
+    if (!(n > 0) || !isFinite(n)) return 1;
+    return Math.round(Math.max(0.05, Math.min(1000, n)) * 100) / 100;
+  }
+
+  function readFishScale() {
+    var saved = readFishTuning();
+    return normalizeFishScale(saved && saved.tuning ? saved.tuning.modelScale : 1);
+  }
+
+  var fishScale = readFishScale();
 
   var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -468,7 +510,7 @@
   scene.add(tankGroup);
   var tankCube = window.AOYU_TANK_CUBE.createMesh(THREE, '../assets/cube-faces/', 0.30);
   tankGroup.add(tankCube);
-  var fishSystem = window.AOYU_EDITOR_FISH.create(THREE, scene, config);
+  var fishSystem = window.AOYU_EDITOR_FISH.create(THREE, scene, config, { modelScale: fishScale });
 
   var dimensionGroup = new THREE.Group();
   scene.add(dimensionGroup);
@@ -575,6 +617,7 @@
     tankGroup.scale.set(w, h, d);
     tankGroup.position.set(0, 0, d / 2 + 0.008);
     fishSystem.setConfig(config);
+    syncFishScaleMotion();
     rebuildDimensions();
     updateControls(config);
     document.getElementById('summary-size').textContent = w.toFixed(2) + ' × ' + h.toFixed(2) + ' × ' + d.toFixed(2);
@@ -626,7 +669,7 @@
   }
 
   function setupDimensionControls() {
-    document.querySelectorAll('.dimension').forEach(function (box) {
+    document.querySelectorAll('.dimension[data-axis]').forEach(function (box) {
       var key = box.getAttribute('data-axis');
       box.querySelector('[data-slider]').addEventListener('input', function (event) {
         changeDimension(key, event.target.value);
@@ -647,6 +690,76 @@
         });
       });
     });
+  }
+
+  function syncFishScaleMotion() {
+    var status = document.getElementById('fish-motion-readout');
+    if (status && fishSystem && fishSystem.getMotionScale) {
+      status.textContent = '运动同步 ×' + Number(fishSystem.getMotionScale()).toFixed(2) +
+        '（鱼变大或鱼缸变大时，游速与摆尾同步）';
+    }
+  }
+
+  function syncFishScaleControls() {
+    var text = Number(fishScale).toFixed(2);
+    var slider = document.getElementById('fish-scale-slider');
+    var number = document.getElementById('fish-scale-number');
+    var readout = document.getElementById('fish-scale-readout');
+    if (slider && document.activeElement !== slider) slider.value = text;
+    if (number && document.activeElement !== number) number.value = text;
+    if (readout) readout.textContent = text;
+    var summaryFish = document.getElementById('summary-fish-scale');
+    if (summaryFish) summaryFish.textContent = text + '×';
+    syncFishScaleMotion();
+  }
+
+  function persistFishScale() {
+    var saved = readFishTuning() || {};
+    saved.tuning = saved.tuning || {};
+    saved.tuning.modelScale = fishScale;
+    saved.tuning.pcModelScale = fishScale;
+    try { localStorage.setItem(FISH_STORAGE_KEY, JSON.stringify(saved)); } catch (error) { /* ignore */ }
+    var state = document.getElementById('save-state');
+    state.textContent = '鱼大小已保存';
+    state.classList.add('on');
+    if (fishSaveTimer) clearTimeout(fishSaveTimer);
+    fishSaveTimer = setTimeout(function () {
+      state.textContent = '本地自动保存';
+      state.classList.remove('on');
+    }, 1600);
+  }
+
+  function changeFishScale(value) {
+    fishScale = normalizeFishScale(value);
+    fishSystem.setModelScale(fishScale);
+    syncFishScaleControls();
+    if (fishSaveTimer) clearTimeout(fishSaveTimer);
+    fishSaveTimer = setTimeout(persistFishScale, 90);
+  }
+
+  function setupFishScaleControls() {
+    var slider = document.getElementById('fish-scale-slider');
+    var number = document.getElementById('fish-scale-number');
+    if (slider) slider.addEventListener('input', function (event) { changeFishScale(event.target.value); });
+    if (number) {
+      number.addEventListener('input', function (event) {
+        if (event.target.value === '') return;
+        changeFishScale(event.target.value);
+      });
+      number.addEventListener('blur', function (event) {
+        var n = normalizeFishScale(event.target.value);
+        fishScale = n;
+        fishSystem.setModelScale(fishScale);
+        event.target.value = n.toFixed(2);
+        syncFishScaleControls();
+      });
+    }
+    document.querySelectorAll('[data-fish-step]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        changeFishScale(fishScale + Number(button.getAttribute('data-fish-step')));
+      });
+    });
+    syncFishScaleControls();
   }
 
   function setupPresets() {
@@ -827,6 +940,7 @@
   }
 
   setupDimensionControls();
+  setupFishScaleControls();
   setupPresets();
   applyTank(config);
   updateViewActive('persp');
@@ -835,6 +949,13 @@
   api.subscribe(function (next) {
     config = api.normalize(next);
     applyTank(config);
+  });
+
+  window.addEventListener('storage', function (event) {
+    if (event.key && event.key !== FISH_STORAGE_KEY) return;
+    fishScale = readFishScale();
+    fishSystem.setModelScale(fishScale);
+    syncFishScaleControls();
   });
 
   var lastFrame = performance.now();

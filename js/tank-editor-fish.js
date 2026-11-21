@@ -9,11 +9,13 @@
 (function () {
   'use strict';
 
-  function createFishSystem(THREE, scene, config) {
+  function createFishSystem(THREE, scene, config, options) {
+    options = options || {};
     var state = {
       THREE: THREE,
       scene: scene,
       config: config,
+      modelScale: Math.max(0.01, Number(options.modelScale) || 1),
       fish: [],
       loaded: 0,
       failed: 0,
@@ -29,10 +31,37 @@
     var axisZ = new THREE.Vector3(0, 0, 1);
     if (!THREE.GLTFLoader) {
       console.error('AOYU_EDITOR_FISH_NO_GLTFLOADER');
-      return { update: function () {}, setConfig: function () {}, setVisible: function () {}, state: state };
+      return {
+        update: function () {},
+        setConfig: function () {},
+        setModelScale: function () {},
+        getMotionScale: function () { return 1; },
+        setVisible: function () {},
+        state: state
+      };
     }
     var loader = new THREE.GLTFLoader();
     console.log('AOYU_EDITOR_FISH_INIT');
+
+    // 与 AR 主程序使用同一套运动尺度：鱼变大或鱼缸变宽/变深时，
+    // 编辑器里的游速也一起放大，避免预览比现场慢半拍。
+    function motionScale() {
+      var w = Math.max(0.05, Number(state.config.width) || 0.80);
+      var d = Math.max(0.05, Number(state.config.depth) || 0.50);
+      var tankScale = Math.sqrt((w / 0.80) * (d / 0.50));
+      var scale = Math.max(state.modelScale, tankScale);
+      return scale > 0 && isFinite(scale) ? scale : 1;
+    }
+
+    function refreshMotion() {
+      var motion = motionScale();
+      for (var i = 0; i < state.fish.length; i++) {
+        var fish = state.fish[i];
+        if (!fish) continue;
+        fish.root.scale.setScalar(state.modelScale);
+        fish.targetSpeed = fish.baseSpeed * motion;
+      }
+    }
 
     function bounds(cfg) {
       var w = Math.max(0.1, Number(cfg.width) || 0.80);
@@ -69,8 +98,9 @@
         action: null,
         pos: new THREE.Vector3(),
         head: 0,
-        speed: 0.24 + index * 0.015,
-        targetSpeed: 0.24 + index * 0.015,
+        baseSpeed: 0.24 + index * 0.015,
+        speed: (0.24 + index * 0.015) * motionScale(),
+        targetSpeed: (0.24 + index * 0.015) * motionScale(),
         target: new THREE.Vector3(),
         targetTime: 0,
         phase: Math.random() * Math.PI * 2,
@@ -86,6 +116,7 @@
       }
 
       root.visible = state.visible;
+      root.scale.setScalar(state.modelScale);
       scene.add(root);
       state.fish[index] = fish;
       state.loaded++;
@@ -188,6 +219,7 @@
 
     function setConfig(next) {
       state.config = next;
+      refreshMotion();
       for (var i = 0; i < state.fish.length; i++) {
         var fish = state.fish[i];
         if (!fish) continue;
@@ -196,6 +228,17 @@
         fish.pos.y = Math.max(-b.y, Math.min(b.y, fish.pos.y));
         fish.pos.z = Math.max(b.zMin, Math.min(b.zMax, fish.pos.z));
         pickTarget(fish);
+      }
+    }
+
+    function setModelScale(scale) {
+      var n = Number(scale);
+      if (!(n > 0) || !isFinite(n)) return;
+      state.modelScale = Math.max(0.01, Math.min(1000, n));
+      refreshMotion();
+      for (var i = 0; i < state.fish.length; i++) {
+        var fish = state.fish[i];
+        if (fish) pickTarget(fish);
       }
     }
 
@@ -219,6 +262,8 @@
     return {
       update: update,
       setConfig: setConfig,
+      setModelScale: setModelScale,
+      getMotionScale: motionScale,
       setVisible: setVisible,
       state: state
     };
