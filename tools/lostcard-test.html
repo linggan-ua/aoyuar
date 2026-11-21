@@ -206,10 +206,10 @@
 <script src="../aframe.min.js"></script>
 <script src="../aframe-ar.js"></script>
 <script src="../js/note-synth.js?v=1"></script>
-<script src="../js/tank-config.js?v=3"></script>
+<script src="../js/tank-config.js?v=4"></script>
 <script src="../js/tank-cube.js?v=27"></script>
 <script>window.AOYU_DEBUG = true;   // 工具页始终显示调试入口</script>
-<script src="../js/aoyu-ar.js?v=163"></script>
+<script src="../js/aoyu-ar.js?v=164"></script>
 </head>
 <body>
 
@@ -235,12 +235,12 @@
 
   <!-- 识别用的 .patt：同名 .png 是要打印的卡片（黑方块占 80%、内图占黑方块 50%，
        所以 arjs 的 patternRatio 必须是 0.5；换卡就换这两个文件 + 下面这一行） -->
-  <a-marker id="ar-marker" min-confidence="0.6" smooth="true" smooth-count="7" smooth-tolerance="0.01" smooth-threshold="2" type="pattern" url="../assets/patterns/pattern-koi-red-white.patt"
+  <a-marker id="ar-marker" min-confidence="0.05" smooth="true" smooth-count="7" smooth-tolerance="0.01" smooth-threshold="2" type="pattern" url="../assets/patterns/pattern-koi-red-white.patt"
             emitevents="true" size="1">
 
     <!-- 调试鱼缸：和官方 AR.js cubemap demo 一样直接挂在 marker 下。
          父节点只做 position/scale，尺寸由三维编辑器同步写入。 -->
-    <a-box id="debug-tank" visible="false" rotation="-90 0 0" position="0 0.25 0" scale="0.80 0.56 0.50" tank-cube="base: ../assets/cube-faces/; opacity: 0.25"></a-box>
+    <a-box id="debug-tank" visible="false" rotation="-90 0 0" position="0 0.25 0" scale="9 9 9" tank-cube="base: ../assets/cube-faces/; opacity: 0.25"></a-box>
 
     <!-- 游动节点：位置和朝向每帧由 fish-swim 直接写 object3D，
          模型挂在下面，rotation="0 90 0" 让小程序的朝向约定（头朝局部 +Z）成立 -->

@@ -7,8 +7,9 @@
 (function () {
   'use strict';
 
-  var KEY = 'aoyu-tank-v1';
-  var DEFAULTS = { width: 0.80, height: 0.56, depth: 0.50 };
+  // v2：现场最终确认尺寸；切换存储键，避免旧浏览器里的 0.72 尺寸覆盖最终值。
+  var KEY = 'aoyu-tank-v2';
+  var DEFAULTS = { width: 9, height: 9, depth: 9 };
   // 不再设置任何有限业务上限；只防止非有限值和非正尺寸把几何计算弄坏。
   var LIMITS = {
     width: [Number.MIN_VALUE, Number.POSITIVE_INFINITY],

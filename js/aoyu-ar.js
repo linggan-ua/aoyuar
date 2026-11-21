@@ -60,7 +60,7 @@
   // 三维调试器保存的鱼缸尺寸（单位：识别码卡宽）。
   // 鱼的活动范围直接使用这组鱼缸尺寸，不再从屏幕投影反算范围。
   var TANK_DEFAULTS = (window.AOYU_TANK && window.AOYU_TANK.DEFAULTS) || {
-    width: 0.80, height: 0.56, depth: 0.50
+    width: 9, height: 9, depth: 9
   };
   var tankConfig = {
     width: TANK_DEFAULTS.width,
@@ -85,7 +85,7 @@
   refreshTankConfig();
 
   // 鱼大小的固定基准（面板「鱼大一点/小一点」只改手调倍率，不再做屏幕自适应）
-  var DEFAULT_MODEL_SCALE = 1.0;
+  var DEFAULT_MODEL_SCALE = 9.0;
   // 活动范围：5 ≈ 铺满屏幕 85%，6 起就到 100%（0.92/0.88 安全边距）封顶（7 和 6 视觉上一样）
   var DEFAULT_RANGE_SCALE = 7.0;
 
@@ -94,7 +94,7 @@
     notes: ['note-c6', 'note-d6', 'note-e6', 'note-g6', 'note-a6'].map(function (name) {
       return 'assets/audio/' + name + '.mp3';
     }),
-    storageKey: 'aoyu-tuning-v5',   // v5：改为固定鱼模缩放 + 鱼缸内三维航点，旧的自适应值不再混用
+    storageKey: 'aoyu-tuning-v6',   // v6：现场最终参数，避免旧调参缓存覆盖
     // 惊吓（点空白让鱼窜出去）：速度倍率可调（默认 4×），冲刺 1.1 秒。
     // 关键点是冲刺期间**转弯半径跟着速度一起放大**，角速度不跟着飙，所以是"直线窜走"，
     // 不会像旧版那样在原地快速打转。
@@ -527,8 +527,8 @@
      * 这里的半径只负责鱼中心点，四周留出安全边距，避免鱼头/鱼尾视觉上碰到玻璃。
      */
     radii: function () {
-      var w = Math.max(0.05, Number(tankConfig.width) || 0.80);
-      var d = Math.max(0.05, Number(tankConfig.depth) || 0.50);
+      var w = Math.max(0.05, Number(tankConfig.width) || TANK_DEFAULTS.width);
+      var d = Math.max(0.05, Number(tankConfig.depth) || TANK_DEFAULTS.depth);
       var marginX = Math.min(0.08, w * 0.14);
       var marginZ = Math.min(0.075, d * 0.16);
       return {
@@ -539,11 +539,11 @@
 
     /** 鱼在鱼缸高度方向（marker-local +Y）内活动。 */
     yMin: function () {
-      var h = Math.max(0.05, Number(tankConfig.height) || 0.56);
+      var h = Math.max(0.05, Number(tankConfig.height) || TANK_DEFAULTS.height);
       return Math.max(0.045, h * 0.16);
     },
     yMax: function () {
-      var h = Math.max(0.05, Number(tankConfig.height) || 0.56);
+      var h = Math.max(0.05, Number(tankConfig.height) || TANK_DEFAULTS.height);
       return Math.max(this.yMin() + 0.04, h * 0.84);
     },
 
@@ -932,8 +932,8 @@
       // X宽/Y纵深/Z高度，所以要应用和 cube 相同的 X 轴 -90° 映射。
       var pitchTarget = Math.atan2(this.verticalVelocity, Math.max(this.speed, 0.12)) * 0.55;
       this.pitch += (pitchTarget - this.pitch) * Math.min(1, d * 4);
-      var tankH = Math.max(0.05, Number(tankConfig.height) || 0.56);
-      var tankD = Math.max(0.05, Number(tankConfig.depth) || 0.50);
+      var tankH = Math.max(0.05, Number(tankConfig.height) || TANK_DEFAULTS.height);
+      var tankD = Math.max(0.05, Number(tankConfig.depth) || TANK_DEFAULTS.depth);
       if (window.AOYU_VIRTUAL_SCENE) {
         // tools/fish-scene-test.html 是普通 A-Frame 场景，保持 Y-up。
         this.el.object3D.position.set(this.pos.x, this.pos.y, this.pos.z);
@@ -1105,7 +1105,7 @@
     micRms: 0,
     micCrest: 0,              // peak / rms，越高越像鼓点/瞬态
     micBaseline: 0.01,        // 缓慢跟随现场底噪/持续音乐
-    micThreshold: 0.40,       // 峰值触发线，0..1
+    micThreshold: 0.50,       // 最终现场峰值触发线
     micCooldown: 0.45,        // 两次鼓点触发的最小间隔（秒）
     micLastTrigger: 0,
     micIgnoreUntil: 0,        // 启动后的短暂校准期，避免点“进入”的声音误触发
@@ -1115,7 +1115,7 @@
     micSamples: null,
     micStreamHandlers: null,
     // AR.js pattern 识别阈值：越低越容易识别，但误识别/抖动也会增加。
-    patternConfidence: 0.60,
+    patternConfidence: 0.05,
 
     init: function () {
       var self = this;
@@ -2105,7 +2105,7 @@
     /** 打开独立的鱼缸三维调试器。工具页和主页面都能用同一个入口。 */
     openTankEditor: function () {
       var path = window.location.pathname;
-      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=22';
+      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=23';
       window.open(editor, '_blank', 'noopener');
     },
 
@@ -2554,7 +2554,7 @@
         micRow.innerHTML =
           '<button id="db-mic">麦克风：关</button>' +
           '<label style="flex:1 1 100px;display:flex;align-items:center;gap:4px;color:#8b98a9;font-size:11px">峰值 ' +
-            '<input id="db-mic-threshold" type="number" step="any" value="0.40" ' +
+            '<input id="db-mic-threshold" type="number" step="any" value="0.50" ' +
               'style="width:52px;padding:4px;border-radius:5px;border:1px solid rgba(244,247,248,.22);background:#1d2632;color:#f4f7f8;font:inherit">' +
           '</label>' +
           '<label style="flex:1 1 100px;display:flex;align-items:center;gap:4px;color:#8b98a9;font-size:11px">冷却 ' +
@@ -2582,10 +2582,10 @@
         patternRow.style.flexWrap = 'wrap';
         patternRow.innerHTML =
           '<label style="flex:1 1 150px;display:flex;align-items:center;gap:5px;color:#8b98a9;font-size:11px">识别阈值 ' +
-            '<input id="db-pattern-confidence" type="number" step="any" value="0.60" ' +
+            '<input id="db-pattern-confidence" type="number" step="any" value="0.05" ' +
               'style="width:56px;padding:4px;border-radius:5px;border:1px solid rgba(244,247,248,.22);background:#1d2632;color:#f4f7f8;font:inherit">' +
           '</label>' +
-          '<button id="db-pattern-standard" style="flex:0 1 100px">标准 0.60</button>';
+          '<button id="db-pattern-standard" style="flex:0 1 100px">标准 0.05</button>';
         var hint3 = panel.querySelector('.db-hint');
         if (hint3) panel.insertBefore(patternRow, hint3);
         else panel.appendChild(patternRow);
@@ -2686,7 +2686,7 @@
       }
       var patternStandard = document.getElementById('db-pattern-standard');
       if (patternStandard) {
-        patternStandard.addEventListener('click', function () { self.setPatternConfidence(0.60); });
+        patternStandard.addEventListener('click', function () { self.setPatternConfidence(0.05); });
       }
       this.syncPatternControls();
       var tankBtn = document.getElementById('db-tank');

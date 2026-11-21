@@ -11,6 +11,7 @@
 
   function createFishSystem(THREE, scene, config, options) {
     options = options || {};
+    var baseDefaults = (window.AOYU_TANK && window.AOYU_TANK.DEFAULTS) || { width: 9, height: 9, depth: 9 };
     var state = {
       THREE: THREE,
       scene: scene,
@@ -46,9 +47,9 @@
     // 与 AR 主程序使用同一套运动尺度：鱼变大或鱼缸变宽/变深时，
     // 编辑器里的游速也一起放大，避免预览比现场慢半拍。
     function motionScale() {
-      var w = Math.max(0.05, Number(state.config.width) || 0.80);
-      var d = Math.max(0.05, Number(state.config.depth) || 0.50);
-      var tankScale = Math.sqrt((w / 0.80) * (d / 0.50));
+      var w = Math.max(0.05, Number(state.config.width) || baseDefaults.width);
+      var d = Math.max(0.05, Number(state.config.depth) || baseDefaults.depth);
+      var tankScale = Math.sqrt((w / baseDefaults.width) * (d / baseDefaults.depth));
       var scale = Math.max(state.modelScale, tankScale);
       return scale > 0 && isFinite(scale) ? scale : 1;
     }
@@ -64,9 +65,9 @@
     }
 
     function bounds(cfg) {
-      var w = Math.max(0.1, Number(cfg.width) || 0.80);
-      var h = Math.max(0.1, Number(cfg.height) || 0.56);
-      var d = Math.max(0.1, Number(cfg.depth) || 0.50);
+      var w = Math.max(0.1, Number(cfg.width) || baseDefaults.width);
+      var h = Math.max(0.1, Number(cfg.height) || baseDefaults.height);
+      var d = Math.max(0.1, Number(cfg.depth) || baseDefaults.depth);
       return {
         x: Math.max(0.05, w / 2 - Math.min(0.07, w * 0.12)),
         y: Math.max(0.04, h / 2 - Math.min(0.07, h * 0.12)),

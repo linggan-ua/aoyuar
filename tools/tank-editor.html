@@ -223,11 +223,11 @@
   }
 </style>
 <script src="../aframe.min.js"></script>
-<script src="../js/tank-config.js?v=3"></script>
+<script src="../js/tank-config.js?v=4"></script>
 <script src="../js/tank-cube.js?v=27"></script>
 <script>window.THREE = window.AFRAME && window.AFRAME.THREE;</script>
 <script src="../js/GLTFLoader.js"></script>
-<script src="../js/tank-editor-fish.js?v=7"></script>
+<script src="../js/tank-editor-fish.js?v=8"></script>
 </head>
 <body>
 <div id="app">
@@ -267,12 +267,12 @@
       <div class="dimension" data-axis="width" style="--axis-color:var(--red)">
         <div class="dim-head">
           <div class="dim-name"><i class="axis-dot" style="background:var(--red)"></i>宽度 <em>X</em></div>
-          <div class="dim-readout"><b data-readout>0.80</b><small>卡宽</small></div>
+          <div class="dim-readout"><b data-readout>9.00</b><small>卡宽</small></div>
         </div>
-        <input data-slider type="range" min="0.10" max="20.00" step="0.10" value="0.80" aria-label="鱼缸宽度">
+        <input data-slider type="range" min="0.10" max="20.00" step="0.10" value="9.00" aria-label="鱼缸宽度">
         <div class="dim-controls">
           <button type="button" data-step="-0.10" aria-label="宽度减小">−</button>
-          <input data-number type="number" step="0.01" value="0.80" aria-label="鱼缸宽度数值">
+          <input data-number type="number" step="0.01" value="9.00" aria-label="鱼缸宽度数值">
           <button type="button" data-step="0.10" aria-label="宽度增加">+</button>
         </div>
         <div class="mini-note">左右两墙的距离（X 轴）· 滑条只是快捷范围，输入框不设上限</div>
@@ -281,12 +281,12 @@
       <div class="dimension" data-axis="height" style="--axis-color:var(--green)">
         <div class="dim-head">
           <div class="dim-name"><i class="axis-dot" style="background:var(--green)"></i>高度 <em>Y</em></div>
-          <div class="dim-readout"><b data-readout>0.56</b><small>卡宽</small></div>
+          <div class="dim-readout"><b data-readout>9.00</b><small>卡宽</small></div>
         </div>
-        <input data-slider type="range" min="0.10" max="20.00" step="0.10" value="0.56" aria-label="鱼缸高度">
+        <input data-slider type="range" min="0.10" max="20.00" step="0.10" value="9.00" aria-label="鱼缸高度">
         <div class="dim-controls">
           <button type="button" data-step="-0.10" aria-label="高度减小">−</button>
-          <input data-number type="number" step="0.01" value="0.56" aria-label="鱼缸高度数值">
+          <input data-number type="number" step="0.01" value="9.00" aria-label="鱼缸高度数值">
           <button type="button" data-step="0.10" aria-label="高度增加">+</button>
         </div>
         <div class="mini-note">上下两面玻璃的距离（Y 轴）· 滑条只是快捷范围，输入框不设上限</div>
@@ -295,12 +295,12 @@
       <div class="dimension" data-axis="depth" style="--axis-color:var(--blue)">
         <div class="dim-head">
           <div class="dim-name"><i class="axis-dot" style="background:var(--blue)"></i>纵深 <em>Z</em></div>
-          <div class="dim-readout"><b data-readout>0.50</b><small>卡宽</small></div>
+          <div class="dim-readout"><b data-readout>9.00</b><small>卡宽</small></div>
         </div>
-        <input data-slider type="range" min="0.05" max="20.00" step="0.10" value="0.50" aria-label="鱼缸纵深">
+        <input data-slider type="range" min="0.10" max="20.00" step="0.10" value="9.00" aria-label="鱼缸纵深">
         <div class="dim-controls">
           <button type="button" data-step="-0.10" aria-label="纵深减小">−</button>
-          <input data-number type="number" step="0.01" value="0.50" aria-label="鱼缸纵深数值">
+          <input data-number type="number" step="0.01" value="9.00" aria-label="鱼缸纵深数值">
           <button type="button" data-step="0.10" aria-label="纵深增加">+</button>
         </div>
         <div class="mini-note">从识别码墙面向观众方向的厚度（Z 轴）· 滑条只是快捷范围，输入框不设上限</div>
@@ -312,12 +312,12 @@
       <div class="dimension" style="--axis-color:var(--orange)">
         <div class="dim-head">
           <div class="dim-name"><i class="axis-dot" style="background:var(--orange)"></i>鱼的大小 <em>MODEL</em></div>
-          <div class="dim-readout"><b id="fish-scale-readout">1.00</b><small>×</small></div>
+          <div class="dim-readout"><b id="fish-scale-readout">9.00</b><small>×</small></div>
         </div>
-        <input id="fish-scale-slider" type="range" min="0.10" max="10.00" step="0.05" value="1.00" aria-label="鱼的大小倍率">
+        <input id="fish-scale-slider" type="range" min="0.10" max="10.00" step="0.05" value="9.00" aria-label="鱼的大小倍率">
         <div class="dim-controls">
           <button type="button" data-fish-step="-0.10" aria-label="鱼变小">−</button>
-          <input id="fish-scale-number" type="number" step="0.01" value="1.00" aria-label="鱼的大小倍率数值">
+          <input id="fish-scale-number" type="number" step="0.01" value="9.00" aria-label="鱼的大小倍率数值">
           <button type="button" data-fish-step="0.10" aria-label="鱼变大">+</button>
         </div>
         <div class="mini-note">直接同步 AR 的现场大小与 PC 大小；滑条为快捷范围，输入框不设上限。</div>
@@ -351,7 +351,7 @@
 
     <section class="section">
       <div class="summary">
-        <div><b id="summary-size">0.80 × 0.56 × 0.50</b><small>宽 × 高 × 深 / 卡宽 · 鱼 <span id="summary-fish-scale">1.00×</span></small></div>
+        <div><b id="summary-size">9.00 × 9.00 × 9.00</b><small>宽 × 高 × 深 / 卡宽 · 鱼 <span id="summary-fish-scale">9.00×</span></small></div>
         <div class="save-state" id="save-state">本地自动保存</div>
       </div>
     </section>
@@ -382,7 +382,7 @@
   var toastTimer = null;
   var saveTimer = null;
   var fishSaveTimer = null;
-  var FISH_STORAGE_KEY = 'aoyu-tuning-v5';
+  var FISH_STORAGE_KEY = 'aoyu-tuning-v6';
   var config = api.load();
 
   function readFishTuning() {
@@ -396,7 +396,7 @@
 
   function normalizeFishScale(value) {
     var n = Number(value);
-    if (n < 0 || !isFinite(n)) return 1;
+    if (n < 0 || !isFinite(n)) return 9;
     return Number(n.toPrecision(12));
   }
 
@@ -409,7 +409,7 @@
 
   function readFishScale() {
     var saved = readFishTuning();
-    return normalizeFishScale(saved && saved.tuning ? saved.tuning.modelScale : 1);
+    return normalizeFishScale(saved && saved.tuning ? saved.tuning.modelScale : 9);
   }
 
   var fishScale = readFishScale();
@@ -427,8 +427,8 @@
 
   var camera = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
   var orbit = {
-    target: new THREE.Vector3(0, 0, 0.28),
-    radius: 2.65,
+    target: new THREE.Vector3(0, 0, config.depth / 2),
+    radius: Math.max(2.65, Math.max(config.width, config.height, config.depth) * 2.15),
     theta: 0.58,
     phi: 1.17
   };
