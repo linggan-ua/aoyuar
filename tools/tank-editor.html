@@ -34,7 +34,7 @@
     position: relative; flex: 1; min-width: 0; overflow: hidden;
     background: radial-gradient(ellipse at 46% 34%, #2b2f37 0%, #1a1c21 58%, #14161a 100%);
   }
-  #viewport canvas { display: block; width: 100%; height: 100%; }
+  #viewport canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
   #topbar {
     position: absolute; top: 18px; left: 20px; right: 20px;
@@ -250,7 +250,7 @@
       <span><i style="background:var(--green)"></i>Y 高</span>
       <span><i style="background:var(--blue)"></i>Z 深</span>
     </div>
-    <div id="help">左键旋转 · 右键 / Shift 拖拽平移 · 滚轮缩放 · 双击复位</div>
+    <div id="help">单指/左键旋转 · 双指/滚轮缩放 · 右键 / Shift 拖拽平移 · 双击复位</div>
     <div class="screen-note">单位：识别码卡宽</div>
     <div id="toast"></div>
   </main>
@@ -441,6 +441,12 @@
       orbit.target.z + orbit.radius * sinPhi * Math.cos(orbit.theta)
     );
     camera.lookAt(orbit.target);
+    var far = Math.max(100, orbit.radius * 4,
+      config.width * 8, config.height * 8, config.depth * 8);
+    if (isFinite(far) && Math.abs(camera.far - far) > 0.01) {
+      camera.far = far;
+      camera.updateProjectionMatrix();
+    }
   }
   updateCamera();
 
@@ -866,20 +872,53 @@
     button.addEventListener('click', function () { setView(button.getAttribute('data-view')); });
   });
 
-  /* ---------- 轨道相机：左键转、右键/Shift 平移、滚轮缩放 ---------- */
+  /* ---------- 轨道相机：单指/左键转，双指/滚轮缩放，右键/Shift 平移 ---------- */
   var drag = null;
+  var activePointers = {};
+  var pinch = null;
+
+  function pointerIds() { return Object.keys(activePointers); }
+  function pointerDistance(ids) {
+    var a = activePointers[ids[0]];
+    var b = activePointers[ids[1]];
+    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+  }
+
   renderer.domElement.addEventListener('pointerdown', function (event) {
     if (event.pointerType === 'mouse' && event.button !== 0 && event.button !== 2) return;
+    activePointers[event.pointerId] = { x: event.clientX, y: event.clientY };
+    renderer.domElement.setPointerCapture(event.pointerId);
+    var ids = pointerIds();
+    if (ids.length >= 2) {
+      drag = null;
+      pinch = {
+        distance: Math.max(1, pointerDistance(ids)),
+        radius: orbit.radius
+      };
+      renderer.domElement.style.cursor = '';
+      return;
+    }
     drag = {
       pointerId: event.pointerId,
       x: event.clientX,
       y: event.clientY,
       mode: (event.button === 2 || event.shiftKey) ? 'pan' : 'orbit'
     };
-    renderer.domElement.setPointerCapture(event.pointerId);
     renderer.domElement.style.cursor = drag.mode === 'pan' ? 'grabbing' : 'move';
   });
   renderer.domElement.addEventListener('pointermove', function (event) {
+    if (activePointers[event.pointerId]) {
+      activePointers[event.pointerId].x = event.clientX;
+      activePointers[event.pointerId].y = event.clientY;
+    }
+    var ids = pointerIds();
+    if (pinch && ids.length >= 2) {
+      event.preventDefault();
+      var distance = Math.max(1, pointerDistance(ids));
+      orbit.radius = Math.max(0.01, pinch.radius * pinch.distance / distance);
+      updateCamera();
+      return;
+    }
     if (!drag || drag.pointerId !== event.pointerId) return;
     var dx = event.clientX - drag.x;
     var dy = event.clientY - drag.y;
@@ -898,6 +937,21 @@
     updateCamera();
   });
   function endDrag(event) {
+    delete activePointers[event.pointerId];
+    if (renderer.domElement.hasPointerCapture && renderer.domElement.hasPointerCapture(event.pointerId)) {
+      renderer.domElement.releasePointerCapture(event.pointerId);
+    }
+    if (pinch) {
+      pinch = null;
+      var ids = pointerIds();
+      if (ids.length === 1) {
+        var p = activePointers[ids[0]];
+        drag = { pointerId: Number(ids[0]), x: p.x, y: p.y, mode: 'orbit' };
+      } else {
+        drag = null;
+      }
+      return;
+    }
     if (drag && drag.pointerId === event.pointerId) {
       drag = null;
       renderer.domElement.style.cursor = '';
@@ -909,7 +963,7 @@
   renderer.domElement.addEventListener('wheel', function (event) {
     event.preventDefault();
     orbit.radius *= Math.exp(event.deltaY * 0.001);
-    orbit.radius = Math.max(0.8, Math.min(7.5, orbit.radius));
+    orbit.radius = Math.max(0.01, orbit.radius);
     updateCamera();
   }, { passive: false });
   renderer.domElement.addEventListener('dblclick', function () { setView('persp'); });
