@@ -223,11 +223,11 @@
   }
 </style>
 <script src="../aframe.min.js"></script>
-<script src="../js/tank-config.js?v=2"></script>
+<script src="../js/tank-config.js?v=3"></script>
 <script src="../js/tank-cube.js?v=27"></script>
 <script>window.THREE = window.AFRAME && window.AFRAME.THREE;</script>
 <script src="../js/GLTFLoader.js"></script>
-<script src="../js/tank-editor-fish.js?v=6"></script>
+<script src="../js/tank-editor-fish.js?v=7"></script>
 </head>
 <body>
 <div id="app">
@@ -272,10 +272,10 @@
         <input data-slider type="range" min="0.10" max="20.00" step="0.10" value="0.80" aria-label="鱼缸宽度">
         <div class="dim-controls">
           <button type="button" data-step="-0.10" aria-label="宽度减小">−</button>
-          <input data-number type="number" min="0.10" max="1000" step="0.01" value="0.80" aria-label="鱼缸宽度数值">
+          <input data-number type="number" step="0.01" value="0.80" aria-label="鱼缸宽度数值">
           <button type="button" data-step="0.10" aria-label="宽度增加">+</button>
         </div>
-        <div class="mini-note">左右两墙的距离（X 轴）· 滑条到 20，输入框可到 1000</div>
+        <div class="mini-note">左右两墙的距离（X 轴）· 滑条只是快捷范围，输入框不设上限</div>
       </div>
 
       <div class="dimension" data-axis="height" style="--axis-color:var(--green)">
@@ -286,10 +286,10 @@
         <input data-slider type="range" min="0.10" max="20.00" step="0.10" value="0.56" aria-label="鱼缸高度">
         <div class="dim-controls">
           <button type="button" data-step="-0.10" aria-label="高度减小">−</button>
-          <input data-number type="number" min="0.10" max="1000" step="0.01" value="0.56" aria-label="鱼缸高度数值">
+          <input data-number type="number" step="0.01" value="0.56" aria-label="鱼缸高度数值">
           <button type="button" data-step="0.10" aria-label="高度增加">+</button>
         </div>
-        <div class="mini-note">上下两面玻璃的距离（Y 轴）· 滑条到 20，输入框可到 1000</div>
+        <div class="mini-note">上下两面玻璃的距离（Y 轴）· 滑条只是快捷范围，输入框不设上限</div>
       </div>
 
       <div class="dimension" data-axis="depth" style="--axis-color:var(--blue)">
@@ -300,10 +300,10 @@
         <input data-slider type="range" min="0.05" max="20.00" step="0.10" value="0.50" aria-label="鱼缸纵深">
         <div class="dim-controls">
           <button type="button" data-step="-0.10" aria-label="纵深减小">−</button>
-          <input data-number type="number" min="0.05" max="1000" step="0.01" value="0.50" aria-label="鱼缸纵深数值">
+          <input data-number type="number" step="0.01" value="0.50" aria-label="鱼缸纵深数值">
           <button type="button" data-step="0.10" aria-label="纵深增加">+</button>
         </div>
-        <div class="mini-note">从识别码墙面向观众方向的厚度（Z 轴）· 滑条到 20，输入框可到 1000</div>
+        <div class="mini-note">从识别码墙面向观众方向的厚度（Z 轴）· 滑条只是快捷范围，输入框不设上限</div>
       </div>
     </section>
 
@@ -317,10 +317,10 @@
         <input id="fish-scale-slider" type="range" min="0.10" max="10.00" step="0.05" value="1.00" aria-label="鱼的大小倍率">
         <div class="dim-controls">
           <button type="button" data-fish-step="-0.10" aria-label="鱼变小">−</button>
-          <input id="fish-scale-number" type="number" min="0.05" max="1000" step="0.01" value="1.00" aria-label="鱼的大小倍率数值">
+          <input id="fish-scale-number" type="number" step="0.01" value="1.00" aria-label="鱼的大小倍率数值">
           <button type="button" data-fish-step="0.10" aria-label="鱼变大">+</button>
         </div>
-        <div class="mini-note">直接同步 AR 的现场大小与 PC 大小；鱼变大时编辑器里的游速和摆尾也一起同步。</div>
+        <div class="mini-note">直接同步 AR 的现场大小与 PC 大小；滑条为快捷范围，输入框不设上限。</div>
         <div class="mini-note" id="fish-motion-readout">运动同步 ×1.00</div>
       </div>
     </section>
@@ -396,8 +396,15 @@
 
   function normalizeFishScale(value) {
     var n = Number(value);
-    if (!(n > 0) || !isFinite(n)) return 1;
-    return Math.round(Math.max(0.05, Math.min(1000, n)) * 100) / 100;
+    if (n < 0 || !isFinite(n)) return 1;
+    return Number(n.toPrecision(12));
+  }
+
+  function formatNumber(value) {
+    var n = Number(value);
+    if (!isFinite(n)) return '--';
+    var abs = Math.abs(n);
+    return abs > 0 && abs < 0.01 ? String(n) : n.toFixed(2);
   }
 
   function readFishScale() {
@@ -620,7 +627,7 @@
     syncFishScaleMotion();
     rebuildDimensions();
     updateControls(config);
-    document.getElementById('summary-size').textContent = w.toFixed(2) + ' × ' + h.toFixed(2) + ' × ' + d.toFixed(2);
+    document.getElementById('summary-size').textContent = formatNumber(w) + ' × ' + formatNumber(h) + ' × ' + formatNumber(d);
     if (opts && opts.persist) persist(config);
   }
 
@@ -629,7 +636,7 @@
       if (key === 'custom') return;
       var box = document.querySelector('[data-axis="' + key + '"]');
       if (!box) return;
-      var value = Number(next[key]).toFixed(2);
+      var value = formatNumber(next[key]);
       var slider = box.querySelector('[data-slider]');
       var number = box.querySelector('[data-number]');
       var readout = box.querySelector('[data-readout]');
@@ -662,7 +669,7 @@
     var n = Number(value);
     if (!isFinite(n)) n = api.DEFAULTS[key];
     n = Math.max(limits[0], Math.min(limits[1], n));
-    n = Math.round(n * 100) / 100;
+    n = Number(n.toPrecision(12));
     config[key] = n;
     applyTank(config);
     saveSoon(config);
@@ -701,7 +708,7 @@
   }
 
   function syncFishScaleControls() {
-    var text = Number(fishScale).toFixed(2);
+    var text = formatNumber(fishScale);
     var slider = document.getElementById('fish-scale-slider');
     var number = document.getElementById('fish-scale-number');
     var readout = document.getElementById('fish-scale-readout');

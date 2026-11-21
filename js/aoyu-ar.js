@@ -89,9 +89,6 @@
   // 活动范围：5 ≈ 铺满屏幕 85%，6 起就到 100%（0.92/0.88 安全边距）封顶（7 和 6 视觉上一样）
   var DEFAULT_RANGE_SCALE = 7.0;
 
-  // 调试面板旋钮的"无上限"哨兵值：只用来挡住 NaN/Infinity，实用上等于没有上限
-  var UNLOCKED_MAX = 999;
-
   var CONFIG = {
     noteVolume: 0.75,          // 和小程序一致
     notes: ['note-c6', 'note-d6', 'note-e6', 'note-g6', 'note-a6'].map(function (name) {
@@ -107,19 +104,7 @@
     // 然后在 startleBurstMs 内按曲线落回持续冲刺速度——开头极快、后面保持快游。
     startleBurstMul: 2.0,
     startleBurstMs: 180,
-    // 调试面板各旋钮的量程 [下限, 上限]。上限一律解锁到 UNLOCKED_MAX：
-    // 之前每项都有上限（速度 4、转向 1.7、范围 8、摆尾 2.5、大小 2.0…），
-    // 现场想再大一点就顶死了。下限仍然保留 —— 0 或负数会让速度/缩放变成 NaN 或反向，
-    // 那不是"调大"，是坏掉。
-    tuningLimits: {
-      speedScale: [0.5, UNLOCKED_MAX],
-      turnScale: [0.5, UNLOCKED_MAX],
-      rangeScale: [0.5, UNLOCKED_MAX],   // 活动范围：5 ≈ 铺满屏幕 85%，再往上也只是贴到安全边距（屏幕封顶）
-      animSpeedMax: [0.5, UNLOCKED_MAX], // 摆尾倍率（游动时它就是骨骼动画的速度倍率）
-      startleSpeed: [1.5, UNLOCKED_MAX], // 惊吓冲刺速度倍率（相对巡航速度）
-      modelScale: [0.05, UNLOCKED_MAX],  // 固定 HTML 基准上的手动大小倍率
-      pcModelScale: [0.05, UNLOCKED_MAX] // PC 模式专用大小：桌面端/OBS 用它，和现场那套互不影响
-    }
+    // 调参不设人为上下限；只拒绝非有限值和负的物理倍率。
   };
 
   var instances = {};                       // key -> fish-swim 组件实例
@@ -576,7 +561,7 @@
     /** 当前模型缩放（PC 模式走 PC 专用值）。 */
     activeModelScale: function () {
       var scale = (app && app.pcMode) ? this.tuning.pcModelScale : this.tuning.modelScale;
-      return isFinite(scale) && scale > 0 ? scale : 1;
+      return isFinite(scale) && scale >= 0 ? scale : 1;
     },
 
     /**
@@ -2120,7 +2105,7 @@
     /** 打开独立的鱼缸三维调试器。工具页和主页面都能用同一个入口。 */
     openTankEditor: function () {
       var path = window.location.pathname;
-      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=20';
+      var editor = (/\/tools\/[^/]*$/.test(path) ? 'tank-editor.html' : 'tools/tank-editor.html') + '?v=21';
       window.open(editor, '_blank', 'noopener');
     },
 
@@ -2233,8 +2218,8 @@
       }
       var threshold = document.getElementById('db-mic-threshold');
       var cooldown = document.getElementById('db-mic-cooldown');
-      if (threshold && document.activeElement !== threshold) threshold.value = Number(this.micThreshold).toFixed(2);
-      if (cooldown && document.activeElement !== cooldown) cooldown.value = Number(this.micCooldown).toFixed(2);
+      if (threshold && document.activeElement !== threshold) threshold.value = String(this.micThreshold);
+      if (cooldown && document.activeElement !== cooldown) cooldown.value = String(this.micCooldown);
       var status = document.getElementById('debug-mic');
       if (status) status.textContent = this.micStatusText();
     },
@@ -2533,12 +2518,12 @@
     syncPatternControls: function () {
       var input = document.getElementById('db-pattern-confidence');
       if (input && document.activeElement !== input) {
-        input.value = Number(this.patternConfidence).toFixed(2);
+        input.value = String(this.patternConfidence);
       }
       var status = document.getElementById('debug-pattern');
       if (status) {
-        status.textContent = 'AR 识别阈值：' + Number(this.patternConfidence).toFixed(2) +
-          '（越低越容易识别，误识别也越多；卡面比例仍是 0.50）';
+        status.textContent = 'AR 识别阈值：' + String(this.patternConfidence) +
+          '（不设人为上下限；卡面比例仍是 0.50）';
       }
       this.applyPatternConfidence();
     },
@@ -2546,7 +2531,7 @@
     setPatternConfidence: function (value) {
       var n = Number(value);
       if (!isFinite(n)) return;
-      this.patternConfidence = Math.round(clamp(n, 0.30, 0.90) * 100) / 100;
+      this.patternConfidence = n;
       this.syncPatternControls();
       this.saveTuning();
       console.log('AOYU_PATTERN_CONFIDENCE', this.patternConfidence);
@@ -2569,11 +2554,11 @@
         micRow.innerHTML =
           '<button id="db-mic">麦克风：关</button>' +
           '<label style="flex:1 1 100px;display:flex;align-items:center;gap:4px;color:#8b98a9;font-size:11px">峰值 ' +
-            '<input id="db-mic-threshold" type="number" min="0.05" max="1" step="0.01" value="0.40" ' +
+            '<input id="db-mic-threshold" type="number" step="any" value="0.40" ' +
               'style="width:52px;padding:4px;border-radius:5px;border:1px solid rgba(244,247,248,.22);background:#1d2632;color:#f4f7f8;font:inherit">' +
           '</label>' +
           '<label style="flex:1 1 100px;display:flex;align-items:center;gap:4px;color:#8b98a9;font-size:11px">冷却 ' +
-            '<input id="db-mic-cooldown" type="number" min="0.1" max="30" step="0.05" value="0.45" ' +
+            '<input id="db-mic-cooldown" type="number" step="any" value="0.45" ' +
               'style="width:48px;padding:4px;border-radius:5px;border:1px solid rgba(244,247,248,.22);background:#1d2632;color:#f4f7f8;font:inherit">s' +
           '</label>';
         var hint = panel.querySelector('.db-hint');
@@ -2597,7 +2582,7 @@
         patternRow.style.flexWrap = 'wrap';
         patternRow.innerHTML =
           '<label style="flex:1 1 150px;display:flex;align-items:center;gap:5px;color:#8b98a9;font-size:11px">识别阈值 ' +
-            '<input id="db-pattern-confidence" type="number" min="0.30" max="0.90" step="0.01" value="0.60" ' +
+            '<input id="db-pattern-confidence" type="number" step="any" value="0.60" ' +
               'style="width:56px;padding:4px;border-radius:5px;border:1px solid rgba(244,247,248,.22);background:#1d2632;color:#f4f7f8;font:inherit">' +
           '</label>' +
           '<button id="db-pattern-standard" style="flex:0 1 100px">标准 0.60</button>';
@@ -2674,7 +2659,7 @@
         micThreshold.addEventListener('input', function () {
           var value = Number(micThreshold.value);
           if (isFinite(value)) {
-            self.micThreshold = clamp(value, 0.05, 1);
+            self.micThreshold = value;
             self.saveTuning();
             self.syncMicControls();
           }
@@ -2685,7 +2670,7 @@
         micCooldown.addEventListener('input', function () {
           var value = Number(micCooldown.value);
           if (isFinite(value)) {
-            self.micCooldown = clamp(value, 0.1, 30);
+            self.micCooldown = value;
             self.saveTuning();
             self.syncMicControls();
           }
@@ -2714,11 +2699,13 @@
         if (!fish) return;
         // PC 模式下「鱼大/小」调的是 PC 专用大小，现场那套不动
         if (key === 'modelScale' && self.pcMode) key = 'pcModelScale';
-        var limits = CONFIG.tuningLimits[key];
         // 防御 NaN：clamp 的实现对 NaN 会把 NaN 原样传下去，一旦存进去就永久坏掉
         var base = fish.tuning[key];
         if (typeof base !== 'number' || !isFinite(base)) base = 1;
-        var next = Math.round(clamp(base + delta, limits[0], limits[1]) * 100) / 100;
+        var next = base + delta;
+        if (!isFinite(next)) next = base;
+        if (next < 0) next = 0;
+        next = Math.round(next * 100) / 100;
         // 面板调的是**三条鱼共用**的值：tuning 原本每条鱼一份，只改当前这条的话，
         // 切到另一个时段（鳌鱼↔鲤鱼）会发现那边还是旧值，得刷新才对得上（大小、范围都踩过）。
         Object.keys(instances).forEach(function (k) {
@@ -2786,14 +2773,14 @@
       // v2 以前保存的是 RMS 阈值，和现在的“峰值/瞬态”不是一回事，不能混用。
       if (saved.micDetectorVersion === 2) {
         if (typeof saved.micThreshold === 'number' && isFinite(saved.micThreshold)) {
-          this.micThreshold = clamp(saved.micThreshold, 0.05, 1);
+          this.micThreshold = saved.micThreshold;
         }
         if (typeof saved.micCooldown === 'number' && isFinite(saved.micCooldown)) {
-          this.micCooldown = clamp(saved.micCooldown, 0.1, 30);
+          this.micCooldown = saved.micCooldown;
         }
       }
       if (typeof saved.patternConfidence === 'number' && isFinite(saved.patternConfidence)) {
-        this.patternConfidence = clamp(saved.patternConfidence, 0.30, 0.90);
+        this.patternConfidence = saved.patternConfidence;
       }
       this.syncMicControls();
       this.syncPatternControls();

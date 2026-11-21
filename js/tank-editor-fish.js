@@ -15,7 +15,7 @@
       THREE: THREE,
       scene: scene,
       config: config,
-      modelScale: Math.max(0.01, Number(options.modelScale) || 1),
+      modelScale: isFinite(Number(options.modelScale)) && Number(options.modelScale) >= 0 ? Number(options.modelScale) : 1,
       fish: [],
       loaded: 0,
       failed: 0,
@@ -234,7 +234,7 @@
     function setModelScale(scale) {
       var n = Number(scale);
       if (!(n > 0) || !isFinite(n)) return;
-      state.modelScale = Math.max(0.01, Math.min(1000, n));
+      state.modelScale = n;
       refreshMotion();
       for (var i = 0; i < state.fish.length; i++) {
         var fish = state.fish[i];

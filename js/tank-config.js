@@ -9,12 +9,11 @@
 
   var KEY = 'aoyu-tank-v1';
   var DEFAULTS = { width: 0.80, height: 0.56, depth: 0.50 };
-  // 只保留防止 NaN/Infinity 和误输入的硬上限；不再把现场尺寸卡在 3 卡宽。
-  var HARD_MAX = 1000;
+  // 不再设置任何有限业务上限；只防止非有限值和非正尺寸把几何计算弄坏。
   var LIMITS = {
-    width: [0.10, HARD_MAX],
-    height: [0.10, HARD_MAX],
-    depth: [0.05, HARD_MAX]
+    width: [Number.MIN_VALUE, Number.POSITIVE_INFINITY],
+    height: [Number.MIN_VALUE, Number.POSITIVE_INFINITY],
+    depth: [Number.MIN_VALUE, Number.POSITIVE_INFINITY]
   };
 
   function clamp(value, min, max) {
@@ -27,7 +26,8 @@
   }
 
   function round(value) {
-    return Math.round(value * 100) / 100;
+    // 保留极小尺寸，同时不把大尺寸截断到两位小数。
+    return Number.isFinite(value) ? Number(value.toPrecision(12)) : value;
   }
 
   function normalize(raw) {
